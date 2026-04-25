@@ -4,14 +4,20 @@
 import React, { useEffect } from 'react';
 import useTestRunner from '../hooks/useTestRunner';
 import { formatTime } from '../utils/formatters';
+import { useTest, actions } from '../stores/testStore';
 
 export default function PlaybackConsole({ onTestComplete }) {
+  const { state, dispatch } = useTest();
+  const loopCount = state.testOptions?.loopCount || 1;
+  const debugSequence = Boolean(state.testOptions?.debugSequence);
+
   const {
     currentAudioText,
     isPlayingRef,
     isPausedRef,
     playback,
     testAudios,
+    totalCases,
     progressPercent,
     estimateRemainingTime,
     start: handleStart,
@@ -20,6 +26,14 @@ export default function PlaybackConsole({ onTestComplete }) {
     stop: handleStop,
     reset: handleReset
   } = useTestRunner({ onTestComplete });
+
+  const handleLoopCountChange = (e) => {
+    dispatch(actions.setLoopCount(parseInt(e.target.value, 10) || 1));
+  };
+
+  const handleDebugSequenceChange = (e) => {
+    dispatch(actions.setDebugSequence(e.target.checked));
+  };
 
   // 键盘快捷键
   useEffect(() => {
@@ -53,6 +67,39 @@ export default function PlaybackConsole({ onTestComplete }) {
         </span>
       </h2>
 
+      <div className="mb-6 p-4 bg-gray-800/40 rounded-lg border border-gray-700">
+        <div className="flex items-center justify-between gap-3">
+          <label className="text-sm text-gray-300">循环播放次数</label>
+          <select
+            value={loopCount}
+            onChange={handleLoopCountChange}
+            disabled={isPlayingRef.current || isPausedRef.current}
+            className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
+          >
+            <option value={1}>1 次（默认）</option>
+            <option value={2}>2 次</option>
+            <option value={3}>3 次</option>
+            <option value={5}>5 次</option>
+            <option value={10}>10 次</option>
+            <option value={20}>20 次</option>
+            <option value={50}>50 次</option>
+          </select>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          总播放条数 = 测试音频条数 x 循环次数（当前 {testAudios.length} x {loopCount} = {totalCases}）
+        </p>
+        <label className="mt-3 inline-flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={debugSequence}
+            onChange={handleDebugSequenceChange}
+            disabled={isPlayingRef.current || isPausedRef.current}
+            className="w-4 h-4 rounded bg-gray-800 border-gray-600 disabled:opacity-50"
+          />
+          输出播放序列调试日志（控制台）
+        </label>
+      </div>
+
       {/* 状态显示 */}
       <div className="mb-6 p-4 bg-gray-800/50 rounded-lg">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -74,7 +121,7 @@ export default function PlaybackConsole({ onTestComplete }) {
             <p className="text-xs text-gray-400 mb-1">当前进度</p>
             <p className="font-medium text-white">
               {!isPlayingRef.current && !isPausedRef.current ? '-' :
-               `${playback.currentIndex + 1} / ${testAudios.length}`}
+               `${playback.currentIndex + 1} / ${totalCases}`}
             </p>
           </div>
 

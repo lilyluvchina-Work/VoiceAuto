@@ -31,6 +31,7 @@ function AppContent() {
   const { state } = useTest();
   const [showReport, setShowReport] = useState(false);
   const [activeMode, setActiveMode] = useState('voice');
+  const isTesting = state.playback.isPlaying || state.playback.isPaused;
 
   const handleTestComplete = () => {
     setShowReport(true);
@@ -92,7 +93,7 @@ function AppContent() {
               </div>
 
               {/* 显示报告按钮 */}
-              {activeMode === 'voice' && state.report.cases.length > 0 && (
+              {activeMode === 'voice' && (
                 <button
                   onClick={() => setShowReport(!showReport)}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
@@ -113,26 +114,40 @@ function AppContent() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {activeMode === 'log' ? (
           <LogAnalyzer />
-        ) : showReport && state.report.cases.length > 0 ? (
-          // 报告视图
-          <div className="max-w-3xl mx-auto">
-            <TestReport />
-          </div>
         ) : (
-          // 编辑视图
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* 左侧：唤醒词 + 音频配置 */}
-            <div className="space-y-6">
-              <WakeWordConfig />
-              <VoiceConfig />
-            </div>
+          <div className="space-y-6">
+            {showReport && (
+              <div className="max-w-3xl mx-auto">
+                <TestReport />
+              </div>
+            )}
 
-            {/* 右侧：导入 + 列表 + 控制台 */}
-            <div className="space-y-6">
-              <AudioImporter />
-              <AudioList />
-              <PlaybackConsole onTestComplete={handleTestComplete} />
-            </div>
+            {(!showReport || isTesting) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 左侧：唤醒词 + 音频配置 */}
+                <div className="space-y-6">
+                  <WakeWordConfig />
+                  <VoiceConfig />
+                  <PlaybackConsole onTestComplete={handleTestComplete} />
+                </div>
+
+                {/* 右侧：导入 + 列表 */}
+                <div className="space-y-6">
+                  <AudioImporter />
+                  <AudioList />
+                </div>
+              </div>
+            )}
+            {showReport && isTesting && (
+              <p className="text-xs text-gray-500 text-center">
+                测试进行中：已展示报告预览，播放控制台保持运行，不会中断音频播放。
+              </p>
+            )}
+            {showReport && !isTesting && (
+              <p className="text-xs text-gray-500 text-center">
+                当前为报告视图，点击“收起报告”可返回编辑与播放控制台。
+              </p>
+            )}
           </div>
         )}
       </main>

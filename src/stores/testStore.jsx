@@ -32,11 +32,18 @@ const initialState = {
   // 测试音频列表
   testAudios: [],
 
+  // 测试选项
+  testOptions: {
+    loopCount: 1,
+    debugSequence: false
+  },
+
   // 当前播放状态
   playback: {
     isPlaying: false,
     isPaused: false,
     currentIndex: -1,
+    currentListIndex: -1,
     currentType: null, // 'wake' | 'test'
     status: 'idle', // 'idle' | 'playing' | 'paused' | 'completed'
     startTime: null,
@@ -64,6 +71,8 @@ const ActionTypes = {
   REMOVE_TEST_AUDIO: 'REMOVE_TEST_AUDIO',
   CLEAR_TEST_AUDIOS: 'CLEAR_TEST_AUDIOS',
   UPDATE_TEST_AUDIO: 'UPDATE_TEST_AUDIO',
+  SET_LOOP_COUNT: 'SET_LOOP_COUNT',
+  SET_DEBUG_SEQUENCE: 'SET_DEBUG_SEQUENCE',
   SET_PLAYBACK_STATE: 'SET_PLAYBACK_STATE',
   START_PLAYBACK: 'START_PLAYBACK',
   PAUSE_PLAYBACK: 'PAUSE_PLAYBACK',
@@ -136,6 +145,24 @@ function testReducer(state, action) {
         testAudios: state.testAudios.map(a =>
           a.id === action.payload.id ? { ...a, ...action.payload } : a
         )
+      };
+
+    case ActionTypes.SET_LOOP_COUNT:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          loopCount: Math.max(1, Math.min(99, action.payload))
+        }
+      };
+
+    case ActionTypes.SET_DEBUG_SEQUENCE:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          debugSequence: Boolean(action.payload)
+        }
       };
 
     case ActionTypes.SET_PLAYBACK_STATE:
@@ -264,7 +291,12 @@ export function TestProvider({ children }) {
             ...init.defaultVoiceConfig,
             ...parsed.defaultVoiceConfig
           },
-          testAudios: parsed.testAudios || []
+          testAudios: parsed.testAudios || [],
+          testOptions: {
+            ...init.testOptions,
+            loopCount: Math.max(1, Math.min(99, parsed.testOptions?.loopCount || init.testOptions.loopCount)),
+            debugSequence: Boolean(parsed.testOptions?.debugSequence)
+          }
         };
       }
     } catch (e) {
@@ -282,6 +314,7 @@ export function TestProvider({ children }) {
         wakeIntervalDelay: state.wakeWord.wakeIntervalDelay
       },
       defaultVoiceConfig: state.defaultVoiceConfig,
+      testOptions: state.testOptions,
       testAudios: state.testAudios.map(a => ({
         id: a.id,
         text: a.text,
@@ -292,7 +325,7 @@ export function TestProvider({ children }) {
       }))
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-  }, [state.wakeWord, state.defaultVoiceConfig, state.testAudios]);
+  }, [state.wakeWord, state.defaultVoiceConfig, state.testOptions, state.testAudios]);
 
   return (
     <TestContext.Provider value={{ state, dispatch, ActionTypes }}>
@@ -354,6 +387,16 @@ export const actions = {
   updateTestAudio: (audio) => ({
     type: ActionTypes.UPDATE_TEST_AUDIO,
     payload: audio
+  }),
+
+  setLoopCount: (count) => ({
+    type: ActionTypes.SET_LOOP_COUNT,
+    payload: count
+  }),
+
+  setDebugSequence: (enabled) => ({
+    type: ActionTypes.SET_DEBUG_SEQUENCE,
+    payload: enabled
   }),
 
   setPlaybackState: (state) => ({

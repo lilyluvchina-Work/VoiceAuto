@@ -10,24 +10,39 @@ const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export default function useTestRunner({ onTestComplete } = {}) {
   const { state, dispatch } = useTest();
-  const { wakeWord, testAudios, playback, defaultVoiceConfig } = state;
+  const { wakeWord, testAudios, playback, defaultVoiceConfig, testOptions } = state;
+
+  const totalCases = testAudios.length * (testOptions.loopCount || 1);
 
   const [currentAudioText, setCurrentAudioText] = useState('');
   const startTimeRef = useRef(null);
   const isPlayingRef = useRef(false);
   const isPausedRef = useRef(false);
+  const runIdRef = useRef(0);
 
   const estimateRemainingTime = useCallback(() => {
-    if (testAudios.length === 0 || playback.currentIndex < 0) return 0;
-    const remainingCount = testAudios.length - playback.currentIndex;
+    if (totalCases === 0 || playback.currentIndex < 0) return 0;
+    const remainingCount = Math.max(0, totalCases - (playback.currentIndex + 1));
     const avgTimePerItem = 5000;
     return remainingCount * avgTimePerItem;
-  }, [testAudios.length, playback.currentIndex]);
+  }, [totalCases, playback.currentIndex]);
 
-  const runTest = useCallback(async () => {
+  const runTest = useCallback(async (runId) => {
     if (testAudios.length === 0) {
       alert('请先添加测试音频');
       return;
+    }
+
+    const queue = [];
+    for (let round = 0; round < testOptions.loopCount; round++) {
+      for (let i = 0; i < testAudios.length; i++) {
+        queue.push({
+          audio: testAudios[i],
+          listIndex: i,
+          round: round + 1,
+          totalRounds: testOptions.loopCount
+        });
+      }
     }
 
     dispatch(actions.startPlayback());
@@ -36,19 +51,23 @@ export default function useTestRunner({ onTestComplete } = {}) {
     startTimeRef.current = Date.now();
 
     try {
-      for (let i = 0; i < testAudios.length; i++) {
-        if (!isPlayingRef.current) break;
+      for (let cursor = 0; cursor < queue.length; cursor++) {
+        if (!isPlayingRef.current || runIdRef.current !== runId) return;
 
         while (isPausedRef.current) {
           await wait(100);
-          if (!isPlayingRef.current) return;
+          if (!isPlayingRef.current || runIdRef.current !== runId) return;
         }
 
-        const audio = testAudios[i];
+        const item = queue[cursor];
 
         // 播放唤醒词
-        dispatch(actions.setPlaybackState({ currentIndex: i, currentType: 'wake' }));
-        setCurrentAudioText(`唤醒词: ${wakeWord.text}`);
+        dispatch(actions.setPlaybackState({
+          currentIndex: cursor,
+          currentListIndex: item.listIndex,
+          currentType: 'wake'
+        }));
+        setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 唤醒词: ${wakeWord.text}`);
 
         try {
           await ttsService.speak(wakeWord.text, {
@@ -61,34 +80,48 @@ export default function useTestRunner({ onTestComplete } = {}) {
           console.error('Wake word playback failed:', err);
         }
 
-        if (!isPlayingRef.current) break;
+        if (!isPlayingRef.current || runIdRef.current !== runId) return;
 
         // 唤醒后延迟
         dispatch(actions.setPlaybackState({ currentType: 'delay' }));
         await wait(wakeWord.wakeAfterDelay);
 
-        if (!isPlayingRef.current) break;
+        if (!isPlayingRef.current || runIdRef.current !== runId) return;
 
         // 播放测试音频
-        dispatch(actions.setPlaybackState({ currentIndex: i, currentType: 'test' }));
-        setCurrentAudioText(audio.text);
+        dispatch(actions.setPlaybackState({
+          currentIndex: cursor,
+          currentListIndex: item.listIndex,
+          currentType: 'test'
+        }));
+        setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · ${item.audio.text}`);
 
+        if (testOptions.debugSequence) {
+          console.log(
+            `[VoiceAuto][SEQ] ${item.round}-${item.listIndex + 1} | ${cursor + 1}/${queue.length} | ${item.audio.text}`
+          );
+        }
+
+        let success = true;
         try {
-          await playAudioItem(audio, ttsService);
+          await playAudioItem(item.audio, ttsService);
         } catch (err) {
+          success = false;
           console.error('Audio playback failed:', err);
         }
 
         // 记录结果
         dispatch(actions.addReportCase({
-          index: i,
-          text: audio.text,
-          success: true,
-          duration: audio.duration || 0
+          index: cursor,
+          round: item.round,
+          text: item.audio.text,
+          success,
+          duration: item.audio.duration || 0
         }));
 
-        // 唤醒间延迟
-        if (i < testAudios.length - 1) {
+        // 唤醒间延迟（最后一条不等待）
+        const isLastCase = cursor === queue.length - 1;
+        if (!isLastCase) {
           dispatch(actions.setPlaybackState({ currentType: 'interval' }));
           await wait(wakeWord.wakeIntervalDelay);
         }
@@ -98,21 +131,39 @@ export default function useTestRunner({ onTestComplete } = {}) {
         }
       }
 
+      if (!isPlayingRef.current || runIdRef.current !== runId) return;
       dispatch(actions.completeReport());
+      isPlayingRef.current = false;
+      isPausedRef.current = false;
+
+      if (testOptions.debugSequence) {
+        console.log(`[VoiceAuto][SEQ] complete | total=${queue.length}`);
+      }
+
       onTestComplete?.();
     } catch (error) {
       console.error('Test error:', error);
       dispatch(actions.stopPlayback());
       isPlayingRef.current = false;
     }
-  }, [testAudios, wakeWord, defaultVoiceConfig, dispatch, onTestComplete]);
+  }, [
+    testAudios,
+    wakeWord,
+    defaultVoiceConfig,
+    dispatch,
+    onTestComplete,
+    testOptions.loopCount,
+    testOptions.debugSequence
+  ]);
 
   const start = useCallback(() => {
-    isPlayingRef.current = true;
-    isPausedRef.current = false;
-    dispatch(actions.setPlaybackState({ isPlaying: true }));
-    runTest();
-  }, [runTest, dispatch]);
+    if (isPlayingRef.current || isPausedRef.current) {
+      return;
+    }
+
+    runIdRef.current += 1;
+    runTest(runIdRef.current);
+  }, [runTest]);
 
   const pause = useCallback(() => {
     isPausedRef.current = true;
@@ -126,6 +177,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
   }, [dispatch]);
 
   const stop = useCallback(() => {
+    runIdRef.current += 1;
     isPlayingRef.current = false;
     isPausedRef.current = false;
     ttsService.stopAudio();
@@ -134,6 +186,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
   }, [dispatch]);
 
   const reset = useCallback(() => {
+    runIdRef.current += 1;
     isPlayingRef.current = false;
     isPausedRef.current = false;
     dispatch(actions.resetTest());
@@ -141,7 +194,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
   }, [dispatch]);
 
   const progressPercent = testAudios.length > 0
-    ? ((playback.currentIndex + 1) / testAudios.length) * 100
+    ? ((playback.currentIndex + 1) / Math.max(1, totalCases)) * 100
     : 0;
 
   return {
@@ -151,6 +204,8 @@ export default function useTestRunner({ onTestComplete } = {}) {
     isPausedRef,
     playback,
     testAudios,
+    totalCases,
+    loopCount: testOptions.loopCount,
     progressPercent,
     estimateRemainingTime,
     // 操作

@@ -24,7 +24,7 @@ export default function AudioList() {
   }, [testAudios, selectedModule]);
 
   const currentPlayingTestId = playback.currentType === 'test' && playback.currentIndex >= 0
-    ? testAudios[playback.currentIndex]?.id
+    ? testAudios[playback.currentListIndex >= 0 ? playback.currentListIndex : playback.currentIndex]?.id
     : null;
 
   const { playingId, play } = useAudioPlayer();
