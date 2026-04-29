@@ -11,6 +11,7 @@ import AudioList from './components/AudioList';
 import PlaybackConsole from './components/PlaybackConsole';
 import TestReport from './components/TestReport';
 import LogAnalyzer from './components/LogAnalyzer';
+import LangfuseFetcher from './components/LangfuseFetcher';
 
 // Logo SVG
 const Logo = () => (
@@ -78,6 +79,19 @@ function AppContent() {
                 >
                   日志分析
                 </button>
+                <button
+                  onClick={() => {
+                    setActiveMode('langfuse');
+                    setShowReport(false);
+                  }}
+                  className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                    activeMode === 'langfuse'
+                      ? 'bg-primary text-white'
+                      : 'text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  🗂️ Langfuse 日志
+                </button>
               </div>
 
               {/* 状态指示 */}
@@ -112,7 +126,9 @@ function AppContent() {
 
       {/* 主内容 */}
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {activeMode === 'log' ? (
+        {activeMode === 'langfuse' ? (
+          <LangfuseFetcher />
+        ) : activeMode === 'log' ? (
           <LogAnalyzer />
         ) : (
           <div className="space-y-6">

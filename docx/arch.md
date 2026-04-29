@@ -24,6 +24,7 @@ VoiceAuto 采用纯前端架构，聚焦语音测试与日志分析两条主流�
 3. 领域服务层（Services）
 - 语音合成统一由 ttsService 管理。
 - 支持 Doubao TTS 与 Web Speech API 回退机制。
+- Langfuse 数据拉取由 langfuseService 管理，封装分页、鉴权、控制器。
 
 4. 工具层（Utils）
 - 承担文件解析、音频辅助、日志解析、报告文本生成、格式化等纯函数能力。
@@ -31,15 +32,15 @@ VoiceAuto 采用纯前端架构，聚焦语音测试与日志分析两条主流�
 ## 3. 目录分层说明
 
 - src/components
-  - 业务界面组件：WakeWordConfig、VoiceConfig、AudioImporter、AudioList、PlaybackConsole、TestReport、LogAnalyzer
+  - 业务界面组件：WakeWordConfig、VoiceConfig、AudioImporter、AudioList、PlaybackConsole、TestReport、LogAnalyzer、**LangfuseFetcher**
 - src/hooks
   - 业务行为 Hook：useTestRunner、useAudioPlayer、usePagination、useSelection
 - src/stores
   - 全局状态：testStore（Context + Reducer + Actions）
 - src/services
-  - 外部能力接入：ttsService
+  - 外部能力接入：ttsService、**langfuseService**（多环境 Langfuse API）
 - src/utils
-  - 通用工具：音频处理、日志分析、报告生成、格式化
+  - 通用工具：音频处理、日志分析、报告生成、格式化、**excelExport（Excel/JSON 导出）**
 - src/constants
   - 配置常量：音色、语种、分页大小等
 
@@ -51,6 +52,7 @@ VoiceAuto 采用纯前端架构，聚焦语音测试与日志分析两条主流�
 - 顶部模式切换：
   - 语音测试模式（Voice Test）
   - 日志分析模式（Log Analyzer）
+  - Langfuse 日志获取模式（Langfuse 日志）
 
 ### 4.2 语音测试链路
 
@@ -89,7 +91,24 @@ VoiceAuto 采用纯前端架构，聚焦语音测试与日志分析两条主流�
 4. UI 侧支持按记录、时间、关键字、级别筛选，并展示分析结果。
 5. 分析记录持久化至 localStorage，容量不足时自动降级（只保留元数据或裁剪条目）。
 
-### 4.4 业务逻辑图
+### 4.4 Langfuse 日志获取链路
+
+1. LangfuseFetcher 标题栏提供环境切换器（UAT / TEST / PROD），切换时重置数据状态。
+2. 用户选择时间范围后点击"获取日志"，实例化 FetchController 并启动拉取。
+3. `fetchTraces` 与 `fetchObservations` 并发执行，各自分页拉取，实时上报进度。
+4. `FetchController` 统一管理暂停 / 继续 / 终止，终止时直接读取中间态数据。
+5. `processData` 过滤空记录并关联 Traces ↔ Observations 的 SessionID。
+6. 结果展示统计卡片、Session 列表、表格预览，支持 Excel / JSON 下载。
+
+**Vite 代理配置：**
+
+| 前缀路径 | 目标环境 | 说明 |
+|---|---|---|
+| `/langfuse-api-uat` | UAT Langfuse | 紫色标识 |
+| `/langfuse-api-test` | TEST Langfuse | 黄色标识 |
+| `/langfuse-api-prod` | PROD Langfuse | 红色标识 |
+
+所有代理均设置 `changeOrigin: true`，路径重写后转发到目标地址，避免浏览器 CORS 限制。
 
 ```mermaid
 flowchart TD
@@ -113,12 +132,23 @@ flowchart TD
   L2 --> L3[按时间/级别/关键字筛选]
   L3 --> L4[聚合统计与结论输出]
   L4 --> L5[本地持久化日志记录]
+
+  M -->|Langfuse| F1[选择环境 UAT/TEST/PROD]
+  F1 --> F2[选择时间范围]
+  F2 --> F3[并发拉取 Traces & Observations]
+  F3 --> F4{控制操作}
+  F4 -->|暂停/继续| F3
+  F4 -->|终止| F5[保留中间数据]
+  F4 -->|完成| F5
+  F5 --> F6[过滤空记录 & 关联 Session]
+  F6 --> F7[预览 / 下载 Excel / JSON]
 ```
 
 图示说明：
 
-- 语音测试链路是循环执行模型，循环体为“唤醒词 -> 延迟 -> 测试音频 -> 结果记录”。
+- 语音测试链路是循环执行模型，循环体为"唤醒词 -> 延迟 -> 测试音频 -> 结果记录"。
 - 日志分析链路是单次导入、多次筛选模型，核心价值在于快速定位异常模块与高峰时间段。
+- Langfuse 链路是按需拉取模型，支持多环境切换和中途终止，核心价值在于导出平台侧请求数据。
 
 ## 5. 状态管理架构
 
@@ -173,6 +203,9 @@ ttsService 是语音能力统一入口：
   - 日志解析、聚合分析、时间与大小格式化
 - formatters
   - 通用格式化能力
+- excelExport
+  - Langfuse 数据导出：xlsx 多 Sheet Excel、JSON Blob 下载
+  - flattenObject 展平嵌套 JSON 结构，适配表格列展示
 
 ## 8. 持久化与缓存策略
 
@@ -191,6 +224,7 @@ ttsService 是语音能力统一入口：
 - 本地存储容错：Quota 超限时降级保存并提示。
 - 播放流程容错：单条播放异常不阻断整体流程（记录并继续）。
 - 解析容错：日志时间戳识别失败仍保留原始文本参与统计。
+- Langfuse 拉取容错：任意页请求失败抛出错误，状态置为 error，已拉取数据通过中间态 ref 保留；用户可通过"终止并保留"提前结束。
 
 ## 10. 当前架构优势与限制
 
@@ -205,6 +239,7 @@ ttsService 是语音能力统一入口：
 - 缺少后端任务系统，无法进行长任务统一调度与集中存档。
 - 报告当前以 txt 为主，缺少结构化对接能力。
 - 大日志分析受浏览器性能与存储上限约束。
+- Langfuse 代理依赖 Vite Dev Server，生产部署需另配反向代理规则。
 
 ## 11. 演进建议
 
@@ -221,3 +256,9 @@ ttsService 是语音能力统一入口：
 - 新增播放序列调试日志开关，可输出实际执行序列到浏览器控制台。
 - 修复“测试中查看报告会打断播放”的问题，支持测试过程中查看报告预览。
 - 修复“查看报告后内容空白”问题，报告面板改为稳定渲染，空数据时显示占位提示。
+## 13. 当日变更（2026-04-28）
+
+- 新增 `langfuseService.js`：导出 `ENVIRONMENTS` 配置对象（UAT / TEST / PROD）、`FetchController`、`fetchTraces`、`fetchObservations`，统一通过 envKey 选择目标环境凭据和代理路径。
+- 新增 `LangfuseFetcher.jsx`：Langfuse 日志获取 UI，包含环境切换器、时间选择器、进度展示、暂停/继续/终止控制、数据统计、表格预览、Excel/JSON 下载。
+- 更新 `vite.config.js`：新增三条代理规则（`/langfuse-api-uat`、`/langfuse-api-test`、`/langfuse-api-prod`），各自路径重写转发到对应 Langfuse 实例。
+- Langfuse 模式集成到 App.jsx 第三个 Tab。
