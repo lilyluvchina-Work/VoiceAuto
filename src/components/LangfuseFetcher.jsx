@@ -5,6 +5,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { fetchTraces, fetchObservations, FetchController, ENVIRONMENTS } from '../modules/langfuse/services/langfuseService';
 import { exportToExcel, exportSessionExcel, buildSessionRows, downloadJSON } from '../modules/langfuse/utils/excelExporter';
+import { useTest } from '../stores/testStore';
 
 /* ─── 工具函数 ─── */
 function toISO(date, time) {
@@ -84,6 +85,9 @@ function DateTimePicker({ label, variant, date, time, onDateChange, onTimeChange
   const bg = isEnd ? 'bg-red-950/20' : 'bg-green-950/20';
   const badge = isEnd ? 'bg-red-900/40 text-red-300 border-red-700/50' : 'bg-green-900/40 text-green-300 border-green-700/50';
   const dot = isEnd ? 'bg-red-400' : 'bg-green-400';
+  const iconBadge = isEnd
+    ? 'bg-red-500/15 text-red-200 border border-red-400/40 shadow-[0_0_0_1px_rgba(248,113,113,0.25)]'
+    : 'bg-green-500/15 text-green-200 border border-green-400/40 shadow-[0_0_0_1px_rgba(74,222,128,0.25)]';
   return (
     <div className={`rounded-xl border ${border} ${bg} p-4 space-y-3 transition-colors`}>
       <div className="flex items-center gap-2">
@@ -92,12 +96,18 @@ function DateTimePicker({ label, variant, date, time, onDateChange, onTimeChange
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1.5">📅 日期</label>
+          <label className="block text-xs text-gray-500 mb-1.5 flex items-center gap-1.5">
+            <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md ${iconBadge}`}>📅</span>
+            <span>日期</span>
+          </label>
           <input type="date" value={date} onChange={(e) => onDateChange(e.target.value)} disabled={disabled}
             className="w-full px-3 py-2.5 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1.5">🕐 时间（时:分:秒）</label>
+          <label className="block text-xs text-gray-500 mb-1.5 flex items-center gap-1.5">
+            <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md ${iconBadge}`}>🕐</span>
+            <span>时间（时:分:秒）</span>
+          </label>
           <input type="time" step="1" value={time} onChange={(e) => onTimeChange(e.target.value)} disabled={disabled}
             className="w-full px-3 py-2.5 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed" />
         </div>
@@ -190,7 +200,12 @@ function DataTable({ title, data, color = 'primary' }) {
   const keys = Object.keys(data[0]);
   const totalPages = Math.ceil(data.length / PAGE);
   const rows = data.slice((page - 1) * PAGE, page * PAGE);
-  const titleColor = color === 'accent' ? 'text-accent' : 'text-primary';
+  const titleColorByType = {
+    primary: 'text-primary',
+    accent: 'text-accent',
+    secondary: 'text-secondary',
+  };
+  const titleColor = titleColorByType[color] || 'text-primary';
 
   return (
     <div className="space-y-2">
@@ -300,8 +315,38 @@ const ENV_STYLES = {
   PROD: { badge: 'bg-red-900/50  border-red-600  text-red-300',    dot: 'bg-red-400',    active: 'ring-red-500'    },
 };
 
+const TIME_PRESETS = [
+  { label: '15 分钟', mins: 15 },
+  { label: '1 小时', mins: 60 },
+  { label: '6 小时', mins: 360 },
+  { label: '24 小时', mins: 1440 },
+  { label: '3 天', mins: 4320 },
+  { label: '7 天', mins: 10080 },
+];
+
+const JSON_DOWNLOADS = [
+  { type: 'traces', label: '下载 Traces.json' },
+  { type: 'observations', label: '下载 Observations.json' },
+];
+
+const JSON_EXPORT_META = {
+  traces: 'Traces',
+  observations: 'Observations',
+};
+
+function buildAutoFetchRange(firstTestAudioTime, lastTestAudioTime) {
+  const fromTs = Number(firstTestAudioTime);
+  const toTsRaw = Number(lastTestAudioTime);
+  const toTs = toTsRaw > fromTs ? toTsRaw : fromTs + 1000;
+  return {
+    from: splitDT(new Date(fromTs)),
+    to: splitDT(new Date(toTs)),
+  };
+}
+
 /* ─── 主组件 ─── */
 export default function LangfuseFetcher() {
+  const { state } = useTest();
   const initFrom = splitDT(new Date(Date.now() - 60 * 60 * 1000));
   const initTo = splitDT(new Date());
 
@@ -328,6 +373,23 @@ export default function LangfuseFetcher() {
   const partialObs = useRef([]);
   // 控制器
   const controller = useRef(null);
+  const autoFilledRunEndRef = useRef(null);
+
+  const applyProcessedResult = (result) => {
+    setTraces(result.traces);
+    setObservations(result.observations);
+    setSessionIds(result.sessionIds);
+    setFilteredCount(result.filteredCount);
+  };
+
+  const resetFetchedResultState = () => {
+    setTraces([]);
+    setObservations([]);
+    setSessionIds([]);
+    setFilteredCount({ traces: 0, obs: 0 });
+    setTraceProgress({ fetched: 0, total: 0 });
+    setObsProgress({ fetched: 0, total: 0 });
+  };
 
   const applyPreset = (mins) => {
     const end = new Date(); const start = new Date(end.getTime() - mins * 60 * 1000);
@@ -353,10 +415,7 @@ export default function LangfuseFetcher() {
     // partialTraces/partialObs 持有 fetchAllPages 内部 results 数组的引用，
     // abort 后循环已退出，数据已稳定，可安全读取
     const result = processData([...partialTraces.current], [...partialObs.current]);
-    setTraces(result.traces);
-    setObservations(result.observations);
-    setSessionIds(result.sessionIds);
-    setFilteredCount(result.filteredCount);
+    applyProcessedResult(result);
     setStatus('aborted');
   };
 
@@ -364,21 +423,21 @@ export default function LangfuseFetcher() {
   const handleClear = () => {
     setStatus('idle');
     setError('');
-    setTraces([]);
-    setObservations([]);
-    setSessionIds([]);
-    setFilteredCount({ traces: 0, obs: 0 });
-    setTraceProgress({ fetched: 0, total: 0 });
-    setObsProgress({ fetched: 0, total: 0 });
+    resetFetchedResultState();
     partialTraces.current = [];
     partialObs.current = [];
   };
 
   /* 获取日志 */
-  const handleFetch = useCallback(async () => {
-    if (!fromDate || !fromTime || !toDate || !toTime) { setError('请完整填写开始和结束时间'); return; }
-    const fromISO = toISO(fromDate, fromTime);
-    const toISO_ = toISO(toDate, toTime);
+  const handleFetch = useCallback(async (overrideRange = null, options = {}) => {
+    const { autoExportSession = false } = options;
+    const range = overrideRange || { fromDate, fromTime, toDate, toTime };
+    if (!range.fromDate || !range.fromTime || !range.toDate || !range.toTime) {
+      setError('请完整填写开始和结束时间');
+      return;
+    }
+    const fromISO = toISO(range.fromDate, range.fromTime);
+    const toISO_ = toISO(range.toDate, range.toTime);
     if (new Date(fromISO) >= new Date(toISO_)) { setError('开始时间必须早于结束时间'); return; }
 
     // 重置
@@ -388,9 +447,7 @@ export default function LangfuseFetcher() {
 
     setStatus('fetching');
     setError('');
-    setTraces([]); setObservations([]); setSessionIds([]); setFilteredCount({ traces: 0, obs: 0 });
-    setTraceProgress({ fetched: 0, total: 0 });
-    setObsProgress({ fetched: 0, total: 0 });
+    resetFetchedResultState();
 
     try {
       const [rawTraces, rawObs] = await Promise.all([
@@ -408,17 +465,56 @@ export default function LangfuseFetcher() {
       if (controller.current.aborted) return; // 终止路径已在 handleAbort 处理
 
       const result = processData(rawTraces, rawObs);
-      setTraces(result.traces);
-      setObservations(result.observations);
-      setSessionIds(result.sessionIds);
-      setFilteredCount(result.filteredCount);
+      applyProcessedResult(result);
       setStatus('done');
+
+      if (autoExportSession) {
+        exportSessionExcel(
+          result.traces,
+          result.observations,
+          makeFilename('SessionExtract', range.fromDate, range.fromTime, range.toDate, range.toTime) + '.xlsx'
+        );
+      }
     } catch (err) {
       if (controller.current?.aborted) return;
       setError(err.message || '获取失败，请检查网络或时间范围');
       setStatus('error');
     }
-  }, [fromDate, fromTime, toDate, toTime]);
+  }, [envKey, fromDate, fromTime, toDate, toTime]);
+
+  useEffect(() => {
+    const { firstTestAudioTime, lastTestAudioTime, endTime } = state.report || {};
+    const isCompleted = state.playback?.status === 'completed';
+    if (!isCompleted || !firstTestAudioTime || !lastTestAudioTime || !endTime) return;
+    if (autoFilledRunEndRef.current === endTime) return;
+
+    const autoRange = buildAutoFetchRange(firstTestAudioTime, lastTestAudioTime);
+    const fromParts = autoRange.from;
+    const toParts = autoRange.to;
+
+    setFromDate(fromParts.date);
+    setFromTime(fromParts.time);
+    setToDate(toParts.date);
+    setToTime(toParts.time);
+
+    autoFilledRunEndRef.current = endTime;
+
+    handleFetch(
+      {
+        fromDate: fromParts.date,
+        fromTime: fromParts.time,
+        toDate: toParts.date,
+        toTime: toParts.time,
+      },
+      { autoExportSession: true }
+    );
+  }, [
+    handleFetch,
+    state.playback?.status,
+    state.report?.firstTestAudioTime,
+    state.report?.lastTestAudioTime,
+    state.report?.endTime,
+  ]);
 
   const handleExcel = () => {
     exportToExcel(traces, observations, makeFilename('LangfuseLogs', fromDate, fromTime, toDate, toTime) + '.xlsx');
@@ -427,9 +523,10 @@ export default function LangfuseFetcher() {
     exportSessionExcel(traces, observations, makeFilename('SessionExtract', fromDate, fromTime, toDate, toTime) + '.xlsx');
   };
   const handleDownloadJSON = (type) => {
+    const prefix = JSON_EXPORT_META[type] || 'Export';
     downloadJSON(
       type === 'traces' ? traces : observations,
-      makeFilename(type === 'traces' ? 'Traces' : 'Observations', fromDate, fromTime, toDate, toTime) + '.json'
+      makeFilename(prefix, fromDate, fromTime, toDate, toTime) + '.json'
     );
   };
 
@@ -500,7 +597,7 @@ export default function LangfuseFetcher() {
         <div>
           <p className="text-xs text-gray-500 mb-2">快捷选择</p>
           <div className="flex flex-wrap gap-2">
-            {[{label:'15 分钟',mins:15},{label:'1 小时',mins:60},{label:'6 小时',mins:360},{label:'24 小时',mins:1440},{label:'3 天',mins:4320},{label:'7 天',mins:10080}].map(({label, mins}) => (
+            {TIME_PRESETS.map(({label, mins}) => (
               <button key={label} disabled={isActive} onClick={() => applyPreset(mins)}
                 className="px-3 py-1.5 text-xs rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600 hover:border-gray-500 transition-colors disabled:opacity-40">
                 最近 {label}
@@ -512,7 +609,7 @@ export default function LangfuseFetcher() {
         {/* 操作按钮行 */}
         <div className="flex items-center gap-3 flex-wrap">
           {!isActive && (
-            <button onClick={handleFetch}
+            <button onClick={() => handleFetch()}
               className="flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -623,20 +720,15 @@ export default function LangfuseFetcher() {
                 </svg>
                 下载 Excel（Traces + Observations）
               </button>
-              <button onClick={() => handleDownloadJSON('traces')}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm rounded-lg transition-colors">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                下载 Traces.json
-              </button>
-              <button onClick={() => handleDownloadJSON('observations')}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm rounded-lg transition-colors">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                下载 Observations.json
-              </button>
+              {JSON_DOWNLOADS.map(({ type, label }) => (
+                <button key={type} onClick={() => handleDownloadJSON(type)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm rounded-lg transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 

@@ -54,6 +54,8 @@ const initialState = {
   report: {
     startTime: null,
     endTime: null,
+    firstTestAudioTime: null,
+    lastTestAudioTime: null,
     successCount: 0,
     failCount: 0,
     cases: []
@@ -184,6 +186,8 @@ function testReducer(state, action) {
         report: {
           ...state.report,
           startTime: state.report.startTime || Date.now(),
+          firstTestAudioTime: null,
+          lastTestAudioTime: null,
           successCount: 0,
           failCount: 0,
           cases: []
@@ -424,6 +428,11 @@ export const actions = {
   addReportCase: (caseData) => ({
     type: ActionTypes.ADD_REPORT_CASE,
     payload: caseData
+  }),
+
+  setReport: (reportPatch) => ({
+    type: ActionTypes.SET_REPORT,
+    payload: reportPatch
   }),
 
   completeReport: () => ({

@@ -6,6 +6,8 @@
 import * as XLSX from 'xlsx';
 import { buildSessionRows } from './sessionExtractor';
 
+export { buildSessionRows };
+
 /**
  * 递归展平嵌套对象，数组序列化为 JSON 字符串
  */

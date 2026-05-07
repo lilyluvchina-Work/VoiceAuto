@@ -4,3 +4,5 @@ dist
 *.log
 .env
 .env.local
+CLAUDE.local.md
+.claude/CLAUDE.local.md

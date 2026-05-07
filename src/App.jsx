@@ -10,7 +10,6 @@ import AudioImporter from './components/AudioImporter';
 import AudioList from './components/AudioList';
 import PlaybackConsole from './components/PlaybackConsole';
 import TestReport from './components/TestReport';
-import LogAnalyzer from './components/LogAnalyzer';
 import LangfuseFetcher from './components/LangfuseFetcher';
 
 // Logo SVG
@@ -28,14 +27,78 @@ const Logo = () => (
   </svg>
 );
 
+const MODES = {
+  voice: 'voice',
+  report: 'report',
+  langfuse: 'langfuse',
+};
+
+const TAB_ITEMS = [
+  { key: MODES.voice, icon: '🎙️', label: '语音测试' },
+  { key: MODES.report, icon: '📊', label: '测试过程记录' },
+  { key: MODES.langfuse, icon: '🗂️', label: 'Langfuse 日志' },
+];
+
 function AppContent() {
   const { state } = useTest();
-  const [showReport, setShowReport] = useState(false);
-  const [activeMode, setActiveMode] = useState('voice');
+  const [activeMode, setActiveMode] = useState(MODES.voice);
   const isTesting = state.playback.isPlaying || state.playback.isPaused;
 
   const handleTestComplete = () => {
-    setShowReport(true);
+    setActiveMode(MODES.langfuse);
+  };
+
+  const renderMainContent = () => {
+    if (activeMode === MODES.langfuse) {
+      return <LangfuseFetcher />;
+    }
+
+    if (activeMode === MODES.report) {
+      return (
+        <div className="max-w-3xl mx-auto space-y-4">
+          <TestReport />
+          <p className="text-xs text-gray-500 text-center">
+            {isTesting ? '测试进行中：测试过程记录会持续刷新。' : '当前为测试过程记录视图。'}
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* 左侧：唤醒词 + 音频配置 */}
+          <div className="space-y-6">
+            <WakeWordConfig />
+            <VoiceConfig />
+            <PlaybackConsole onTestComplete={handleTestComplete} />
+          </div>
+
+          {/* 右侧：导入 + 列表 */}
+          <div className="space-y-6">
+            <AudioImporter />
+            <AudioList />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderFooterModeText = () => {
+    if (activeMode === MODES.voice) {
+      return (
+        <>
+          <span>🔔 唤醒词: {state.wakeWord.text}</span>
+          <span>📋 {state.testAudios.length} 条音频</span>
+        </>
+      );
+    }
+
+    if (activeMode === MODES.report) {
+      return <span>📊 测试过程记录模式</span>;
+    }
+
+    return <span>🗂️ Langfuse 日志模式</span>;
   };
 
   return (
@@ -56,42 +119,20 @@ function AppContent() {
 
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1 p-1 bg-gray-800 rounded-lg">
-                <button
-                  onClick={() => setActiveMode('voice')}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                    activeMode === 'voice'
-                      ? 'bg-primary text-white'
-                      : 'text-gray-300 hover:bg-gray-700'
-                  }`}
-                >
-                  语音测试
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveMode('log');
-                    setShowReport(false);
-                  }}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                    activeMode === 'log'
-                      ? 'bg-primary text-white'
-                      : 'text-gray-300 hover:bg-gray-700'
-                  }`}
-                >
-                  日志分析
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveMode('langfuse');
-                    setShowReport(false);
-                  }}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                    activeMode === 'langfuse'
-                      ? 'bg-primary text-white'
-                      : 'text-gray-300 hover:bg-gray-700'
-                  }`}
-                >
-                  🗂️ Langfuse 日志
-                </button>
+                {TAB_ITEMS.map((item) => (
+                  <button
+                    key={item.key}
+                    onClick={() => setActiveMode(item.key)}
+                    className={`px-3 py-1.5 text-xs rounded-md transition-colors flex items-center gap-1.5 ${
+                      activeMode === item.key
+                        ? 'bg-primary text-white'
+                        : 'text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                ))}
               </div>
 
               {/* 状态指示 */}
@@ -105,20 +146,6 @@ function AppContent() {
                     : '未添加音频'}
                 </span>
               </div>
-
-              {/* 显示报告按钮 */}
-              {activeMode === 'voice' && (
-                <button
-                  onClick={() => setShowReport(!showReport)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    showReport
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  📊 {showReport ? '收起报告' : '查看报告'}
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -126,46 +153,7 @@ function AppContent() {
 
       {/* 主内容 */}
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {activeMode === 'langfuse' ? (
-          <LangfuseFetcher />
-        ) : activeMode === 'log' ? (
-          <LogAnalyzer />
-        ) : (
-          <div className="space-y-6">
-            {showReport && (
-              <div className="max-w-3xl mx-auto">
-                <TestReport />
-              </div>
-            )}
-
-            {(!showReport || isTesting) && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* 左侧：唤醒词 + 音频配置 */}
-                <div className="space-y-6">
-                  <WakeWordConfig />
-                  <VoiceConfig />
-                  <PlaybackConsole onTestComplete={handleTestComplete} />
-                </div>
-
-                {/* 右侧：导入 + 列表 */}
-                <div className="space-y-6">
-                  <AudioImporter />
-                  <AudioList />
-                </div>
-              </div>
-            )}
-            {showReport && isTesting && (
-              <p className="text-xs text-gray-500 text-center">
-                测试进行中：已展示报告预览，播放控制台保持运行，不会中断音频播放。
-              </p>
-            )}
-            {showReport && !isTesting && (
-              <p className="text-xs text-gray-500 text-center">
-                当前为报告视图，点击“收起报告”可返回编辑与播放控制台。
-              </p>
-            )}
-          </div>
-        )}
+        {renderMainContent()}
       </main>
 
       {/* 页脚 */}
@@ -176,14 +164,7 @@ function AppContent() {
               VoiceAuto v1.0 - 语音自动化测试平台
             </div>
             <div className="flex items-center gap-4">
-              {activeMode === 'voice' ? (
-                <>
-                  <span>🔔 唤醒词: {state.wakeWord.text}</span>
-                  <span>📋 {state.testAudios.length} 条音频</span>
-                </>
-              ) : (
-                <span>🧾 日志分析模式</span>
-              )}
+              {renderFooterModeText()}
             </div>
           </div>
         </div>

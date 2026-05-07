@@ -1,5 +1,10 @@
 # VoiceAuto 架构文档
 
+## 文档定位
+
+- 目标读者：研发与架构维护人员。
+- 内容范围：系统分层、运行链路、状态管理、容错策略、模块迁移与协作约定。
+
 ## 1. 架构目标
 
 VoiceAuto 采用纯前端架构，聚焦语音测试与日志分析两条主流程，核心目标如下：
@@ -51,7 +56,7 @@ VoiceAuto 采用纯前端架构，聚焦语音测试与日志分析两条主流�
 - App.jsx 作为页面壳层，使用 TestProvider 注入全局状态。
 - 顶部模式切换：
   - 语音测试模式（Voice Test）
-  - 日志分析模式（Log Analyzer）
+  - 测试过程记录模式（Test Report）
   - Langfuse 日志获取模式（Langfuse 日志）
 
 ### 4.2 语音测试链路
@@ -249,16 +254,129 @@ ttsService 是语音能力统一入口：
 - 可选引入后端服务实现历史报告归档与跨端共享。
 - 针对 useTestRunner 增加更细粒度结果状态（成功/失败/跳过/中断）。
 
-## 12. 当日变更（2026-04-22）
+## 12. 模块化目录与迁移策略（已从根目录架构文档同步）
 
-- 修复循环播放在第 2 轮起可能出现同一用例连续播放的问题。
-- 新增循环播放次数配置，并将可选上限扩展至 50 次。
-- 新增播放序列调试日志开关，可输出实际执行序列到浏览器控制台。
-- 修复“测试中查看报告会打断播放”的问题，支持测试过程中查看报告预览。
-- 修复“查看报告后内容空白”问题，报告面板改为稳定渲染，空数据时显示占位提示。
-## 13. 当日变更（2026-04-28）
+### 12.1 目录结构（模块化目标形态）
 
-- 新增 `langfuseService.js`：导出 `ENVIRONMENTS` 配置对象（UAT / TEST / PROD）、`FetchController`、`fetchTraces`、`fetchObservations`，统一通过 envKey 选择目标环境凭据和代理路径。
-- 新增 `LangfuseFetcher.jsx`：Langfuse 日志获取 UI，包含环境切换器、时间选择器、进度展示、暂停/继续/终止控制、数据统计、表格预览、Excel/JSON 下载。
-- 更新 `vite.config.js`：新增三条代理规则（`/langfuse-api-uat`、`/langfuse-api-test`、`/langfuse-api-prod`），各自路径重写转发到对应 Langfuse 实例。
-- Langfuse 模式集成到 App.jsx 第三个 Tab。
+```text
+src/
+├── modules/                    # 功能模块（按业务域组织）
+│   ├── langfuse/               # Langfuse 日志获取和导出
+│   │   ├── services/
+│   │   │   └── langfuseService.js
+│   │   ├── utils/
+│   │   │   ├── sessionExtractor.js
+│   │   │   └── excelExporter.js
+│   │   ├── components/         # 逐步迁移中
+│   │   └── index.js
+│   ├── audio/
+│   │   ├── utils/              # audioHelpers.js, audioUtils.jsx
+│   │   ├── components/
+│   │   └── index.js
+│   ├── test/
+│   │   ├── utils/              # reportGenerator.js
+│   │   ├── components/
+│   │   ├── hooks/              # useTestRunner（可选迁移）
+│   │   └── index.js
+│   ├── log/
+│   │   ├── utils/              # logAnalysis.js
+│   │   ├── components/
+│   │   └── index.js
+│   └── config/
+│       ├── utils/              # formatters.js
+│       ├── components/
+│       └── index.js
+├── common/
+│   └── utils/                  # fileHelpers.js
+├── hooks/                      # 跨模块通用 Hook
+├── components/                 # 共享 UI 组件
+├── services/                   # 共享服务
+├── stores/                     # 全局状态
+├── constants/                  # 全局常量
+├── App.jsx
+├── main.jsx
+└── index.css
+```
+
+### 12.2 架构原则
+
+1. 模块隔离
+- 功能按业务域组织在 `modules/` 下。
+- 每个模块保持 `services/`、`utils/`、`components/` 分层结构。
+- 模块间通信优先通过 `index.js` 导出入口完成。
+
+2. 分层设计
+- Services：数据获取与 API 调用。
+- Utils：业务逻辑与数据处理。
+- Components：UI 展示。
+- Hooks：可复用状态逻辑。
+
+3. 迁移策略
+- 已迁移：
+  - `src/services/langfuseService.js` -> `src/modules/langfuse/services/langfuseService.js`
+  - `src/utils/excelExport.js` -> `src/modules/langfuse/utils/sessionExtractor.js` + `src/modules/langfuse/utils/excelExporter.js`
+- 待按需迁移：
+  - 音频相关 -> `modules/audio/`
+  - 测试相关 -> `modules/test/`
+  - 日志相关 -> `modules/log/`
+  - 配置相关 -> `modules/config/`
+
+4. 导入规范
+- 推荐从模块入口导入，避免跨层级路径耦合。
+- 示例：
+
+```javascript
+import { fetchTraces, exportToExcel } from '../modules/langfuse';
+```
+
+### 12.3 后续优化方向
+
+1. 在模式或路由层增加懒加载，实现按需加载。
+2. 为模块补齐类型定义（JSDoc 或 TypeScript）。
+3. 为模块补齐测试目录（`__tests__/`）。
+4. 为模块补齐 README（对外 API 与使用示例）。
+5. 评估共享 UI 的沉淀路径（`components/common/` 或独立组件库）。
+
+### 12.4 开发规范补充
+
+1. 模块内引用使用相对路径。
+2. 跨模块引用优先走模块导出入口。
+3. 新功能优先落到对应模块，避免全局散落。
+4. 定期审视 `common/` 与 `hooks/`，清理无用代码。
+
+## 13. 项目协作上下文（已从 .claude/CLAUDE.md 同步）
+
+### 13.1 项目定位
+
+- 项目名称：VoiceAuto
+- 目标：语音自动化测试与日志分析/拉取工具
+
+### 13.2 技术栈
+
+- 前端：React 18 + Vite 5
+- 样式：Tailwind CSS
+- 数据导出：xlsx, file-saver, jszip
+
+### 13.3 架构参考与目录约定
+
+- 当前架构文档：docx/ARCH.md
+- 产品说明文档：docx/PRODUCT.md
+- 目录职责：
+  - `src/components` 页面与业务组件
+  - `src/hooks` 复用逻辑
+  - `src/stores` 全局状态管理
+  - `src/modules` 模块化业务域
+  - `src/utils` 通用工具函数
+
+### 13.4 协作约定
+
+- 代码修改后必须完成可执行验证（至少运行构建或关键测试）。
+- 新增目录级规则放到 `.claude/rules/`。
+- 固定流程能力放到 `.claude/skills/`。
+- 个人偏好配置写入 `CLAUDE.local.md`（且不入库）。
+
+## 14. 变更记录归档说明
+
+- 架构文件不再维护逐日“变更清单”明细。
+- Bug 修复明细请持续更新到：docx/BUGFIX-RECORD.md
+- 功能优化明细请持续更新到：docx/FEATURE-OPTIMIZATION-RECORD.md

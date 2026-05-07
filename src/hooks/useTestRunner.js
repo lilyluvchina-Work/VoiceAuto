@@ -8,6 +8,21 @@ import { playAudioItem } from '../utils/audioHelpers';
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+const buildQueue = (audios, loopCount) => {
+  const queue = [];
+  for (let round = 0; round < loopCount; round++) {
+    for (let i = 0; i < audios.length; i++) {
+      queue.push({
+        audio: audios[i],
+        listIndex: i,
+        round: round + 1,
+        totalRounds: loopCount
+      });
+    }
+  }
+  return queue;
+};
+
 export default function useTestRunner({ onTestComplete } = {}) {
   const { state, dispatch } = useTest();
   const { wakeWord, testAudios, playback, defaultVoiceConfig, testOptions } = state;
@@ -16,6 +31,8 @@ export default function useTestRunner({ onTestComplete } = {}) {
 
   const [currentAudioText, setCurrentAudioText] = useState('');
   const startTimeRef = useRef(null);
+  const firstTestAudioTimeRef = useRef(null);
+  const lastTestAudioTimeRef = useRef(null);
   const isPlayingRef = useRef(false);
   const isPausedRef = useRef(false);
   const runIdRef = useRef(0);
@@ -33,30 +50,23 @@ export default function useTestRunner({ onTestComplete } = {}) {
       return;
     }
 
-    const queue = [];
-    for (let round = 0; round < testOptions.loopCount; round++) {
-      for (let i = 0; i < testAudios.length; i++) {
-        queue.push({
-          audio: testAudios[i],
-          listIndex: i,
-          round: round + 1,
-          totalRounds: testOptions.loopCount
-        });
-      }
-    }
+    const queue = buildQueue(testAudios, testOptions.loopCount);
+    const shouldStop = () => !isPlayingRef.current || runIdRef.current !== runId;
 
     dispatch(actions.startPlayback());
     isPlayingRef.current = true;
     isPausedRef.current = false;
     startTimeRef.current = Date.now();
+    firstTestAudioTimeRef.current = null;
+    lastTestAudioTimeRef.current = null;
 
     try {
       for (let cursor = 0; cursor < queue.length; cursor++) {
-        if (!isPlayingRef.current || runIdRef.current !== runId) return;
+        if (shouldStop()) return;
 
         while (isPausedRef.current) {
           await wait(100);
-          if (!isPlayingRef.current || runIdRef.current !== runId) return;
+          if (shouldStop()) return;
         }
 
         const item = queue[cursor];
@@ -80,13 +90,13 @@ export default function useTestRunner({ onTestComplete } = {}) {
           console.error('Wake word playback failed:', err);
         }
 
-        if (!isPlayingRef.current || runIdRef.current !== runId) return;
+        if (shouldStop()) return;
 
         // 唤醒后延迟
         dispatch(actions.setPlaybackState({ currentType: 'delay' }));
         await wait(wakeWord.wakeAfterDelay);
 
-        if (!isPlayingRef.current || runIdRef.current !== runId) return;
+        if (shouldStop()) return;
 
         // 播放测试音频
         dispatch(actions.setPlaybackState({
@@ -95,6 +105,11 @@ export default function useTestRunner({ onTestComplete } = {}) {
           currentType: 'test'
         }));
         setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · ${item.audio.text}`);
+
+        if (!firstTestAudioTimeRef.current) {
+          firstTestAudioTimeRef.current = Date.now();
+          dispatch(actions.setReport({ firstTestAudioTime: firstTestAudioTimeRef.current }));
+        }
 
         if (testOptions.debugSequence) {
           console.log(
@@ -109,6 +124,9 @@ export default function useTestRunner({ onTestComplete } = {}) {
           success = false;
           console.error('Audio playback failed:', err);
         }
+
+        lastTestAudioTimeRef.current = Date.now();
+        dispatch(actions.setReport({ lastTestAudioTime: lastTestAudioTimeRef.current }));
 
         // 记录结果
         dispatch(actions.addReportCase({
@@ -131,7 +149,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
         }
       }
 
-      if (!isPlayingRef.current || runIdRef.current !== runId) return;
+      if (shouldStop()) return;
       dispatch(actions.completeReport());
       isPlayingRef.current = false;
       isPausedRef.current = false;
@@ -180,6 +198,9 @@ export default function useTestRunner({ onTestComplete } = {}) {
     runIdRef.current += 1;
     isPlayingRef.current = false;
     isPausedRef.current = false;
+    if (lastTestAudioTimeRef.current) {
+      dispatch(actions.setReport({ lastTestAudioTime: lastTestAudioTimeRef.current }));
+    }
     ttsService.stopAudio();
     dispatch(actions.stopPlayback());
     setCurrentAudioText('');
@@ -189,6 +210,8 @@ export default function useTestRunner({ onTestComplete } = {}) {
     runIdRef.current += 1;
     isPlayingRef.current = false;
     isPausedRef.current = false;
+    firstTestAudioTimeRef.current = null;
+    lastTestAudioTimeRef.current = null;
     dispatch(actions.resetTest());
     setCurrentAudioText('');
   }, [dispatch]);
