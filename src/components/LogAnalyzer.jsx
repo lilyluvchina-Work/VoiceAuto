@@ -7,9 +7,44 @@ import {
 } from '../utils/logAnalysis';
 
 const LOG_RECORD_STORAGE_KEY = 'voiceauto_log_records_v1';
+const TASK_ARCHIVE_STORAGE_KEY = 'voiceauto_task_archive_v1';
 const MAX_RECORDS = 30;
 const MAX_PERSIST_RECORDS = 10;
 const MAX_PERSIST_ENTRIES_PER_RECORD = 300;
+const MAX_ANALYZE_LINES = 80000;
+const MAX_TASK_RECORDS = 60;
+
+function readTaskArchive() {
+  try {
+    const raw = localStorage.getItem(TASK_ARCHIVE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeTaskArchive(records) {
+  try {
+    localStorage.setItem(TASK_ARCHIVE_STORAGE_KEY, JSON.stringify(records.slice(0, MAX_TASK_RECORDS)));
+  } catch {
+    // 归档失败不阻断主流程
+  }
+}
+
+function appendTaskRecord(task) {
+  const next = [task, ...readTaskArchive()];
+  writeTaskArchive(next);
+  return next;
+}
+
+function updateTaskRecord(taskId, patch) {
+  const next = readTaskArchive().map((item) => (
+    item.id === taskId ? { ...item, ...patch } : item
+  ));
+  writeTaskArchive(next);
+  return next;
+}
 
 function compactEntry(entry) {
   return {
@@ -88,6 +123,8 @@ export default function LogAnalyzer() {
   const [records, setRecords] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [storageNotice, setStorageNotice] = useState('');
+  const [parseNotice, setParseNotice] = useState('');
+  const [taskRecords, setTaskRecords] = useState([]);
 
   const [recordQuery, setRecordQuery] = useState('');
   const [recordDate, setRecordDate] = useState('');
@@ -114,6 +151,10 @@ export default function LogAnalyzer() {
     } catch {
       // 忽略损坏缓存
     }
+  }, []);
+
+  useEffect(() => {
+    setTaskRecords(readTaskArchive());
   }, []);
 
   useEffect(() => {
@@ -186,8 +227,20 @@ export default function LogAnalyzer() {
   const analysis = useMemo(() => analyzeLogEntries(filteredEntries), [filteredEntries]);
 
   const importLogText = (name, text, size) => {
-    const entries = parseLogContent(text);
+    const parseResult = parseLogContent(text, {
+      maxLines: MAX_ANALYZE_LINES,
+      keepTail: true,
+      returnMeta: true
+    });
+    const entries = parseResult.entries;
+    const parseMeta = parseResult.meta;
     const summary = analyzeLogEntries(entries);
+
+    if (parseMeta.droppedLines > 0) {
+      setParseNotice(`日志行数过大，已自动仅分析最近 ${parseMeta.parsedLines} 行（共 ${parseMeta.totalLines} 行）。`);
+    } else if (parseNotice) {
+      setParseNotice('');
+    }
 
     const record = {
       id: `record_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -205,6 +258,8 @@ export default function LogAnalyzer() {
       return merged;
     });
     setActiveId(record.id);
+
+    return { record, parseMeta };
   };
 
   const handleFileImport = async (event) => {
@@ -213,11 +268,35 @@ export default function LogAnalyzer() {
       return;
     }
 
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    setTaskRecords(appendTaskRecord({
+      id: taskId,
+      type: 'LOG_IMPORT',
+      name: file.name,
+      size: file.size,
+      status: 'running',
+      startAt: Date.now(),
+      endAt: null,
+      detail: '导入中'
+    }));
+
     try {
       const content = await readAnyFile(file);
-      importLogText(file.name, content, file.size);
+      const { record, parseMeta } = importLogText(file.name, content, file.size);
+      setTaskRecords(updateTaskRecord(taskId, {
+        status: 'success',
+        endAt: Date.now(),
+        detail: parseMeta.droppedLines > 0
+          ? `成功，分析 ${parseMeta.parsedLines}/${parseMeta.totalLines} 行`
+          : `成功，分析 ${record.lineCount} 行`
+      }));
       alert('日志导入成功');
     } catch (err) {
+      setTaskRecords(updateTaskRecord(taskId, {
+        status: 'failed',
+        endAt: Date.now(),
+        detail: String(err?.message || '导入失败')
+      }));
       alert(`日志导入失败: ${err.message}`);
     } finally {
       event.target.value = '';
@@ -260,6 +339,38 @@ export default function LogAnalyzer() {
             {storageNotice}
           </div>
         )}
+
+        {parseNotice && (
+          <div className="mt-4 p-3 rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-200 text-sm">
+            {parseNotice}
+          </div>
+        )}
+
+        <div className="mt-4 p-4 rounded-lg bg-gray-800/40 border border-gray-700 space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-gray-300">任务归档（最近 {Math.min(taskRecords.length, 10)} 条）</h3>
+            <span className="text-xs text-gray-500">本地持久化</span>
+          </div>
+          {taskRecords.length === 0 && (
+            <p className="text-xs text-gray-500">暂无任务记录</p>
+          )}
+          {taskRecords.slice(0, 10).map((task) => (
+            <div key={task.id} className="text-xs text-gray-300 flex items-center justify-between gap-3">
+              <span className="truncate flex-1">
+                {task.name} · {task.detail}
+              </span>
+              <span className={`px-2 py-0.5 rounded-full ${
+                task.status === 'success'
+                  ? 'bg-emerald-500/20 text-emerald-300'
+                  : task.status === 'failed'
+                    ? 'bg-red-500/20 text-red-300'
+                    : 'bg-amber-500/20 text-amber-300'
+              }`}>
+                {task.status === 'success' ? '成功' : task.status === 'failed' ? '失败' : '进行中'}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">

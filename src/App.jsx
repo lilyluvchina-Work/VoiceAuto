@@ -6,11 +6,11 @@ import React, { useState } from 'react';
 import { TestProvider, useTest } from './stores/testStore';
 import WakeWordConfig from './components/WakeWordConfig';
 import VoiceConfig from './components/VoiceConfig';
-import AudioImporter from './components/AudioImporter';
 import AudioList from './components/AudioList';
 import PlaybackConsole from './components/PlaybackConsole';
 import TestReport from './components/TestReport';
 import LangfuseFetcher from './components/LangfuseFetcher';
+import TestCaseManager from './components/TestCaseManager';
 
 // Logo SVG
 const Logo = () => (
@@ -29,12 +29,14 @@ const Logo = () => (
 
 const MODES = {
   voice: 'voice',
+  cases: 'cases',
   report: 'report',
   langfuse: 'langfuse',
 };
 
 const TAB_ITEMS = [
   { key: MODES.voice, icon: '🎙️', label: '语音测试' },
+  { key: MODES.cases, icon: '🗃️', label: '测试用例管理' },
   { key: MODES.report, icon: '📊', label: '测试过程记录' },
   { key: MODES.langfuse, icon: '🗂️', label: 'Langfuse 日志' },
 ];
@@ -43,14 +45,23 @@ function AppContent() {
   const { state } = useTest();
   const [activeMode, setActiveMode] = useState(MODES.voice);
   const isTesting = state.playback.isPlaying || state.playback.isPaused;
+  const shouldAutoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
 
   const handleTestComplete = () => {
-    setActiveMode(MODES.langfuse);
+    if (shouldAutoFetchLangfuseLogs) {
+      setActiveMode(MODES.langfuse);
+      return;
+    }
+    setActiveMode(MODES.voice);
   };
 
   const renderMainContent = () => {
     if (activeMode === MODES.langfuse) {
       return <LangfuseFetcher />;
+    }
+
+    if (activeMode === MODES.cases) {
+      return <TestCaseManager />;
     }
 
     if (activeMode === MODES.report) {
@@ -74,9 +85,8 @@ function AppContent() {
             <PlaybackConsole onTestComplete={handleTestComplete} />
           </div>
 
-          {/* 右侧：导入 + 列表 */}
+          {/* 右侧：测试音频列表 */}
           <div className="space-y-6">
-            <AudioImporter />
             <AudioList />
           </div>
         </div>
@@ -96,6 +106,10 @@ function AppContent() {
 
     if (activeMode === MODES.report) {
       return <span>📊 测试过程记录模式</span>;
+    }
+
+    if (activeMode === MODES.cases) {
+      return <span>🗃️ 测试用例管理模式</span>;
     }
 
     return <span>🗂️ Langfuse 日志模式</span>;

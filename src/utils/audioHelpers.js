@@ -52,12 +52,15 @@ export function getFileExtension(filename) {
 
 /**
  * 获取音频来源类型标识
- * @param {string} source - 'tts' | 'file'
+ * @param {string} source - 'tts' | 'tapd' | 'file'
  * @returns {object} { icon, label }
  */
 export function getSourceInfo(source) {
   if (source === 'tts') {
     return { icon: '🎵', label: 'TTS' };
+  }
+  if (source === 'tapd') {
+    return { icon: '🧩', label: 'TAPD' };
   }
   return { icon: '📁', label: '文件' };
 }

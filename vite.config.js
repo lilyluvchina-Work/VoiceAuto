@@ -21,11 +21,19 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
+    strictPort: true,
     open: true,
     proxy: {
       '/langfuse-api-uat':  langfuseProxy('uat'),
       '/langfuse-api-test': langfuseProxy('test'),
       '/langfuse-api-prod': langfuseProxy('prod'),
+      // TAPD API 代理（避免跨域限制）
+      '/tapd-api': {
+        target: 'https://api.tapd.cn',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/tapd-api/, ''),
+        secure: false,
+      },
     }
   }
 })

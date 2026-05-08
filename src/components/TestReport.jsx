@@ -6,6 +6,8 @@ import { useTest } from '../stores/testStore';
 import {
   formatTime,
   generateReportText,
+  generateReportJson,
+  generateReportCsv,
   copyToClipboard
 } from '../utils/audioUtils.jsx';
 
@@ -15,22 +17,46 @@ export default function TestReport() {
 
   const [showReport, setShowReport] = useState(false);
 
+  const getReportData = () => ({
+    startTime: report.startTime || Date.now(),
+    endTime: report.endTime || Date.now(),
+    wakeWord: wakeWord.text,
+    wakeAfterDelay: wakeWord.wakeAfterDelay,
+    wakeIntervalDelay: wakeWord.wakeIntervalDelay,
+    totalCases: report.cases.length,
+    successCount: report.successCount,
+    failCount: report.failCount,
+    totalDuration: report.endTime - report.startTime || 0,
+    testCases: report.cases
+  });
+
   // 生成报告文本
   const getReportText = () => {
     if (report.cases.length === 0) return '';
 
-    return generateReportText({
-      startTime: report.startTime || Date.now(),
-      endTime: report.endTime || Date.now(),
-      wakeWord: wakeWord.text,
-      wakeAfterDelay: wakeWord.wakeAfterDelay,
-      wakeIntervalDelay: wakeWord.wakeIntervalDelay,
-      totalCases: report.cases.length,
-      successCount: report.successCount,
-      failCount: report.failCount,
-      totalDuration: report.endTime - report.startTime || 0,
-      testCases: report.cases
-    });
+    return generateReportText(getReportData());
+  };
+
+  const handleDownloadJson = () => {
+    const content = JSON.stringify(generateReportJson(getReportData()), null, 2);
+    const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `VoiceAuto测试报告_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadCsv = () => {
+    const content = generateReportCsv(getReportData());
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `VoiceAuto测试报告_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // 复制报告
@@ -167,6 +193,20 @@ export default function TestReport() {
                          rounded-lg transition-colors"
               >
                 ⏬ 下载报告
+              </button>
+              <button
+                onClick={handleDownloadJson}
+                className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500
+                         rounded-lg transition-colors"
+              >
+                JSON
+              </button>
+              <button
+                onClick={handleDownloadCsv}
+                className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500
+                         rounded-lg transition-colors"
+              >
+                CSV
               </button>
             </div>
           </div>

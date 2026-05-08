@@ -140,10 +140,22 @@ function extractMessage(line, tsRaw, level) {
   return text || String(line || '');
 }
 
-export function parseLogContent(content) {
-  const rows = String(content || '')
+export function parseLogContent(content, options = {}) {
+  const { maxLines = 0, keepTail = true, returnMeta = false } = options;
+
+  const allRows = String(content || '')
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0);
+
+  const shouldLimit = Number.isFinite(maxLines) && maxLines > 0;
+  const needsTrim = shouldLimit && allRows.length > maxLines;
+  const rows = needsTrim
+    ? (keepTail ? allRows.slice(-maxLines) : allRows.slice(0, maxLines))
+    : allRows;
+
+  const lineOffset = needsTrim && keepTail
+    ? allRows.length - rows.length
+    : 0;
 
   const entries = rows.map((line, index) => {
     const { date, raw } = extractTimestamp(line);
@@ -152,7 +164,7 @@ export function parseLogContent(content) {
 
     return {
       id: `log_${Date.now()}_${index}`,
-      lineNo: index + 1,
+      lineNo: lineOffset + index + 1,
       raw,
       timestamp: date ? date.toISOString() : null,
       ts: date ? date.getTime() : null,
@@ -164,7 +176,19 @@ export function parseLogContent(content) {
     };
   });
 
-  return entries;
+  if (!returnMeta) {
+    return entries;
+  }
+
+  return {
+    entries,
+    meta: {
+      totalLines: allRows.length,
+      parsedLines: rows.length,
+      droppedLines: Math.max(0, allRows.length - rows.length),
+      keepTail: Boolean(keepTail)
+    }
+  };
 }
 
 function calcLevelMap(entries) {

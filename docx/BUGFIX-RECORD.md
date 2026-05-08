@@ -9,6 +9,8 @@
 ## 影响范围（近期）
 
 - src/components/LangfuseFetcher.jsx
+- src/components/PlaybackConsole.jsx
+- vite.config.js
 - src/modules/langfuse/utils/excelExporter.js
 - src/index.css
 
@@ -38,6 +40,21 @@
   - 现象：输入框内置图标只显示高亮底色，未显示对应图标。
   - 根因：浏览器原生 indicator 图标在样式覆盖后可见性不足。
   - 修复：为 `date/time` indicator 注入显式 SVG（日期=日历，时间=时钟）。
+
+### 2026-05-08
+
+1. 修复开发环境端口漂移导致页面连不上问题。
+  - 现象：访问 `localhost:3000` 时偶发跳到 `3001` 并出现 `ERR_CONNECTION_REFUSED`。
+  - 根因：Vite 在端口被占用时自动回退到其他端口，前端访问口径不一致。
+  - 修复：在 `vite.config.js` 的 `server` 中增加 `strictPort: true`，端口冲突时直接报错。
+2. 修复“自动拉取 Langfuse 日志”入口不明显问题。
+  - 现象：播放控制台中的开关不易被发现，用户误以为功能未生效。
+  - 根因：原入口为弱化样式的普通复选框文案。
+  - 修复：在 `PlaybackConsole` 调整为高可见性的高亮卡片样式并显示当前状态提示。
+3. 修复 Langfuse 点击“获取日志”后历史结果瞬间消失问题。
+  - 现象：重新拉取时页面已有结果会立即清空，体验为“数据秒无”。
+  - 根因：`handleFetch` 启动时立即调用 `resetFetchedResultState()`，且结果区仅在 `isDone` 时渲染。
+  - 修复：拉取开始时仅重置进度，不清空结果；结果区改为“有历史数据或已完成”均可显示。
 
 ## 归档来源
 

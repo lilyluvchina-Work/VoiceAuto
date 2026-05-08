@@ -10,6 +10,13 @@ export default function PlaybackConsole({ onTestComplete }) {
   const { state, dispatch } = useTest();
   const loopCount = state.testOptions?.loopCount || 1;
   const debugSequence = Boolean(state.testOptions?.debugSequence);
+  const autoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
+  const selectedTestModule = state.testOptions?.selectedTestModule || 'all';
+
+  const moduleOptions = React.useMemo(() => {
+    const modules = Array.from(new Set((state.testAudios || []).map((audio) => audio.module || '未分类')));
+    return ['all', ...modules];
+  }, [state.testAudios]);
 
   const {
     currentAudioText,
@@ -33,6 +40,14 @@ export default function PlaybackConsole({ onTestComplete }) {
 
   const handleDebugSequenceChange = (e) => {
     dispatch(actions.setDebugSequence(e.target.checked));
+  };
+
+  const handleAutoFetchLangfuseLogsChange = (e) => {
+    dispatch(actions.setAutoFetchLangfuseLogs(e.target.checked));
+  };
+
+  const handleSelectedModuleChange = (e) => {
+    dispatch(actions.setSelectedTestModule(e.target.value));
   };
 
   // 键盘快捷键
@@ -88,6 +103,25 @@ export default function PlaybackConsole({ onTestComplete }) {
         <p className="mt-2 text-xs text-gray-500">
           总播放条数 = 测试音频条数 x 循环次数（当前 {testAudios.length} x {loopCount} = {totalCases}）
         </p>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <label className="text-sm text-gray-300">测试模块</label>
+          <select
+            value={selectedTestModule}
+            onChange={handleSelectedModuleChange}
+            disabled={isPlayingRef.current || isPausedRef.current}
+            className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
+          >
+            <option value="all">全部模块</option>
+            {moduleOptions
+              .filter((moduleName) => moduleName !== 'all')
+              .map((moduleName) => (
+                <option key={moduleName} value={moduleName}>{moduleName}</option>
+              ))}
+          </select>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          支持按单独功能模块执行测试。
+        </p>
         <label className="mt-3 inline-flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -98,6 +132,27 @@ export default function PlaybackConsole({ onTestComplete }) {
           />
           输出播放序列调试日志（控制台）
         </label>
+        <div className="mt-3 p-3 rounded-lg border border-primary/40 bg-primary/10">
+          <div className="flex items-center justify-between gap-3">
+            <label className="inline-flex items-center gap-2 text-sm text-gray-200 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={autoFetchLangfuseLogs}
+                onChange={handleAutoFetchLangfuseLogsChange}
+                disabled={isPlayingRef.current || isPausedRef.current}
+                className="w-4 h-4 rounded bg-gray-800 border-gray-600 disabled:opacity-50"
+              />
+              是否自动拉取langfuse日志
+            </label>
+            <span className={`text-xs px-2 py-1 rounded-full ${
+              autoFetchLangfuseLogs
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                : 'bg-gray-700 text-gray-300 border border-gray-600'
+            }`}>
+              {autoFetchLangfuseLogs ? '已开启：测试结束自动跳转 Langfuse' : '已关闭：测试结束停留语音测试'}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* 状态显示 */}

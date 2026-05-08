@@ -28,6 +28,7 @@
    - 修复与优化分开表述，避免信息混杂。
 
 3. 文档同步
+   - **Bug 修复或新增功能点后，必须自动更新对应的 md 文件，无需等待用户提醒。**
    - Bug 修复写入 `docx/BUGFIX-RECORD.md`。
    - 功能优化写入 `docx/FEATURE-OPTIMIZATION-RECORD.md`。
    - 目录/架构变化同步 `docx/ARCH.md` 或 `docx/README.md`。

@@ -11,5 +11,5 @@
 
 export { formatTime, formatDuration, generateId } from './formatters';
 export { getAudioDuration, isValidAudioFile, getFileExtension, getSourceInfo, playAudioItem } from './audioHelpers';
-export { readTextFile, parseTestCases, parseTestCasesWithModule, inferModuleFromCaseText, downloadBlob, copyToClipboard } from './fileHelpers';
-export { generateReportText } from './reportGenerator';
+export { readTextFile, parseTestCases, parseTestCasesWithModule, parseTapdTestCases, inferModuleFromCaseText, downloadBlob, copyToClipboard } from './fileHelpers';
+export { generateReportText, generateReportJson, generateReportCsv } from './reportGenerator';

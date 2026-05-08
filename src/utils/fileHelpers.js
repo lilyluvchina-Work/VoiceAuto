@@ -123,6 +123,74 @@ export function parseTestCasesWithModule(text, fallbackModule = '未分类') {
   return result;
 }
 
+function normalizeTapdCaseText(text) {
+  const numberPrefixPattern = /^#?\d+\s*(?:-|:|\.)\s*/;
+  const tapdPrefixPattern = /^(TAPD[-_ ]?)?\d+\s*(?:-|:|\.)\s*/i;
+
+  return String(text || '')
+    .replace(/^['"\s]+|['"\s]+$/g, '')
+    .replace(numberPrefixPattern, '')
+    .replace(tapdPrefixPattern, '')
+    .replace(/^\[[^\]]+\]\s*/, '')
+    .trim();
+}
+
+function looksLikeHeaderLine(cells) {
+  const merged = cells.join(' ').toLowerCase();
+  return /title|summary|case|id|步骤|标题|用例|需求|tapd/.test(merged);
+}
+
+/**
+ * 解析 TAPD 导出的文本/表格内容
+ * 支持粘贴表格（tab/csv/竖线）和纯文本逐行导入
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function parseTapdTestCases(text) {
+  const lines = String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const result = [];
+  const seen = new Set();
+
+  lines.forEach((line) => {
+    const cells = line.split(/\t|\||,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map((cell) => cell.trim()).filter(Boolean);
+    if (cells.length > 1 && looksLikeHeaderLine(cells)) {
+      return;
+    }
+
+    const candidates = cells.length > 0 ? cells : [line];
+    let selected = '';
+
+    for (const item of candidates) {
+      const normalized = normalizeTapdCaseText(item);
+      if (!normalized || /^\d+$/.test(normalized)) {
+        continue;
+      }
+      if (normalized.length < 2) {
+        continue;
+      }
+      selected = normalized;
+      if (normalized.length >= 6) {
+        break;
+      }
+    }
+
+    if (!selected) {
+      return;
+    }
+
+    if (!seen.has(selected)) {
+      seen.add(selected);
+      result.push(selected);
+    }
+  });
+
+  return result;
+}
+
 /**
  * 下载 Blob 为文件
  * @param {Blob} blob

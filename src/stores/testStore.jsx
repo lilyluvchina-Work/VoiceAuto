@@ -35,7 +35,9 @@ const initialState = {
   // 测试选项
   testOptions: {
     loopCount: 1,
-    debugSequence: false
+    debugSequence: false,
+    autoFetchLangfuseLogs: true,
+    selectedTestModule: 'all'
   },
 
   // 当前播放状态
@@ -75,6 +77,8 @@ const ActionTypes = {
   UPDATE_TEST_AUDIO: 'UPDATE_TEST_AUDIO',
   SET_LOOP_COUNT: 'SET_LOOP_COUNT',
   SET_DEBUG_SEQUENCE: 'SET_DEBUG_SEQUENCE',
+  SET_AUTO_FETCH_LANGFUSE_LOGS: 'SET_AUTO_FETCH_LANGFUSE_LOGS',
+  SET_SELECTED_TEST_MODULE: 'SET_SELECTED_TEST_MODULE',
   SET_PLAYBACK_STATE: 'SET_PLAYBACK_STATE',
   START_PLAYBACK: 'START_PLAYBACK',
   PAUSE_PLAYBACK: 'PAUSE_PLAYBACK',
@@ -164,6 +168,24 @@ function testReducer(state, action) {
         testOptions: {
           ...state.testOptions,
           debugSequence: Boolean(action.payload)
+        }
+      };
+
+    case ActionTypes.SET_AUTO_FETCH_LANGFUSE_LOGS:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          autoFetchLangfuseLogs: Boolean(action.payload)
+        }
+      };
+
+    case ActionTypes.SET_SELECTED_TEST_MODULE:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          selectedTestModule: action.payload || 'all'
         }
       };
 
@@ -299,7 +321,9 @@ export function TestProvider({ children }) {
           testOptions: {
             ...init.testOptions,
             loopCount: Math.max(1, Math.min(99, parsed.testOptions?.loopCount || init.testOptions.loopCount)),
-            debugSequence: Boolean(parsed.testOptions?.debugSequence)
+            debugSequence: Boolean(parsed.testOptions?.debugSequence),
+            autoFetchLangfuseLogs: parsed.testOptions?.autoFetchLangfuseLogs !== false,
+            selectedTestModule: parsed.testOptions?.selectedTestModule || 'all'
           }
         };
       }
@@ -311,6 +335,22 @@ export function TestProvider({ children }) {
 
   // 保存状态到 localStorage
   useEffect(() => {
+    const serializedAudios = state.testAudios.map((audio) => {
+      const {
+        audioBlob,
+        originalFile,
+        audioUrl,
+        ...rest
+      } = audio;
+
+      return {
+        ...rest,
+        // Blob/File 不能可靠持久化；文件音频 URL 刷新后也可能失效
+        audioBlob: null,
+        audioUrl: audio.source === 'file' ? null : (audioUrl || null),
+      };
+    });
+
     const toSave = {
       wakeWord: {
         text: state.wakeWord.text,
@@ -319,14 +359,8 @@ export function TestProvider({ children }) {
       },
       defaultVoiceConfig: state.defaultVoiceConfig,
       testOptions: state.testOptions,
-      testAudios: state.testAudios.map(a => ({
-        id: a.id,
-        text: a.text,
-        module: a.module || '未分类',
-        source: a.source,
-        config: a.config,
-        duration: a.duration
-      }))
+      // 持久化完整可序列化字段，避免 TAPD 导入元数据刷新后丢失
+      testAudios: serializedAudios
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   }, [state.wakeWord, state.defaultVoiceConfig, state.testOptions, state.testAudios]);
@@ -401,6 +435,16 @@ export const actions = {
   setDebugSequence: (enabled) => ({
     type: ActionTypes.SET_DEBUG_SEQUENCE,
     payload: enabled
+  }),
+
+  setAutoFetchLangfuseLogs: (enabled) => ({
+    type: ActionTypes.SET_AUTO_FETCH_LANGFUSE_LOGS,
+    payload: enabled
+  }),
+
+  setSelectedTestModule: (moduleName) => ({
+    type: ActionTypes.SET_SELECTED_TEST_MODULE,
+    payload: moduleName
   }),
 
   setPlaybackState: (state) => ({

@@ -3,6 +3,110 @@
  */
 import { formatTime } from './formatters';
 
+function toDateText(value) {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString('zh-CN');
+}
+
+function toTimestamp(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : Date.now();
+}
+
+function csvEscape(value) {
+  const text = String(value ?? '');
+  if (!/[",\n\r]/.test(text)) {
+    return text;
+  }
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+/**
+ * 生成结构化报告对象
+ * @param {object} reportData
+ * @returns {object}
+ */
+export function generateReportJson(reportData) {
+  const {
+    startTime,
+    endTime,
+    wakeWord,
+    wakeAfterDelay,
+    wakeIntervalDelay,
+    totalCases,
+    successCount,
+    failCount,
+    totalDuration,
+    testCases
+  } = reportData;
+
+  const normalizedStart = toTimestamp(startTime);
+  const normalizedEnd = toTimestamp(endTime);
+  const safeTotal = Math.max(0, Number(totalCases) || 0);
+  const safeDuration = Math.max(0, Number(totalDuration) || 0);
+  const safeSuccess = Math.max(0, Number(successCount) || 0);
+  const safeFail = Math.max(0, Number(failCount) || 0);
+  const successRate = safeTotal > 0
+    ? Number(((safeSuccess / safeTotal) * 100).toFixed(1))
+    : 0;
+  const avgDurationMs = safeTotal > 0
+    ? Number((safeDuration / safeTotal).toFixed(0))
+    : 0;
+
+  return {
+    schemaVersion: '1.0.0',
+    generatedAt: new Date().toISOString(),
+    summary: {
+      startTime: normalizedStart,
+      endTime: normalizedEnd,
+      startTimeText: toDateText(normalizedStart),
+      endTimeText: toDateText(normalizedEnd),
+      totalCases: safeTotal,
+      successCount: safeSuccess,
+      failCount: safeFail,
+      successRate,
+      totalDurationMs: safeDuration,
+      avgDurationMs
+    },
+    config: {
+      wakeWord: wakeWord || '',
+      wakeAfterDelayMs: Number(wakeAfterDelay) || 0,
+      wakeIntervalDelayMs: Number(wakeIntervalDelay) || 0
+    },
+    cases: (Array.isArray(testCases) ? testCases : []).map((tc, i) => ({
+      index: i + 1,
+      text: tc?.text || '',
+      success: Boolean(tc?.success),
+      durationMs: Number(tc?.duration) || 0,
+      round: Number(tc?.round) || 1,
+      rawIndex: Number.isFinite(Number(tc?.index)) ? Number(tc.index) : i
+    }))
+  };
+}
+
+/**
+ * 生成 CSV 报告文本
+ * @param {object} reportData
+ * @returns {string}
+ */
+export function generateReportCsv(reportData) {
+  const payload = generateReportJson(reportData);
+  const headers = ['index', 'success', 'round', 'durationMs', 'text'];
+  const lines = [headers.join(',')];
+
+  payload.cases.forEach((item) => {
+    lines.push([
+      item.index,
+      item.success,
+      item.round,
+      item.durationMs,
+      csvEscape(item.text)
+    ].join(','));
+  });
+
+  return lines.join('\n');
+}
+
 /**
  * 生成测试报告文本
  * @param {object} reportData
@@ -30,10 +134,7 @@ export function generateReportText(reportData) {
     ? (totalDuration / totalCases).toFixed(1)
     : 0;
 
-  const formatDate = (date) => {
-    const d = new Date(date);
-    return d.toLocaleString('zh-CN');
-  };
+  const formatDate = (date) => toDateText(date);
 
   let text = '';
   text += '═══════════════════════════════════════════════════════\n';

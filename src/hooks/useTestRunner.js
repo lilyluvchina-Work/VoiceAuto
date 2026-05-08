@@ -27,7 +27,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
   const { state, dispatch } = useTest();
   const { wakeWord, testAudios, playback, defaultVoiceConfig, testOptions } = state;
 
-  const totalCases = testAudios.length * (testOptions.loopCount || 1);
+  const playableAudios = testAudios.filter((audio) => {
+    const generated = audio.audioStatus ? audio.audioStatus === 'generated' : true;
+    const moduleMatched = (testOptions.selectedTestModule || 'all') === 'all'
+      ? true
+      : (audio.module || '未分类') === testOptions.selectedTestModule;
+    return generated && moduleMatched;
+  });
+
+  const totalCases = playableAudios.length * (testOptions.loopCount || 1);
 
   const [currentAudioText, setCurrentAudioText] = useState('');
   const startTimeRef = useRef(null);
@@ -45,12 +53,12 @@ export default function useTestRunner({ onTestComplete } = {}) {
   }, [totalCases, playback.currentIndex]);
 
   const runTest = useCallback(async (runId) => {
-    if (testAudios.length === 0) {
-      alert('请先添加测试音频');
+    if (playableAudios.length === 0) {
+      alert('当前模块暂无可测试音频，请先生成测试音频或切换模块');
       return;
     }
 
-    const queue = buildQueue(testAudios, testOptions.loopCount);
+    const queue = buildQueue(playableAudios, testOptions.loopCount);
     const shouldStop = () => !isPlayingRef.current || runIdRef.current !== runId;
 
     dispatch(actions.startPlayback());
@@ -75,6 +83,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
         dispatch(actions.setPlaybackState({
           currentIndex: cursor,
           currentListIndex: item.listIndex,
+          currentAudioId: item.audio.id,
           currentType: 'wake'
         }));
         setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 唤醒词: ${wakeWord.text}`);
@@ -102,6 +111,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
         dispatch(actions.setPlaybackState({
           currentIndex: cursor,
           currentListIndex: item.listIndex,
+          currentAudioId: item.audio.id,
           currentType: 'test'
         }));
         setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · ${item.audio.text}`);
@@ -165,13 +175,14 @@ export default function useTestRunner({ onTestComplete } = {}) {
       isPlayingRef.current = false;
     }
   }, [
-    testAudios,
+    playableAudios,
     wakeWord,
     defaultVoiceConfig,
     dispatch,
     onTestComplete,
     testOptions.loopCount,
-    testOptions.debugSequence
+    testOptions.debugSequence,
+    testOptions.selectedTestModule
   ]);
 
   const start = useCallback(() => {
@@ -216,7 +227,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
     setCurrentAudioText('');
   }, [dispatch]);
 
-  const progressPercent = testAudios.length > 0
+  const progressPercent = playableAudios.length > 0
     ? ((playback.currentIndex + 1) / Math.max(1, totalCases)) * 100
     : 0;
 
@@ -226,7 +237,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
     isPlayingRef,
     isPausedRef,
     playback,
-    testAudios,
+    testAudios: playableAudios,
     totalCases,
     loopCount: testOptions.loopCount,
     progressPercent,

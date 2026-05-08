@@ -7,6 +7,8 @@ import { fetchTraces, fetchObservations, FetchController, ENVIRONMENTS } from '.
 import { exportToExcel, exportSessionExcel, buildSessionRows, downloadJSON } from '../modules/langfuse/utils/excelExporter';
 import { useTest } from '../stores/testStore';
 
+const LANGFUSE_PAGE_STORAGE_KEY = 'voiceauto_langfuse_page_state';
+
 /* ─── 工具函数 ─── */
 function toISO(date, time) {
   if (!date || !time) return '';
@@ -349,6 +351,7 @@ export default function LangfuseFetcher() {
   const { state } = useTest();
   const initFrom = splitDT(new Date(Date.now() - 60 * 60 * 1000));
   const initTo = splitDT(new Date());
+  const shouldAutoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
 
   const [envKey, setEnvKey] = useState('UAT');
 
@@ -390,6 +393,74 @@ export default function LangfuseFetcher() {
     setTraceProgress({ fetched: 0, total: 0 });
     setObsProgress({ fetched: 0, total: 0 });
   };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LANGFUSE_PAGE_STORAGE_KEY);
+      if (!raw) return;
+      const cached = JSON.parse(raw);
+
+      setEnvKey(cached.envKey || 'UAT');
+      setFromDate(cached.fromDate || initFrom.date);
+      setFromTime(cached.fromTime || initFrom.time);
+      setToDate(cached.toDate || initTo.date);
+      setToTime(cached.toTime || initTo.time);
+      setError(cached.error || '');
+      setTraceProgress(cached.traceProgress || { fetched: 0, total: 0 });
+      setObsProgress(cached.obsProgress || { fetched: 0, total: 0 });
+      setTraces(Array.isArray(cached.traces) ? cached.traces : []);
+      setObservations(Array.isArray(cached.observations) ? cached.observations : []);
+      setSessionIds(Array.isArray(cached.sessionIds) ? cached.sessionIds : []);
+      setFilteredCount(cached.filteredCount || { traces: 0, obs: 0 });
+      autoFilledRunEndRef.current = cached.autoFilledRunEndRef || null;
+
+      const cachedStatus = cached.status || 'idle';
+      setStatus(cachedStatus === 'fetching' || cachedStatus === 'paused' ? 'idle' : cachedStatus);
+    } catch {
+      // ignore invalid cache
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        LANGFUSE_PAGE_STORAGE_KEY,
+        JSON.stringify({
+          envKey,
+          fromDate,
+          fromTime,
+          toDate,
+          toTime,
+          status,
+          error,
+          traceProgress,
+          obsProgress,
+          traces,
+          observations,
+          sessionIds,
+          filteredCount,
+          autoFilledRunEndRef: autoFilledRunEndRef.current,
+          savedAt: Date.now(),
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [
+    envKey,
+    fromDate,
+    fromTime,
+    toDate,
+    toTime,
+    status,
+    error,
+    traceProgress,
+    obsProgress,
+    traces,
+    observations,
+    sessionIds,
+    filteredCount,
+  ]);
 
   const applyPreset = (mins) => {
     const end = new Date(); const start = new Date(end.getTime() - mins * 60 * 1000);
@@ -440,14 +511,15 @@ export default function LangfuseFetcher() {
     const toISO_ = toISO(range.toDate, range.toTime);
     if (new Date(fromISO) >= new Date(toISO_)) { setError('开始时间必须早于结束时间'); return; }
 
-    // 重置
+    // 开始新一轮拉取时仅重置进度，不清空已展示结果，避免页面瞬间空白
     partialTraces.current = [];
     partialObs.current = [];
     controller.current = new FetchController();
 
     setStatus('fetching');
     setError('');
-    resetFetchedResultState();
+    setTraceProgress({ fetched: 0, total: 0 });
+    setObsProgress({ fetched: 0, total: 0 });
 
     try {
       const [rawTraces, rawObs] = await Promise.all([
@@ -485,6 +557,7 @@ export default function LangfuseFetcher() {
   useEffect(() => {
     const { firstTestAudioTime, lastTestAudioTime, endTime } = state.report || {};
     const isCompleted = state.playback?.status === 'completed';
+    if (!shouldAutoFetchLangfuseLogs) return;
     if (!isCompleted || !firstTestAudioTime || !lastTestAudioTime || !endTime) return;
     if (autoFilledRunEndRef.current === endTime) return;
 
@@ -505,11 +578,11 @@ export default function LangfuseFetcher() {
         fromTime: fromParts.time,
         toDate: toParts.date,
         toTime: toParts.time,
-      },
-      { autoExportSession: true }
+      }
     );
   }, [
     handleFetch,
+    shouldAutoFetchLangfuseLogs,
     state.playback?.status,
     state.report?.firstTestAudioTime,
     state.report?.lastTestAudioTime,
@@ -535,6 +608,8 @@ export default function LangfuseFetcher() {
   const isDone = status === 'done' || status === 'aborted';
   const isActive = isFetching || isPaused;
   const totalFiltered = filteredCount.traces + filteredCount.obs;
+  const hasFetchedData = traces.length > 0 || observations.length > 0 || sessionIds.length > 0 || totalFiltered > 0;
+  const shouldShowResults = isDone || hasFetchedData;
 
   const spanLabel = (() => {
     const s = toISO(fromDate, fromTime); const e = toISO(toDate, toTime);
@@ -635,6 +710,17 @@ export default function LangfuseFetcher() {
             </div>
           )}
           <FetchControls status={status} onPause={handlePause} onResume={handleResume} onAbort={handleAbort} />
+          <button
+            onClick={handleClear}
+            disabled={isActive}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gray-800 hover:bg-red-900/50 border border-gray-700 hover:border-red-700 text-gray-300 hover:text-red-300 text-sm rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            清空日志信息
+          </button>
         </div>
       </div>
 
@@ -667,7 +753,7 @@ export default function LangfuseFetcher() {
       )}
 
       {/* 结果区域 */}
-      {isDone && (
+      {shouldShowResults && (
         <div className="space-y-6">
           {/* 统计卡片 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -751,16 +837,6 @@ export default function LangfuseFetcher() {
             <span className="text-xs text-gray-600">
               数据时间范围：{fmtTime(toISO(fromDate, fromTime))} → {fmtTime(toISO(toDate, toTime))}
             </span>
-            <button
-              onClick={handleClear}
-              className="flex items-center gap-1.5 px-4 py-2 bg-gray-800 hover:bg-red-900/50 border border-gray-700 hover:border-red-700 text-gray-400 hover:text-red-300 text-xs rounded-lg transition-colors"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              清空所有日志
-            </button>
           </div>
         </div>
       )}

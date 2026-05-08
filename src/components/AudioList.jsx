@@ -13,23 +13,61 @@ export default function AudioList() {
   const { state, dispatch } = useTest();
   const { testAudios, playback } = state;
   const [selectedModule, setSelectedModule] = React.useState('all');
+  const [expandedGroups, setExpandedGroups] = React.useState({});
 
-  const moduleOptions = React.useMemo(() => {
-    return ['all', ...Array.from(new Set(testAudios.map((audio) => audio.module || '未分类')))];
+  const getDirectoryLabel = React.useCallback((audio) => {
+    const name = String(audio?.tapdCategoryName || '').trim();
+    const caseDirectory = String(audio?.caseDirectory || '').trim();
+    const moduleName = String(audio?.module || '').trim();
+    const rawPath = String(audio?.tapdCategoryPath || '').trim();
+
+    const pathLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawPath);
+    const readablePath = rawPath && !pathLooksLikeId ? rawPath : '';
+
+    return name || caseDirectory || readablePath || moduleName || '未分类目录';
+  }, []);
+
+  const generatedAudios = React.useMemo(() => {
+    return testAudios.filter((audio) => (audio.audioStatus ? audio.audioStatus === 'generated' : true));
   }, [testAudios]);
 
-  const filteredAudios = React.useMemo(() => {
-    if (selectedModule === 'all') return testAudios;
-    return testAudios.filter((audio) => (audio.module || '未分类') === selectedModule);
-  }, [testAudios, selectedModule]);
+  const moduleOptions = React.useMemo(() => {
+    return ['all', ...Array.from(new Set(generatedAudios.map((audio) => getDirectoryLabel(audio))))];
+  }, [generatedAudios, getDirectoryLabel]);
 
-  const currentPlayingTestId = playback.currentType === 'test' && playback.currentIndex >= 0
-    ? testAudios[playback.currentListIndex >= 0 ? playback.currentListIndex : playback.currentIndex]?.id
-    : null;
+  const filteredAudios = React.useMemo(() => {
+    if (selectedModule === 'all') return generatedAudios;
+    return generatedAudios.filter((audio) => getDirectoryLabel(audio) === selectedModule);
+  }, [generatedAudios, selectedModule, getDirectoryLabel]);
+
+  const currentPlayingTestId = playback.currentType === 'test' ? playback.currentAudioId : null;
 
   const { playingId, play } = useAudioPlayer();
   const { selectedIds, toggle, selectAll, remove, clear, isAllSelected } = useSelection();
   const { currentPage, totalPages, pageStart, pageEnd, pageItems, goPage } = usePagination(filteredAudios, PAGE_SIZE);
+
+  const groupedPageItems = React.useMemo(() => {
+    return pageItems.reduce((acc, audio) => {
+      const moduleName = getDirectoryLabel(audio);
+      if (!acc[moduleName]) {
+        acc[moduleName] = [];
+      }
+      acc[moduleName].push(audio);
+      return acc;
+    }, {});
+  }, [pageItems, getDirectoryLabel]);
+
+  React.useEffect(() => {
+    setExpandedGroups((prev) => {
+      const next = { ...prev };
+      Object.keys(groupedPageItems).forEach((groupName) => {
+        if (next[groupName] === undefined) {
+          next[groupName] = true;
+        }
+      });
+      return next;
+    });
+  }, [groupedPageItems]);
 
   // 删除音频
   const handleDelete = (id) => {
@@ -46,6 +84,13 @@ export default function AudioList() {
   const pageIds = pageItems.map(a => a.id);
   const allPageSelected = isAllSelected(pageIds);
 
+  const toggleGroup = (groupName) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [groupName]: !prev[groupName]
+    }));
+  };
+
   return (
     <div className="bg-dark rounded-xl p-6 border border-gray-700">
       {/* 标题栏 */}
@@ -54,7 +99,7 @@ export default function AudioList() {
           <span className="text-2xl">📋</span>
           测试音频列表
           <span className="text-sm text-gray-400 font-normal">
-            ({filteredAudios.length} / {testAudios.length} 条)
+            ({filteredAudios.length} / {generatedAudios.length} 条可测试)
           </span>
         </h2>
 
@@ -91,7 +136,7 @@ export default function AudioList() {
         <div className="text-center py-12 text-gray-400">
           <p className="text-4xl mb-4">📭</p>
           <p>当前模块暂无测试音频</p>
-          <p className="text-sm mt-2">请切换模块或从上方导入测试音频</p>
+          <p className="text-sm mt-2">请切换模块，或先在测试用例管理页点击“生成测试音频”</p>
         </div>
       ) : (
         <>
@@ -113,24 +158,38 @@ export default function AudioList() {
           </div>
 
           {/* 列表项 */}
-          <div className="space-y-1">
-            {pageItems.map((audio, idx) => {
-              const globalIndex = pageStart + idx + 1;
-              const isPlaying = playingId === audio.id;
-              const isRunnerPlaying = currentPlayingTestId === audio.id;
-
-              return (
-                <div
-                  key={audio.id}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                    isRunnerPlaying
-                      ? 'bg-accent/20 border border-accent/40 ring-1 ring-accent/40'
-                      :
-                    selectedIds.has(audio.id)
-                      ? 'bg-primary/15 border border-primary/30'
-                      : 'bg-gray-800/40 hover:bg-gray-700/40 border border-transparent'
-                  }`}
+          <div className="space-y-3">
+            {Object.entries(groupedPageItems).map(([moduleName, moduleAudios]) => (
+              <div key={moduleName} className="border border-gray-700 rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(moduleName)}
+                  className="w-full px-3 py-2 bg-gray-800/70 text-xs text-gray-300 flex items-center justify-between hover:bg-gray-700/70 transition-colors"
                 >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span>{expandedGroups[moduleName] ? '▾' : '▸'}</span>
+                    <span>📁</span>
+                    <span className="truncate" title={moduleName}>{moduleName}</span>
+                  </span>
+                  <span>{moduleAudios.length} 条</span>
+                </button>
+                {expandedGroups[moduleName] !== false && moduleAudios.map((audio, idx) => {
+                  const globalIndex = pageStart + pageItems.findIndex((item) => item.id === audio.id) + 1;
+                  const isPlaying = playingId === audio.id;
+                  const isRunnerPlaying = currentPlayingTestId === audio.id;
+                  const audioDirectory = getDirectoryLabel(audio);
+
+                  return (
+                    <div
+                      key={audio.id}
+                      className={`flex items-center gap-3 px-3 py-2.5 transition-colors border-t border-gray-800 ${
+                        isRunnerPlaying
+                          ? 'bg-accent/20 ring-1 ring-inset ring-accent/40'
+                          : selectedIds.has(audio.id)
+                          ? 'bg-primary/15'
+                          : 'bg-gray-800/40 hover:bg-gray-700/40'
+                      }`}
+                    >
                   {/* 复选框 */}
                   <input
                     type="checkbox"
@@ -163,8 +222,8 @@ export default function AudioList() {
                       isRunnerPlaying
                         ? 'bg-accent/25 text-accent'
                         : 'bg-gray-700 text-gray-300'
-                    }`}>
-                      {audio.module || '未分类'}
+                    } max-w-[88px] truncate`} title={audioDirectory}>
+                      {audioDirectory}
                     </span>
                   </div>
 
@@ -181,6 +240,8 @@ export default function AudioList() {
                     <span className={`text-xs px-1.5 py-0.5 rounded-full ${
                       audio.source === 'tts'
                         ? 'bg-blue-500/20 text-blue-400'
+                        : audio.source === 'tapd'
+                        ? 'bg-indigo-500/20 text-indigo-300'
                         : 'bg-green-500/20 text-green-400'
                     }`}>
                       {getSourceInfo(audio.source).label}
@@ -199,9 +260,11 @@ export default function AudioList() {
                   >
                     ✕
                   </button>
-                </div>
-              );
-            })}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
 
           {/* 分页控件 */}
