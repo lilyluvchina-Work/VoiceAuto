@@ -16,15 +16,26 @@ export default function AudioList() {
   const [expandedGroups, setExpandedGroups] = React.useState({});
 
   const getDirectoryLabel = React.useCallback((audio) => {
-    const name = String(audio?.tapdCategoryName || '').trim();
-    const caseDirectory = String(audio?.caseDirectory || '').trim();
-    const moduleName = String(audio?.module || '').trim();
+    const rawPlanDirectory = String(audio?.tapdPlanDirectory || '').trim();
+    const planDirectoryLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawPlanDirectory);
+    const planDirectory = planDirectoryLooksLikeId ? '' : rawPlanDirectory;
+
+    const rawName = String(audio?.tapdCategoryName || '').trim();
+    const nameLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawName);
+    const name = nameLooksLikeId ? '' : rawName;
+    const rawCaseDirectory = String(audio?.caseDirectory || '').trim();
+    const caseDirectoryLooksLikeFallbackId = /^目录-\d+$/.test(rawCaseDirectory);
+    const caseDirectory = caseDirectoryLooksLikeFallbackId ? '' : rawCaseDirectory;
+
+    const rawModuleName = String(audio?.module || '').trim();
+    const moduleLooksLikeFallbackId = /^目录-\d+$/.test(rawModuleName);
+    const moduleName = moduleLooksLikeFallbackId ? '' : rawModuleName;
     const rawPath = String(audio?.tapdCategoryPath || '').trim();
 
     const pathLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawPath);
     const readablePath = rawPath && !pathLooksLikeId ? rawPath : '';
 
-    return name || caseDirectory || readablePath || moduleName || '未分类目录';
+    return planDirectory || name || caseDirectory || readablePath || moduleName || '未分类目录';
   }, []);
 
   const generatedAudios = React.useMemo(() => {

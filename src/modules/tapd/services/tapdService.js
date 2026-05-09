@@ -7,8 +7,342 @@
 const BASE = '/tapd-api';
 const BATCH_SIZE = 50; // 每批查询用例数
 
+function normalizeInput(value) {
+  return String(value ?? '').trim();
+}
+
+function toBase64Utf8(value) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function isIdLikePath(value) {
+  return /^[\d\s,|\-_/]+$/.test(String(value || '').trim());
+}
+
+function normalizeCategoryRecord(item) {
+  const raw = item?.Category || item?.Tcategory || item?.TcaseCategory || item || {};
+  return {
+    id: String(raw.id || raw.category_id || '').trim(),
+    name: String(raw.name || raw.category_name || '').trim(),
+    parentId: String(raw.parent_id || raw.pid || '').trim(),
+    path: String(raw.path || raw.category_path || '').trim(),
+  };
+}
+
+function buildCategoryLookup(categories) {
+  const byId = new Map();
+  categories.forEach((c) => {
+    if (!c.id) return;
+    byId.set(c.id, c);
+  });
+
+  const cache = new Map();
+  const buildNamePath = (id, trail = new Set()) => {
+    if (!id || !byId.has(id)) return '';
+    if (cache.has(id)) return cache.get(id);
+    if (trail.has(id)) return '';
+
+    trail.add(id);
+    const node = byId.get(id);
+    const parentNamePath = node.parentId ? buildNamePath(node.parentId, trail) : '';
+    const currentName = node.name || '';
+    const resolved = parentNamePath && currentName ? `${parentNamePath} / ${currentName}` : (currentName || parentNamePath);
+    cache.set(id, resolved);
+    trail.delete(id);
+    return resolved;
+  };
+
+  return {
+    resolve(categoryId) {
+      const id = String(categoryId || '').trim();
+      if (!id || !byId.has(id)) return null;
+      const category = byId.get(id);
+      const explicitPath = category.path && !isIdLikePath(category.path) ? category.path : '';
+      const namePath = buildNamePath(id);
+      return {
+        name: category.name || '',
+        path: explicitPath || namePath || '',
+      };
+    },
+  };
+}
+
+async function fetchCaseCategoryLookup(workspaceId, apiUser, apiPassword) {
+  const endpointCandidates = [
+    { path: '/tcase_categories', buildParams: (page, limit) => ({ workspace_id: workspaceId, page, limit }) },
+    { path: '/tcategories', buildParams: (page, limit) => ({ workspace_id: workspaceId, page, limit }) },
+  ];
+
+  const limit = 200;
+
+  for (const endpoint of endpointCandidates) {
+    try {
+      let page = 1;
+      const categories = [];
+      while (true) {
+        const data = await tapdGet(endpoint.path, endpoint.buildParams(page, limit), apiUser, apiPassword);
+        const rows = asArray(data.data);
+        rows.forEach((item) => {
+          const normalized = normalizeCategoryRecord(item);
+          if (normalized.id) {
+            categories.push(normalized);
+          }
+        });
+
+        if (rows.length < limit) break;
+        page += 1;
+      }
+
+      return buildCategoryLookup(categories);
+    } catch {
+      // 某些企业空间下分类接口存在差异，尝试下一个候选接口
+    }
+  }
+
+  return buildCategoryLookup([]);
+}
+
 function makeAuthHeader(apiUser, apiPassword) {
-  return 'Basic ' + btoa(`${apiUser}:${apiPassword}`);
+  const safeUser = normalizeInput(apiUser);
+  const safePassword = normalizeInput(apiPassword);
+  return 'Basic ' + toBase64Utf8(`${safeUser}:${safePassword}`);
+}
+
+function formatTapdApiError(info) {
+  if (!info) return 'Unknown TAPD error';
+  if (typeof info === 'string') return info;
+  if (typeof info === 'object') {
+    const message = info.msg || info.message || info.error_msg || info.error || '';
+    const code = info.code || info.error_code || '';
+    if (message && code) return `[${code}] ${message}`;
+    if (message) return message;
+    if (code) return String(code);
+    return JSON.stringify(info);
+  }
+  return String(info);
+}
+
+function stripHtmlTags(value) {
+  return String(value || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeDirectoryText(value) {
+  const text = stripHtmlTags(value);
+  if (!text) return '';
+  if (text === '0' || text === 'null' || text === 'undefined') return '';
+  if (isIdLikePath(text)) return '';
+  return text;
+}
+
+function splitPathSegments(value) {
+  return String(value || '')
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function tryParseJsonString(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (!(text.startsWith('{') || text.startsWith('['))) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function pickReadableText(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = tryParseJsonString(value);
+    if (parsed !== null) {
+      return pickReadableText(parsed);
+    }
+    return stripHtmlTags(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => pickReadableText(item)).filter(Boolean).join(' / ').trim();
+  }
+  if (typeof value === 'object') {
+    const candidates = [
+      value.text,
+      value.title,
+      value.name,
+      value.value,
+      value.label,
+      value.display,
+      value.content,
+      value['growing-title'],
+      value.growing_title,
+      value.open_to_categories,
+      value.openToCategories,
+    ];
+    for (const candidate of candidates) {
+      const text = pickReadableText(candidate);
+      if (text) return text;
+    }
+  }
+  return '';
+}
+
+function pickDirectoryText(value) {
+  return normalizeDirectoryText(pickReadableText(value));
+}
+
+function extractGrowingTitle(source) {
+  if (!source || typeof source !== 'object') return '';
+
+  const directCandidates = [
+    source['growing-title'],
+    source.growing_title,
+    source.growingTitle,
+  ];
+
+  for (const candidate of directCandidates) {
+    const text = pickDirectoryText(candidate);
+    if (text) return text;
+  }
+
+  const nestedCandidates = [source.attrs, source.attribute, source.fields, source.extend, source.extends];
+  for (const nested of nestedCandidates) {
+    const text = extractGrowingTitle(nested);
+    if (text) return text;
+  }
+
+  return '';
+}
+
+function extractOpenToCategoriesTitle(source) {
+  if (!source || typeof source !== 'object') return '';
+
+  const openToCategoriesCandidates = [
+    source.open_to_categories,
+    source.openToCategories,
+    source.open_to_categorys,
+    source.openToCategorys,
+    source['open-to-categories'],
+    source.story_name?.open_to_categories,
+    source.story_name?.openToCategories,
+    source.story_name?.open_to_categorys,
+    source.story_name?.openToCategorys,
+  ];
+
+  for (const candidate of openToCategoriesCandidates) {
+    const text = pickDirectoryText(candidate);
+    if (text) return text;
+
+    if (Array.isArray(candidate)) {
+      const joined = candidate
+        .map((item) => pickReadableText(item))
+        .filter(Boolean)
+        .join(' / ')
+        .trim();
+      if (joined) return joined;
+    }
+  }
+
+  const nestedCandidates = [source.attrs, source.attribute, source.fields, source.extend, source.extends];
+  for (const nested of nestedCandidates) {
+    const text = extractOpenToCategoriesTitle(nested);
+    if (text) return text;
+  }
+
+  return '';
+}
+
+function extractPlanDirectoryTitle(source) {
+  if (!source || typeof source !== 'object') return '';
+
+  const directOpenCandidates = [
+    source.open_to_categories,
+    source.openToCategories,
+    source.open_to_categorys,
+    source.openToCategorys,
+    source['open-to-categories'],
+    source.story_name?.open_to_categories,
+    source.story_name?.openToCategories,
+    source.story_name?.open_to_categorys,
+    source.story_name?.openToCategorys,
+  ];
+
+  for (const candidate of directOpenCandidates) {
+    const text = pickDirectoryText(candidate);
+    if (text) return text;
+  }
+
+  const nestedCandidates = [source.story_name, source.attrs, source.attribute, source.fields, source.extend, source.extends];
+  for (const nested of nestedCandidates) {
+    const text = extractPlanDirectoryTitle(nested);
+    if (text) return text;
+  }
+
+  const exactDirectoryKeyCandidates = [
+    source.case_directory,
+    source.caseDirectory,
+    source.directory_name,
+    source.directoryName,
+    source.catalog_name,
+    source.catalogName,
+    source.category_name,
+    source.categoryName,
+    source.tcase_category_name,
+    source.tcaseCategoryName,
+    source.module_name,
+    source.moduleName,
+  ];
+
+  for (const candidate of exactDirectoryKeyCandidates) {
+    const text = pickDirectoryText(candidate);
+    if (text) return text;
+  }
+
+  for (const [key, value] of Object.entries(source)) {
+    if (/^open[_-]?to[_-]?categor(?:y|ies|ys)$/i.test(key)) {
+      const text = pickDirectoryText(value);
+      if (text) return text;
+    }
+    if (/(directory|catalog|category|module)/i.test(key) && !/(^id$|_id$|path|status|creator|owner|created|modified)/i.test(key)) {
+      const text = pickDirectoryText(value);
+      if (text) return text;
+    }
+    if (value && typeof value === 'object') {
+      const text = extractPlanDirectoryTitle(value);
+      if (text) return text;
+    }
+  }
+
+  return '';
+}
+
+function buildPlanDirectoryDiagnostics(item, rel) {
+  const read = (value) => pickReadableText(value);
+
+  return {
+    itemKeys: Object.keys(item || {}),
+    relationKeys: Object.keys(rel || {}),
+    candidates: {
+      itemOpenToCategories: read(item?.open_to_categories),
+      itemOpenToCategorys: read(item?.open_to_categorys),
+      itemStoryNameOpenToCategories: read(item?.story_name?.open_to_categories),
+      itemStoryNameOpenToCategorys: read(item?.story_name?.open_to_categorys),
+      relOpenToCategories: read(rel?.open_to_categories),
+      relOpenToCategorys: read(rel?.open_to_categorys),
+      relStoryNameOpenToCategories: read(rel?.story_name?.open_to_categories),
+      relStoryNameOpenToCategorys: read(rel?.story_name?.open_to_categorys),
+      parsedPlanDirectoryFromItem: extractPlanDirectoryTitle(item),
+      parsedPlanDirectoryFromRelation: extractPlanDirectoryTitle(rel),
+    },
+  };
 }
 
 async function tapdGet(path, params, apiUser, apiPassword) {
@@ -19,17 +353,31 @@ async function tapdGet(path, params, apiUser, apiPassword) {
     }
   });
 
-  const resp = await fetch(url.toString(), {
-    headers: { Authorization: makeAuthHeader(apiUser, apiPassword) },
-  });
-
-  if (!resp.ok) {
-    throw new Error(`TAPD request failed: ${resp.status} ${resp.statusText}`);
+  let resp;
+  try {
+    resp = await fetch(url.toString(), {
+      headers: { Authorization: makeAuthHeader(apiUser, apiPassword) },
+    });
+  } catch (error) {
+    throw new Error(`TAPD network error: ${error?.message || 'request failed'}`);
   }
 
-  const data = await resp.json();
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    const suffix = body ? ` - ${body.slice(0, 200)}` : '';
+    throw new Error(`TAPD request failed: ${resp.status} ${resp.statusText}${suffix}`);
+  }
+
+  let data;
+  try {
+    data = await resp.json();
+  } catch {
+    throw new Error('TAPD response parse failed: non-JSON response');
+  }
+
   if (data.status !== 1) {
-    throw new Error(`TAPD API error: ${JSON.stringify(data.info || data)}`);
+    const errText = formatTapdApiError(data.info || data);
+    throw new Error(`TAPD API error: ${errText}`);
   }
 
   return data;
@@ -39,7 +387,12 @@ async function tapdGet(path, params, apiUser, apiPassword) {
  * 测试连接 (通过获取项目列表验证)
  */
 export async function testConnection(companyId, apiUser, apiPassword) {
-  await tapdGet('/workspaces/projects', { company_id: companyId, category: 'project', limit: 1 }, apiUser, apiPassword);
+  const normalizedCompanyId = normalizeInput(companyId);
+  if (!normalizedCompanyId) {
+    throw new Error('company_id is required');
+  }
+
+  await tapdGet('/workspaces/projects', { company_id: normalizedCompanyId, category: 'project', limit: 1 }, apiUser, apiPassword);
   return true;
 }
 
@@ -48,9 +401,10 @@ export async function testConnection(companyId, apiUser, apiPassword) {
  * @returns {{ workspaceId, workspaceName, status, category }[]}
  */
 export async function fetchProjects(companyId, apiUser, apiPassword) {
+  const normalizedCompanyId = normalizeInput(companyId);
   const data = await tapdGet(
     '/workspaces/projects',
-    { company_id: companyId, category: 'project', limit: 200 },
+    { company_id: normalizedCompanyId, category: 'project', limit: 200 },
     apiUser,
     apiPassword
   );
@@ -106,15 +460,20 @@ export async function fetchOpenTestPlans(workspaceId, apiUser, apiPassword) {
  * 获取测试计划中的所有用例 ID
  * @returns {string[]}
  */
-export async function fetchPlanCaseIds(workspaceId, testPlanId, apiUser, apiPassword) {
+export async function fetchPlanCases(workspaceId, testPlanId, apiUser, apiPassword) {
   let page = 1;
   const limit = 200;
-  const ids = new Set();
+  const caseMap = new Map();
 
   while (true) {
     const data = await tapdGet(
       '/test_plans/get_test_plan_tcase',
-      { workspace_id: workspaceId, test_plan_id: testPlanId, page, limit },
+      {
+        workspace_id: workspaceId,
+        test_plan_id: testPlanId,
+        page,
+        limit,
+      },
       apiUser,
       apiPassword
     );
@@ -123,14 +482,32 @@ export async function fetchPlanCaseIds(workspaceId, testPlanId, apiUser, apiPass
     for (const item of rows) {
       const rel = item.TestPlanStoryTcaseRelation || item;
       const caseId = String(rel.tcase_id || '');
-      if (caseId && caseId !== '0') ids.add(caseId);
+      if (!caseId || caseId === '0') continue;
+
+      const existing = caseMap.get(caseId);
+      if (!existing) {
+        caseMap.set(caseId, {
+          caseId,
+          planDirectoryTitle: '',
+          diagnostics: buildPlanDirectoryDiagnostics(item, rel),
+        });
+      }
     }
 
     if (rows.length < limit) break;
     page++;
   }
 
-  return Array.from(ids);
+  return Array.from(caseMap.values());
+}
+
+/**
+ * 获取测试计划中的所有用例 ID
+ * @returns {string[]}
+ */
+export async function fetchPlanCaseIds(workspaceId, testPlanId, apiUser, apiPassword) {
+  const planCases = await fetchPlanCases(workspaceId, testPlanId, apiUser, apiPassword);
+  return planCases.map((item) => item.caseId);
 }
 
 /**
@@ -139,16 +516,26 @@ export async function fetchPlanCaseIds(workspaceId, testPlanId, apiUser, apiPass
  * @returns {TapdCase[]}
  */
 export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPassword) {
-  const cases = [];
+  if (!Array.isArray(caseIds) || caseIds.length === 0) {
+    return [];
+  }
 
-  for (let i = 0; i < caseIds.length; i += BATCH_SIZE) {
-    const batch = caseIds.slice(i, i + BATCH_SIZE);
+  const normalizedCaseIds = Array.from(new Set(caseIds.map((id) => String(id || '').trim()).filter(Boolean)));
+  if (normalizedCaseIds.length === 0) {
+    return [];
+  }
+
+  const cases = [];
+  const categoryLookup = await fetchCaseCategoryLookup(workspaceId, apiUser, apiPassword);
+
+  for (let i = 0; i < normalizedCaseIds.length; i += BATCH_SIZE) {
+    const batch = normalizedCaseIds.slice(i, i + BATCH_SIZE);
     const data = await tapdGet(
       '/tcases',
       {
         workspace_id: workspaceId,
         id: batch.join(','),
-        fields: 'id,name,steps,expectation,priority,status,category_id,category_name,category_path,module_name',
+        fields: 'id,name,steps,expectation,priority,status,category_id,category_name,module_name',
         limit: 200,
       },
       apiUser,
@@ -158,6 +545,24 @@ export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPasswor
     for (const item of data.data || []) {
       const c = item.Tcase || item;
       const categoryObj = item.Category || c.Category || {};
+      const categoryId = String(c.category_id || '').trim();
+      const resolvedCategory = categoryLookup.resolve(categoryId);
+
+      const caseDirectoryPath = (
+        normalizeDirectoryText(resolvedCategory?.path)
+        || normalizeDirectoryText(c.category_path)
+        || normalizeDirectoryText(categoryObj.path)
+        || normalizeDirectoryText(c.path)
+      ).trim();
+
+      const caseDirectoryName = (
+        normalizeDirectoryText(resolvedCategory?.name)
+        || normalizeDirectoryText(c.category_name)
+        || normalizeDirectoryText(c.module_name)
+        || normalizeDirectoryText(categoryObj.name)
+        || splitPathSegments(caseDirectoryPath).slice(-1)[0]
+      ).trim();
+
       cases.push({
         id: String(c.id || ''),
         name: c.name || '',
@@ -165,9 +570,10 @@ export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPasswor
         expectation: c.expectation || '',
         priority: c.priority || '',
         status: c.status || '',
-        categoryId: String(c.category_id || ''),
-        categoryName: c.category_name || c.module_name || categoryObj.name || '',
-        categoryPath: c.category_path || categoryObj.path || c.path || '',
+        categoryId,
+        tapdPlanDirectory: caseDirectoryName || '',
+        categoryName: caseDirectoryName || '',
+        categoryPath: caseDirectoryPath || '',
       });
     }
   }

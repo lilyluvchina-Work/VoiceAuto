@@ -7,22 +7,46 @@ export default function TestCaseManager() {
   const [selectedDirectory, setSelectedDirectory] = useState('all');
   const { state, dispatch } = useTest();
 
+  const getDirectoryLabel = React.useCallback((item) => {
+    const rawPlanDirectory = String(item?.tapdPlanDirectory || '').trim();
+    const planDirectoryLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawPlanDirectory);
+    const planDirectory = planDirectoryLooksLikeId ? '' : rawPlanDirectory;
+
+    const rawName = String(item?.tapdCategoryName || '').trim();
+    const nameLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawName);
+    const name = nameLooksLikeId ? '' : rawName;
+
+    const rawPath = String(item?.tapdCategoryPath || '').trim();
+    const pathLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawPath);
+    const readablePath = rawPath && !pathLooksLikeId ? rawPath : '';
+
+    const rawCaseDirectory = String(item?.caseDirectory || '').trim();
+    const caseDirectoryLooksLikeFallbackId = /^目录-\d+$/.test(rawCaseDirectory);
+    const caseDirectory = caseDirectoryLooksLikeFallbackId ? '' : rawCaseDirectory;
+
+    const rawModuleName = String(item?.module || '').trim();
+    const moduleLooksLikeFallbackId = /^目录-\d+$/.test(rawModuleName);
+    const moduleName = moduleLooksLikeFallbackId ? '' : rawModuleName;
+
+    return planDirectory || name || caseDirectory || readablePath || moduleName || '未分类目录';
+  }, []);
+
   const sortedCases = React.useMemo(() => {
     const sorted = [...state.testAudios].reverse();
     return sorted;
   }, [state.testAudios]);
 
   const directoryOptions = React.useMemo(() => {
-    const directories = Array.from(new Set(sortedCases.map((item) => item.tapdCategoryName || item.caseDirectory || item.module || '未分类目录')));
+    const directories = Array.from(new Set(sortedCases.map((item) => getDirectoryLabel(item))));
     return ['all', ...directories];
-  }, [sortedCases]);
+  }, [sortedCases, getDirectoryLabel]);
 
   const visibleCases = React.useMemo(() => {
     if (selectedDirectory === 'all') {
       return sortedCases;
     }
-    return sortedCases.filter((item) => (item.tapdCategoryName || item.caseDirectory || item.module || '未分类目录') === selectedDirectory);
-  }, [sortedCases, selectedDirectory]);
+    return sortedCases.filter((item) => getDirectoryLabel(item) === selectedDirectory);
+  }, [sortedCases, selectedDirectory, getDirectoryLabel]);
 
   const totalGenerated = React.useMemo(() => {
     return state.testAudios.filter((item) => (item.audioStatus ? item.audioStatus === 'generated' : true)).length;
@@ -48,7 +72,7 @@ export default function TestCaseManager() {
   };
 
   const handleGenerateByGroup = (groupName) => {
-    const items = sortedCases.filter((item) => (item.tapdCategoryName || item.caseDirectory || item.module || '未分类目录') === groupName);
+    const items = sortedCases.filter((item) => getDirectoryLabel(item) === groupName);
     items.forEach((item) => {
       if (item.audioStatus !== 'generated') {
         dispatch(actions.updateTestAudio({
@@ -141,7 +165,7 @@ export default function TestCaseManager() {
             {visibleCases.map((item, index) => {
               const source = item.source === 'tapd' ? 'TAPD' : (item.source === 'tts' ? 'TTS' : '文件');
               const generated = item.audioStatus ? item.audioStatus === 'generated' : true;
-              const directoryName = item.tapdCategoryName || item.caseDirectory || item.module || '未分类目录';
+              const directoryName = getDirectoryLabel(item);
 
               return (
                 <div key={item.id || `${item.text}-${index}`} className="bg-darker border border-gray-700 rounded-lg p-3">

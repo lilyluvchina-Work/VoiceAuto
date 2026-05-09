@@ -54,19 +54,23 @@ export function extractHumanTexts(steps) {
  */
 export function tapdCaseToTestAudios(tapdCase, meta, defaultVoiceConfig, generateId) {
   const humanTexts = extractHumanTexts(tapdCase.steps);
-  const categoryName = String(tapdCase.categoryName || '').trim();
+  const rawCategoryName = String(tapdCase.tapdPlanDirectory || tapdCase.categoryName || '').trim();
+  const categoryNameLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawCategoryName);
+  const categoryName = categoryNameLooksLikeId ? '' : rawCategoryName;
   const categoryPath = String(tapdCase.categoryPath || '').trim();
   const categoryId = String(tapdCase.categoryId || '').trim();
 
   // category_path 在 TAPD 中常见为 ID 路径，这里优先显示目录名称
   const pathLooksLikeId = /^[\d\s,|\-_/]+$/.test(categoryPath);
   const readablePath = categoryPath && !pathLooksLikeId ? categoryPath : '';
+
   const caseDirectory = (
     categoryName
     || readablePath
-    || (categoryId ? `目录-${categoryId}` : '')
     || '未分类目录'
   ).trim();
+
+  const moduleName = caseDirectory;
 
   if (humanTexts.length === 0) {
     return [{ audio: null, humanTexts: [], skipped: true, reason: '步骤中未识别到 Human 内容', caseTitle: tapdCase.name, tapdCaseId: tapdCase.id }];
@@ -76,7 +80,7 @@ export function tapdCaseToTestAudios(tapdCase, meta, defaultVoiceConfig, generat
     audio: {
       id: generateId(),
       text,
-      module: caseDirectory,
+      module: moduleName,
       source: 'tapd',
       audioBlob: null,
       audioUrl: null,
@@ -84,6 +88,7 @@ export function tapdCaseToTestAudios(tapdCase, meta, defaultVoiceConfig, generat
       config: { ...defaultVoiceConfig },
       audioStatus: 'not_generated',
       caseDirectory,
+      tapdPlanDirectory: caseDirectory,
       tapdCategoryId: categoryId,
       tapdCategoryName: categoryName,
       tapdCategoryPath: categoryPath,

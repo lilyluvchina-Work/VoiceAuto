@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import { TestProvider, useTest } from './stores/testStore';
 import WakeWordConfig from './components/WakeWordConfig';
 import VoiceConfig from './components/VoiceConfig';
+import AudioImporter from './components/AudioImporter';
 import AudioList from './components/AudioList';
 import PlaybackConsole from './components/PlaybackConsole';
 import TestReport from './components/TestReport';
@@ -87,6 +88,7 @@ function AppContent() {
 
           {/* 右侧：测试音频列表 */}
           <div className="space-y-6">
+            <AudioImporter />
             <AudioList />
           </div>
         </div>

@@ -9,7 +9,7 @@ import {
   testConnection,
   fetchProjects,
   fetchOpenTestPlans,
-  fetchPlanCaseIds,
+  fetchPlanCases,
   fetchCaseDetails,
 } from '../modules/tapd/services/tapdService';
 import { tapdCaseToTestAudios } from '../modules/tapd/utils/tapdParser';
@@ -66,37 +66,59 @@ function Step1Config({ onNext }) {
   const [apiUser, setApiUser] = useState(saved.apiUser || '');
   const [apiPassword, setApiPassword] = useState(saved.apiPassword || '');
   const [companyId, setCompanyId] = useState(saved.companyId || '');
+  const [debugDirectoryMapping, setDebugDirectoryMapping] = useState(Boolean(saved.debugDirectoryMapping));
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState('');
   const [msgType, setMsgType] = useState('');
 
   const handleTest = async () => {
-    if (!apiUser || !apiPassword || !companyId) {
+    const normalizedApiUser = apiUser.trim();
+    const normalizedApiPassword = apiPassword.trim();
+    const normalizedCompanyId = companyId.trim();
+
+    if (!normalizedApiUser || !normalizedApiPassword || !normalizedCompanyId) {
       setMsgType('error'); setMsg('请填写全部字段'); return;
     }
     setTesting(true); setMsg(''); setMsgType('');
     try {
-      await testConnection(companyId, apiUser, apiPassword);
+      await testConnection(normalizedCompanyId, normalizedApiUser, normalizedApiPassword);
       setMsgType('success'); setMsg('连接成功！');
     } catch (err) {
-      setMsgType('error'); setMsg('连接失败: ' + err.message);
+      const rawMessage = String(err?.message || 'unknown error');
+      const unauthorized = /401|unauthorized/i.test(rawMessage);
+      const hint = unauthorized ? '（请使用 TAPD「个人设置 -> API 管理」中的 api_user / api_password，而不是登录密码）' : '';
+      setMsgType('error'); setMsg('连接失败: ' + rawMessage + hint);
     } finally {
       setTesting(false);
     }
   };
 
   const handleNext = () => {
-    if (!apiUser || !apiPassword || !companyId) {
+    const normalizedApiUser = apiUser.trim();
+    const normalizedApiPassword = apiPassword.trim();
+    const normalizedCompanyId = companyId.trim();
+
+    if (!normalizedApiUser || !normalizedApiPassword || !normalizedCompanyId) {
       setMsgType('error'); setMsg('请填写全部字段'); return;
     }
-    const cfg = { apiUser, apiPassword, companyId };
+
+    if (normalizedApiUser !== apiUser) setApiUser(normalizedApiUser);
+    if (normalizedApiPassword !== apiPassword) setApiPassword(normalizedApiPassword);
+    if (normalizedCompanyId !== companyId) setCompanyId(normalizedCompanyId);
+
+    const cfg = {
+      apiUser: normalizedApiUser,
+      apiPassword: normalizedApiPassword,
+      companyId: normalizedCompanyId,
+      debugDirectoryMapping,
+    };
     saveConfig(cfg);
     onNext(cfg);
   };
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-400">填写 TAPD API 凭据（在 TAPD 个人设置 → API 管理中获取）。</p>
+      <p className="text-sm text-gray-400">填写 TAPD API 凭据（在 TAPD 个人设置 → API 管理中获取，需使用 api_user / api_password，不是登录密码）。</p>
       <div>
         <label className="block text-xs text-gray-400 mb-1">API User</label>
         <input className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-gray-500" value={apiUser} onChange={e => setApiUser(e.target.value)} placeholder="api_user" />
@@ -109,6 +131,15 @@ function Step1Config({ onNext }) {
         <label className="block text-xs text-gray-400 mb-1">Company ID（企业 ID）</label>
         <input className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-gray-500" value={companyId} onChange={e => setCompanyId(e.target.value)} placeholder="如 20003261" />
       </div>
+      <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={debugDirectoryMapping}
+          onChange={(e) => setDebugDirectoryMapping(e.target.checked)}
+          className="accent-blue-500"
+        />
+        开启目录字段调试（导入时在控制台打印目录候选字段）
+      </label>
       {msg && <p className={`text-sm ${msgType === 'success' ? 'text-green-400' : 'text-red-400'}`}>{msg}</p>}
       <div className="flex gap-3 pt-2">
         <button className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 rounded-lg font-medium transition-colors" onClick={handleTest} disabled={testing}>
@@ -303,6 +334,7 @@ export default function TapdImportWizard({ onClose }) {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [importProgress, setImportProgress] = useState('');
+  const [importStage, setImportStage] = useState('');
 
   const handleConfig = useCallback((config) => {
     setCfg(config);
@@ -319,12 +351,28 @@ export default function TapdImportWizard({ onClose }) {
     setStep(4);
 
     const result = { total: 0, imported: 0, skipped: 0, errors: [] };
+    let currentStage = '';
 
     try {
+      currentStage = '获取用例清单';
+      setImportStage(currentStage);
       setImportProgress('正在获取用例清单...');
-      const caseIds = await fetchPlanCaseIds(project.workspaceId, plan.testPlanId, cfg.apiUser, cfg.apiPassword);
+      const planCases = await fetchPlanCases(project.workspaceId, plan.testPlanId, cfg.apiUser, cfg.apiPassword);
+      const caseIds = planCases.map((item) => item.caseId);
+
+      if (cfg?.debugDirectoryMapping) {
+        console.group('[TAPD Directory Debug] relation payload diagnostics');
+        console.info('总用例数:', planCases.length);
+        planCases.slice(0, 30).forEach((item, index) => {
+          console.log(`[#${index + 1}] caseId=${item.caseId}`, item.diagnostics || {});
+        });
+        console.groupEnd();
+      }
+
       result.total = caseIds.length;
 
+      currentStage = '获取用例详情';
+      setImportStage(currentStage);
       setImportProgress(`共 ${caseIds.length} 条用例，正在获取详情...`);
       const cases = await fetchCaseDetails(project.workspaceId, caseIds, cfg.apiUser, cfg.apiPassword);
 
@@ -337,6 +385,8 @@ export default function TapdImportWizard({ onClose }) {
         testPlanName: plan.testPlanName,
       };
 
+      currentStage = '解析并导入';
+      setImportStage(currentStage);
       setImportProgress('正在解析并导入...');
       for (const tapdCase of cases) {
         const rows = tapdCaseToTestAudios(tapdCase, meta, state.defaultVoiceConfig, generateId);
@@ -355,10 +405,23 @@ export default function TapdImportWizard({ onClose }) {
           result.imported++;
         }
       }
+
+      if (cfg?.debugDirectoryMapping) {
+        console.group('[TAPD Directory Debug] category mapping result');
+        cases.slice(0, 30).forEach((item, index) => {
+          console.log(
+            `[#${index + 1}] caseId=${item.id}; category_id=${item.categoryId}; categoryName=${item.categoryName || '(empty)'}; categoryPath=${item.categoryPath || '(empty)'}`,
+            item
+          );
+        });
+        console.groupEnd();
+      }
     } catch (err) {
-      setImportProgress('导入失败: ' + err.message);
+      const stage = currentStage ? `（阶段：${currentStage}）` : '';
+      setImportProgress(`导入失败${stage}: ${err.message}`);
     } finally {
       setImporting(false);
+      setImportStage('');
       setImportProgress('');
       setImportResult(result);
     }
