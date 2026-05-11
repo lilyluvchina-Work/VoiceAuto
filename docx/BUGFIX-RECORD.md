@@ -75,6 +75,13 @@
   - 根因：目录接口候选中包含稳定性较差端点。
   - 修复：`fetchCaseCategoryLookup` 优先并收敛到 `tcase_categories/tcategories`，同时保留端点回退。
 
+### 2026-05-11
+
+1. 修复开发服务仅监听 `localhost` 导致局域网无法访问问题。
+  - 现象：同局域网设备使用“主机 IP + 3000 端口”无法访问页面。
+  - 根因：`vite.config.js` 未配置 `server.host`，Vite 默认仅监听回环地址。
+  - 修复：在 `vite.config.js` 的 `server` 中增加 `host: '0.0.0.0'`，允许通过局域网 IP 访问。
+
 ## 归档来源
 
 - 已整合根目录 README 与 `.claude/PROJECT_MEMORY.md` 的对应修复项。
