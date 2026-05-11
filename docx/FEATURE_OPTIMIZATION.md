@@ -22,7 +22,9 @@
 - src/utils/audioUtils.jsx
 - deploy/nginx/langfuse-proxy.conf.example
 - README.md
-- docx/ARCH.md
+- docx/PRODUCT_ARCH.md
+- docx/SERVER_DEPLOYMENT_GUIDE.md
+- docx/README.md
 
 ## 优化记录
 
@@ -113,7 +115,10 @@
    - 新增并持久化 `tapdPlanDirectory` 字段，导入后目录可跨刷新保留。
    - 功能模块统一使用用例目录值，减少目录与模块口径不一致。
    - 测试管理页与语音测试页目录显示优先读取 `tapdPlanDirectory`，保证筛选与展示一致性。
-
+15. 服务器部署文档补全（2026-05-11）。
+   - 新增 `docx/SERVER_DEPLOYMENT_GUIDE.md`，提供从本地构建到公网访问的完整步骤。
+   - 文档按当前项目实际（Vite 前端 + Nginx 代理）给出可执行命令与配置示例。
+   - 增加部署前准备清单、上线检查清单、域名与 HTTPS 配置说明。
 ## 归档来源
 
 - 已整合根目录 README 与 `.claude/PROJECT_MEMORY.md` 的对应优化项。
