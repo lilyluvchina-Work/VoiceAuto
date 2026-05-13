@@ -139,3 +139,26 @@ src/
 - 模块内保持 `services/utils/components` 分层。
 - 跨模块调用优先通过模块 `index.js` 导出入口。
 - 新能力优先落在对应模块，避免全局散落。
+
+## 8. 部署资产架构
+
+为支持重复部署与交接，部署文件统一纳入项目目录：
+
+```text
+deploy/
+├── scripts/
+│   ├── build_deploy_bundle.ps1
+│   └── build_deploy_bundle.sh
+├── nginx/
+│   ├── voice-auto.server.conf.template
+│   └── langfuse-proxy.conf.example
+└── docker/
+  ├── Dockerfile
+  ├── nginx.default.conf
+  └── docker-compose.yml
+```
+
+约束：
+
+- 部署脚本与配置文件存放在项目内，便于版本管理与交接。
+- 部署包输出目录必须在项目外，避免污染仓库与误提交产物。

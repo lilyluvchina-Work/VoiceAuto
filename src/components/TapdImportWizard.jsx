@@ -343,8 +343,15 @@ export default function TapdImportWizard({ onClose }) {
 
   const handleProject = useCallback((proj) => {
     setProject(proj);
+    const saved = loadConfig();
+    saveConfig({
+      ...saved,
+      ...cfg,
+      workspaceId: String(proj?.workspaceId || '').trim(),
+      workspaceName: String(proj?.workspaceName || '').trim(),
+    });
     setStep(3);
-  }, []);
+  }, [cfg]);
 
   const handleImport = useCallback(async (plan, overwrite) => {
     setImporting(true);

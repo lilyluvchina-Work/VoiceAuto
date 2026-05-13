@@ -21,6 +21,12 @@
 - src/utils/logAnalysis.js
 - src/utils/audioUtils.jsx
 - deploy/nginx/langfuse-proxy.conf.example
+- deploy/nginx/voice-auto.server.conf.template
+- deploy/scripts/build_deploy_bundle.ps1
+- deploy/scripts/build_deploy_bundle.sh
+- deploy/docker/Dockerfile
+- deploy/docker/nginx.default.conf
+- deploy/docker/docker-compose.yml
 - README.md
 - docx/PRODUCT_ARCH.md
 - docx/SERVER_DEPLOYMENT_GUIDE.md
@@ -119,6 +125,33 @@
    - 新增 `docx/SERVER_DEPLOYMENT_GUIDE.md`，提供从本地构建到公网访问的完整步骤。
    - 文档按当前项目实际（Vite 前端 + Nginx 代理）给出可执行命令与配置示例。
    - 增加部署前准备清单、上线检查清单、域名与 HTTPS 配置说明。
+16. 部署资产标准化（2026-05-11）。
+   - 新增 `deploy/scripts`、`deploy/nginx`、`deploy/docker` 三类标准部署资产。
+   - 新增部署包脚本，强制部署包输出到项目外目录，避免本地仓库污染。
+   - 新增 Nginx 站点模板与 Docker 部署配置，便于重复部署与团队交接。
+17. Langfuse 错误提取与 TAPD 缺陷联动（2026-05-13）。
+   - 日志提取中 `output.content` 调整为优先从 `full-answer.content` 获取并保存，兼容历史字段回退。
+   - 新增 `error` 字段提取，直接汇总 observation 的 `error` 信息。
+   - 新增错误自动提 TAPD Bug 能力：当存在错误信息时，按“每条错误信息一条 Bug”提交到已选项目。
+   - Bug 标题规则统一为：`用例名称 + Human 文本 + 总结性错误信息`。
+   - TAPD 导入向导新增项目持久化（workspace_id/workspace_name），用于后续自动提单定位对应项目。
+18. 顶部菜单排序优化（2026-05-13）。
+   - 顶部菜单将“测试用例管理”调整到第 1 位。
+   - 默认进入页切换为“测试用例管理”，便于先进行用例维护再执行测试。
+19. 总结报告能力新增（2026-05-13）。
+   - 新增“总结报告”顶部菜单，集中展示最新一次 Langfuse 生成的总结报告。
+   - Langfuse 页面新增“生成总结报告并发送邮件”按钮。
+   - 报告内容包含：执行用例条数、执行通过率、每个模块平均响应时间、测试环境。
+   - 生成报告后自动唤起邮件客户端，目标邮箱为 `lily_lv@sdmctech.com`，并带入报告正文。
+20. Langfuse 日志保留优化（2026-05-13）。
+   - 切换顶部菜单时不再卸载 Langfuse 页面，日志数据不会被切菜单动作清空。
+   - 刷新页面继续使用本地缓存恢复日志。
+   - 日志仅允许通过页面“清空日志信息”按钮手动清空。
+21. 总结报告邮件发送能力增强（2026-05-13）。
+   - 新增自动发送链路：Langfuse 与总结报告页优先通过 EmailJS 直接发送邮件。
+   - 自动发送目标邮箱固定为 `lily_lv@sdmctech.com`。
+   - 自动发送失败时回退为 `mailto` 唤起邮件客户端，确保可继续发送。
+   - 新增邮件服务封装：`src/services/emailService.js`（支持配置检查与统一发送入口）。
 ## 归档来源
 
 - 已整合根目录 README 与 `.claude/PROJECT_MEMORY.md` 的对应优化项。

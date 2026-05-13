@@ -383,6 +383,50 @@ async function tapdGet(path, params, apiUser, apiPassword) {
   return data;
 }
 
+async function tapdPost(path, body, apiUser, apiPassword) {
+  const url = new URL(BASE + path, window.location.origin);
+  const payload = new URLSearchParams();
+  Object.entries(body || {}).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') {
+      payload.set(k, String(v));
+    }
+  });
+
+  let resp;
+  try {
+    resp = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        Authorization: makeAuthHeader(apiUser, apiPassword),
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      },
+      body: payload.toString(),
+    });
+  } catch (error) {
+    throw new Error(`TAPD network error: ${error?.message || 'request failed'}`);
+  }
+
+  if (!resp.ok) {
+    const bodyText = await resp.text().catch(() => '');
+    const suffix = bodyText ? ` - ${bodyText.slice(0, 200)}` : '';
+    throw new Error(`TAPD request failed: ${resp.status} ${resp.statusText}${suffix}`);
+  }
+
+  let data;
+  try {
+    data = await resp.json();
+  } catch {
+    throw new Error('TAPD response parse failed: non-JSON response');
+  }
+
+  if (data.status !== 1) {
+    const errText = formatTapdApiError(data.info || data);
+    throw new Error(`TAPD API error: ${errText}`);
+  }
+
+  return data;
+}
+
 /**
  * 测试连接 (通过获取项目列表验证)
  */
@@ -579,4 +623,36 @@ export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPasswor
   }
 
   return cases;
+}
+
+/**
+ * 在 TAPD 项目下创建 Bug
+ * @returns {{ bugId: string, title: string }}
+ */
+export async function createTapdBug(workspaceId, title, description, apiUser, apiPassword) {
+  const normalizedWorkspaceId = normalizeInput(workspaceId);
+  const normalizedTitle = normalizeInput(title);
+  if (!normalizedWorkspaceId) {
+    throw new Error('workspace_id is required');
+  }
+  if (!normalizedTitle) {
+    throw new Error('bug title is required');
+  }
+
+  const data = await tapdPost(
+    '/bugs',
+    {
+      workspace_id: normalizedWorkspaceId,
+      title: normalizedTitle,
+      description: String(description || '').trim(),
+    },
+    apiUser,
+    apiPassword
+  );
+
+  const bug = data?.data?.Bug || data?.data || {};
+  return {
+    bugId: String(bug.id || bug.bug_id || ''),
+    title: String(bug.title || normalizedTitle),
+  };
 }

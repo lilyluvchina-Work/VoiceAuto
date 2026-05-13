@@ -83,6 +83,86 @@ function resolveDuration(obs, field) {
   return undefined;
 }
 
+function stringifyError(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => stringifyError(item)).filter(Boolean).join('\n').trim();
+  }
+  if (typeof value === 'object') {
+    const candidate =
+      value.message
+      ?? value.msg
+      ?? value.error
+      ?? value.reason
+      ?? value.detail
+      ?? value.description;
+    const normalized = stringifyError(candidate);
+    if (normalized) return normalized;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
+function resolveOutputContent(obs) {
+  if (obs?.output == null) return '';
+
+  const out = parseIfString(obs.output);
+  if (typeof out === 'string' || out == null || typeof out !== 'object') return '';
+  const obsName = String(obs?.name || '').toLowerCase();
+  const isFullAnswerObservation = obsName === 'full_answer' || obsName === 'full-answer' || obsName.includes('full_answer') || obsName.includes('full-answer');
+
+  const fullAnswer =
+    out['full-answer']
+    ?? out.fullAnswer
+    ?? out.full_answer
+    ?? out.message?.['full-answer']
+    ?? out.message?.fullAnswer
+    ?? out.message?.full_answer;
+
+  if (Array.isArray(fullAnswer)) {
+    const joined = fullAnswer
+      .map((item) => stringifyError(item?.content ?? item?.text ?? item))
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+    if (joined) return joined;
+  } else {
+    const fromFullAnswer = stringifyError(fullAnswer?.content ?? fullAnswer?.text ?? fullAnswer);
+    if (fromFullAnswer) return fromFullAnswer;
+  }
+
+  // 兼容截图场景：observation 名称为 full_answer，content 直接挂在 output.content
+  if (isFullAnswerObservation) {
+    return stringifyError(out.content ?? out.message?.content ?? out.text);
+  }
+
+  return '';
+}
+
+function resolveObservationError(obs) {
+  const nameText = String(obs?.name || '').trim();
+  const nameMatch = nameText.match(/^\[error\]\s*:\s*(.+)$/i);
+  if (!nameMatch) return '';
+
+  const agentFromName = String(nameMatch[1] || '').trim();
+
+  const inputData = parseIfString(obs?.input_data ?? obs?.inputData ?? obs?.input);
+  const agentFromInput = stringifyError(inputData?.agent_code ?? inputData?.agentCode);
+  const agentCode = agentFromInput || agentFromName;
+
+  const outputData = parseIfString(obs?.output_data ?? obs?.outputData ?? obs?.output);
+  const errorContent = stringifyError(outputData?.content ?? outputData?.message?.content ?? outputData?.text);
+  if (!errorContent) return '';
+
+  return agentCode ? `[error]: ${agentCode} | ${errorContent}` : `[error] | ${errorContent}`;
+}
+
 /**
  * 按 sessionID 聚合 Traces 和 Observations，生成提取行
  * 列顺序：sessionID | InputText | AgentCode | output.content | first_token.* | input fields | 异常信息
@@ -143,18 +223,15 @@ export function buildSessionRows(traces, observations) {
       return findAgentCode('run_agent') || findAgentCode('llmchat');
     })();
 
-    // ── output.content ── 按时间顺序拼接
+    // ── output.content ── 优先取 full-answer.content，按时间顺序拼接
     const outputContent = sortedObs
-      .map((o) => {
-        if (o.output == null) return null;
-        const out = parseIfString(o.output);
-        if (typeof out === 'string') return out || null;
-        if (typeof out === 'object' && out !== null) {
-          const c = out.content ?? out.message?.content ?? out.text;
-          return c != null ? String(c) : null;
-        }
-        return null;
-      })
+      .map((o) => resolveOutputContent(o))
+      .filter(Boolean)
+      .join('\n');
+
+    // ── error ── 从 observation.error 汇总
+    const errorText = sortedObs
+      .map((o) => resolveObservationError(o))
       .filter(Boolean)
       .join('\n');
 
@@ -200,6 +277,7 @@ export function buildSessionRows(traces, observations) {
       InputText: inputText,
       AgentCode: agentCode,
       'output.content': outputContent,
+      error: errorText,
       ...inputValues,
       异常信息: '',
     };
@@ -215,6 +293,7 @@ export function buildSessionRows(traces, observations) {
     if (!agentCode) errors.push('AgentCode为空');
     if (!inputText) errors.push('InputText为空');
     if (!outputContent) errors.push('output.content为空');
+    if (errorText) errors.push(`error: ${errorText}`);
     FIRST_TOKEN_DURATIONS.forEach((k, i) => {
       if (durations[i] == null || durations[i] === '' || Number.isNaN(durations[i])) errors.push(`${k}无数据`);
     });

@@ -15,9 +15,9 @@
 3. `PRODUCT_USE_GUIDE.md`
   - 用户使用指引。
   - 面向测试工程师与客户的操作流程文档。
-4. `PRODUCT_ARCH.md`
-  - 研发架构文档。
-  - 说明分层、主流程、状态与模块边界。
+4. `TAPD_IMPORT_GUIDE.md`
+  - TAPD 导入说明文档。
+  - 说明 API 凭据配置、导入步骤与常见问题处理。
 5. `BUGFIX.md`
   - Bug 修复持续记录。
   - 按日期分组沉淀问题现象、根因与修复方案。
@@ -27,6 +27,12 @@
 7. `SERVER_DEPLOYMENT_GUIDE.md`
   - 服务器部署指南。
   - 说明从本地构建到公网访问（IP/域名/HTTPS）的完整流程。
+
+## 部署资产目录
+
+- `deploy/scripts/`：部署包构建脚本（产物输出到项目外目录）。
+- `deploy/nginx/`：Nginx 站点与代理配置模板。
+- `deploy/docker/`：Docker 镜像与编排配置。
 
 ## 维护约定
 
