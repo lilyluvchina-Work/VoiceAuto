@@ -26,6 +26,10 @@ mindmap
       日志能力
          Langfuse拉取
          结构化导出
+      测试报告
+         TAPD预期值
+         Langfuse实际值
+         用例对齐
 ```
 
 ## 2. 技术基线
@@ -47,10 +51,11 @@ mindmap
 
 ### 3.2 文档归档
 
-- 架构说明维护在 `docx/arch.md`。
-- 产品说明维护在 `docx/PRODUCT.md`。
-- Bug 明细维护在 `docx/BUGFIX-RECORD.md`。
-- 功能优化明细维护在 `docx/FEATURE-OPTIMIZATION-RECORD.md`。
+- 架构说明维护在 `docx/PRODUCT_ARCH.md`。
+- 产品说明维护在 `docx/PRODUCT_INTRODUCE.md`。
+- Bug 明细维护在 `docx/BUGFIX.md`。
+- 功能优化明细维护在 `docx/FEATURE_OPTIMIZATION.md`。
+- TAPD 导入方案维护在 `docx/TAPD_IMPORT_GUIDE.md`。
 - `docx` 记录文件持续更新，不按日期拆分新文件。
 
 ### 3.3 AI 协作文件约定
@@ -79,8 +84,18 @@ mindmap
 - 推荐通过模块 `index.js` 导出入口跨模块调用。
 - 避免跨层级深路径引用造成耦合。
 
-## 5. 非架构信息归档说明
+## 5. 测试报告与数据对齐记忆
+
+- 报告预期值来源：目标文本、目标 Agent 优先从 TAPD 测试计划关联的测试用例中获取。
+- TAPD 目标 Agent 推荐维护在测试用例自定义字段“目标Agent”中；导入时通过 `tcases/custom_fields_settings` 识别对应 `custom_field_xx`，再在 `/tcases` 查询详情时读取并转换枚举值。
+- TAPD 目标文本可维护在测试用例自定义字段“目标文本”中；没有该字段时继续从步骤里的 Human/User/用户/人类语句提取。
+- Langfuse 实际值来源：实际输入文本从 ASR final/input 类 observation 提取；命中 Agent 优先从 `[run_agent]` observation 的 `input.agent_code` 提取；输出文本优先从 `[full_answer]` observation 的 `output.content` 提取。
+- 报告表格以测试计划目标文本为主，必须显示全部目标文本；Langfuse 日志只用于填充实际输入、命中 Agent、输出、耗时、错误信息等实际值。
+- 用例对齐优先级：`run_id + case_id` -> `case_id` -> `audio_file` -> 播放时间窗口 -> 文本相似度 -> 顺序兜底。
+- 是否通过的核心判定：目标 Agent 与命中 Agent 一致即意图识别通过；文本相似度仅用于辅助说明对齐质量，不作为主要通过条件。
+
+## 6. 非架构信息归档说明
 
 - 架构文档不再维护逐日变更清单。
-- 日常变更以 `docx/BUGFIX-RECORD.md` 和 `docx/FEATURE-OPTIMIZATION-RECORD.md` 为准。
+- 日常变更以 `docx/BUGFIX.md` 和 `docx/FEATURE_OPTIMIZATION.md` 为准。
 - 本文档仅保留项目长期稳定信息与协作记忆。

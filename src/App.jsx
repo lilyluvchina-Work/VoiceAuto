@@ -42,6 +42,7 @@ const TAB_ITEMS = [
   { key: MODES.voice, icon: '🎙️', label: '语音测试' },
   { key: MODES.report, icon: '📊', label: '测试过程记录' },
   { key: MODES.langfuse, icon: '🗂️', label: 'Langfuse 日志' },
+  { key: MODES.summary, icon: '🧾', label: '总结报告' },
 ];
 
 function AppContent() {

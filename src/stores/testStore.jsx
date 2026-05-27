@@ -54,6 +54,7 @@ const initialState = {
 
   // 测试报告
   report: {
+    runId: '',
     startTime: null,
     endTime: null,
     firstTestAudioTime: null,
@@ -75,6 +76,7 @@ const ActionTypes = {
   REMOVE_TEST_AUDIO: 'REMOVE_TEST_AUDIO',
   CLEAR_TEST_AUDIOS: 'CLEAR_TEST_AUDIOS',
   UPDATE_TEST_AUDIO: 'UPDATE_TEST_AUDIO',
+  REORDER_TEST_AUDIOS: 'REORDER_TEST_AUDIOS',
   SET_LOOP_COUNT: 'SET_LOOP_COUNT',
   SET_DEBUG_SEQUENCE: 'SET_DEBUG_SEQUENCE',
   SET_AUTO_FETCH_LANGFUSE_LOGS: 'SET_AUTO_FETCH_LANGFUSE_LOGS',
@@ -136,7 +138,16 @@ function testReducer(state, action) {
     case ActionTypes.REMOVE_TEST_AUDIO:
       return {
         ...state,
-        testAudios: state.testAudios.filter(a => a.id !== action.payload)
+        testAudios: state.testAudios.filter(a => a.id !== action.payload),
+        playback: state.playback.currentAudioId === action.payload
+          ? {
+              ...state.playback,
+              currentAudioId: null,
+              currentListIndex: -1,
+              currentIndex: -1,
+              currentType: null
+            }
+          : state.playback
       };
 
     case ActionTypes.CLEAR_TEST_AUDIOS:
@@ -151,6 +162,12 @@ function testReducer(state, action) {
         testAudios: state.testAudios.map(a =>
           a.id === action.payload.id ? { ...a, ...action.payload } : a
         )
+      };
+
+    case ActionTypes.REORDER_TEST_AUDIOS:
+      return {
+        ...state,
+        testAudios: action.payload
       };
 
     case ActionTypes.SET_LOOP_COUNT:
@@ -196,6 +213,7 @@ function testReducer(state, action) {
       };
 
     case ActionTypes.START_PLAYBACK:
+      const playbackStartTime = Date.now();
       return {
         ...state,
         playback: {
@@ -203,11 +221,13 @@ function testReducer(state, action) {
           isPlaying: true,
           isPaused: false,
           status: 'playing',
-          startTime: Date.now()
+          startTime: playbackStartTime
         },
         report: {
           ...state.report,
-          startTime: state.report.startTime || Date.now(),
+          runId: action.payload?.runId || '',
+          startTime: playbackStartTime,
+          endTime: null,
           firstTestAudioTime: null,
           lastTestAudioTime: null,
           successCount: 0,
@@ -427,6 +447,11 @@ export const actions = {
     payload: audio
   }),
 
+  reorderTestAudios: (audios) => ({
+    type: ActionTypes.REORDER_TEST_AUDIOS,
+    payload: audios
+  }),
+
   setLoopCount: (count) => ({
     type: ActionTypes.SET_LOOP_COUNT,
     payload: count
@@ -452,8 +477,9 @@ export const actions = {
     payload: state
   }),
 
-  startPlayback: () => ({
-    type: ActionTypes.START_PLAYBACK
+  startPlayback: (runId) => ({
+    type: ActionTypes.START_PLAYBACK,
+    payload: { runId }
   }),
 
   pausePlayback: () => ({

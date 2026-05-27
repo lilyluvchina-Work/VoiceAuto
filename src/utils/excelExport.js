@@ -93,7 +93,7 @@ export function exportSessionExcel(traces, observations, filename) {
 // ─── 日志提取字段定义 ───
 const INPUT_FIELDS = [
   'tenantid', 'family_id', 'family_uuid', 'device_id', 'device_type',
-  'request_id', 'tts_code', 'stt_code', 'tts_voice', 'live_model',
+  'user_id', 'userId', 'uid', 'request_id', 'tts_code', 'stt_code', 'tts_voice', 'live_model',
   'llm_model', 'app_id',
 ];
 const FIRST_TOKEN_DURATIONS = ['vad_duration', 'asr_duration', 'tts_duration', 'llm_duration'];

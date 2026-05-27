@@ -10,6 +10,10 @@
 
 - src/components/LangfuseFetcher.jsx
 - src/components/PlaybackConsole.jsx
+- src/components/SummaryReport.jsx
+- src/modules/langfuse/utils/sessionExtractor.js
+- src/modules/tapd/services/tapdService.js
+- src/utils/summaryReportBuilder.js
 - vite.config.js
 - src/modules/langfuse/utils/excelExporter.js
 - src/index.css
@@ -81,6 +85,29 @@
   - 现象：同局域网设备使用“主机 IP + 3000 端口”无法访问页面。
   - 根因：`vite.config.js` 未配置 `server.host`，Vite 默认仅监听回环地址。
   - 修复：在 `vite.config.js` 的 `server` 中增加 `host: '0.0.0.0'`，允许通过局域网 IP 访问。
+
+### 2026-05-27
+
+1. 修复报告表格未显示全部目标文本问题。
+  - 现象：报告明细受文本相似度过滤影响，部分测试计划目标文本未显示。
+  - 根因：旧逻辑以相似度匹配结果作为报告明细来源。
+  - 修复：报告表格改为以测试音频/测试计划目标文本为主，Langfuse 日志只作为实际值填充。
+2. 修复目标文本与实际输入文本无法一一对应问题。
+  - 现象：多条目标文本可能匹配到同一条日志，或按相似度导致错配。
+  - 根因：缺少稳定用例标识和日志唯一占用规则。
+  - 修复：新增 `run_id + case_id` 优先匹配，并确保每条 Langfuse 日志最多匹配一条目标文本；无强标识时按时间窗口、相似度和顺序兜底。
+3. 修复报告无法从日志提取实际输入、输出和命中 Agent 问题。
+  - 现象：报告表格中实际输入、输出、命中 Agent 为空或取到中间日志。
+  - 根因：Langfuse observation 字段结构存在数组、`input_data`、`full_answer` 等差异，旧提取逻辑覆盖不足。
+  - 修复：实际输入增强 ASR/input 类 observation 兜底；输出优先取 `[full_answer]` 的 `output.content`；命中 Agent 优先取 `[run_agent]` 的 `input.agent_code`。
+4. 修复目标 Agent 未从测试计划用例中稳定获取问题。
+  - 现象：目标 Agent 依赖 steps/expectation 文本解析，TAPD 用例中维护了自定义字段时仍取不到。
+  - 根因：导入链路未查询 `tcases/custom_fields_settings`，也未在 `/tcases` 的 `fields` 中动态加入目标 Agent 自定义字段。
+  - 修复：导入时先识别目标 Agent 对应 `custom_field_xx`，查询详情时带入该字段，并支持下拉枚举值转换。
+5. 修复测试音频列表调整或删除后执行顺序不及时生效问题。
+  - 现象：用户调整音频播放顺序或删除音频后，测试执行仍可能按旧列表。
+  - 根因：播放列表缺少显式重排动作与播放状态同步清理。
+  - 修复：新增重排状态动作，删除当前播放音频时同步清理当前播放索引与音频 ID，测试队列按最新列表构建。
 
 ## 归档来源
 

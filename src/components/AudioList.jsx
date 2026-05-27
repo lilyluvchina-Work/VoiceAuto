@@ -13,7 +13,6 @@ export default function AudioList() {
   const { state, dispatch } = useTest();
   const { testAudios, playback } = state;
   const [selectedModule, setSelectedModule] = React.useState('all');
-  const [expandedGroups, setExpandedGroups] = React.useState({});
 
   const getDirectoryLabel = React.useCallback((audio) => {
     const rawPlanDirectory = String(audio?.tapdPlanDirectory || '').trim();
@@ -57,29 +56,6 @@ export default function AudioList() {
   const { selectedIds, toggle, selectAll, remove, clear, isAllSelected } = useSelection();
   const { currentPage, totalPages, pageStart, pageEnd, pageItems, goPage } = usePagination(filteredAudios, PAGE_SIZE);
 
-  const groupedPageItems = React.useMemo(() => {
-    return pageItems.reduce((acc, audio) => {
-      const moduleName = getDirectoryLabel(audio);
-      if (!acc[moduleName]) {
-        acc[moduleName] = [];
-      }
-      acc[moduleName].push(audio);
-      return acc;
-    }, {});
-  }, [pageItems, getDirectoryLabel]);
-
-  React.useEffect(() => {
-    setExpandedGroups((prev) => {
-      const next = { ...prev };
-      Object.keys(groupedPageItems).forEach((groupName) => {
-        if (next[groupName] === undefined) {
-          next[groupName] = true;
-        }
-      });
-      return next;
-    });
-  }, [groupedPageItems]);
-
   // 删除音频
   const handleDelete = (id) => {
     dispatch(actions.removeTestAudio(id));
@@ -95,11 +71,26 @@ export default function AudioList() {
   const pageIds = pageItems.map(a => a.id);
   const allPageSelected = isAllSelected(pageIds);
 
-  const toggleGroup = (groupName) => {
-    setExpandedGroups((prev) => ({
-      ...prev,
-      [groupName]: !prev[groupName]
-    }));
+  const moveAudio = (id, direction) => {
+    const visibleIndex = filteredAudios.findIndex((audio) => audio.id === id);
+    const targetVisibleIndex = visibleIndex + direction;
+    if (visibleIndex < 0 || targetVisibleIndex < 0 || targetVisibleIndex >= filteredAudios.length) {
+      return;
+    }
+
+    const targetId = filteredAudios[targetVisibleIndex].id;
+    const nextAudios = [...testAudios];
+    const sourceIndex = nextAudios.findIndex((audio) => audio.id === id);
+    const targetIndex = nextAudios.findIndex((audio) => audio.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return;
+    }
+
+    const [moved] = nextAudios.splice(sourceIndex, 1);
+    const adjustedTargetIndex = nextAudios.findIndex((audio) => audio.id === targetId);
+    const insertIndex = direction < 0 ? adjustedTargetIndex : adjustedTargetIndex + 1;
+    nextAudios.splice(insertIndex, 0, moved);
+    dispatch(actions.reorderTestAudios(nextAudios));
   };
 
   return (
@@ -162,6 +153,7 @@ export default function AudioList() {
             />
             <span className="w-6 text-center">#</span>
             <span className="w-8"></span>
+            <span className="w-20 text-center">顺序</span>
             <span className="w-24 text-center hidden md:block">功能模块</span>
             <span className="flex-1">文本内容</span>
             <span className="w-20 text-center hidden sm:block">来源 / 时长</span>
@@ -170,25 +162,14 @@ export default function AudioList() {
 
           {/* 列表项 */}
           <div className="space-y-3">
-            {Object.entries(groupedPageItems).map(([moduleName, moduleAudios]) => (
-              <div key={moduleName} className="border border-gray-700 rounded-lg overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(moduleName)}
-                  className="w-full px-3 py-2 bg-gray-800/70 text-xs text-gray-300 flex items-center justify-between hover:bg-gray-700/70 transition-colors"
-                >
-                  <span className="flex items-center gap-2 min-w-0">
-                    <span>{expandedGroups[moduleName] ? '▾' : '▸'}</span>
-                    <span>📁</span>
-                    <span className="truncate" title={moduleName}>{moduleName}</span>
-                  </span>
-                  <span>{moduleAudios.length} 条</span>
-                </button>
-                {expandedGroups[moduleName] !== false && moduleAudios.map((audio, idx) => {
-                  const globalIndex = pageStart + pageItems.findIndex((item) => item.id === audio.id) + 1;
+            {pageItems.map((audio, idx) => {
+                  const globalIndex = pageStart + idx + 1;
+                  const filteredIndex = pageStart + idx;
                   const isPlaying = playingId === audio.id;
                   const isRunnerPlaying = currentPlayingTestId === audio.id;
                   const audioDirectory = getDirectoryLabel(audio);
+                  const canMoveUp = filteredIndex > 0;
+                  const canMoveDown = filteredIndex < filteredAudios.length - 1;
 
                   return (
                     <div
@@ -200,7 +181,7 @@ export default function AudioList() {
                           ? 'bg-primary/15'
                           : 'bg-gray-800/40 hover:bg-gray-700/40'
                       }`}
-                    >
+                  >
                   {/* 复选框 */}
                   <input
                     type="checkbox"
@@ -227,6 +208,27 @@ export default function AudioList() {
                   >
                     {isPlaying ? '⏹' : '▶'}
                   </button>
+
+                  <div className="w-20 flex items-center justify-center gap-1 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => moveAudio(audio.id, -1)}
+                      disabled={!canMoveUp}
+                      className="w-7 h-7 rounded bg-gray-700 hover:bg-primary/80 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed text-gray-200 transition-colors text-xs"
+                      title="上移"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveAudio(audio.id, 1)}
+                      disabled={!canMoveDown}
+                      className="w-7 h-7 rounded bg-gray-700 hover:bg-primary/80 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed text-gray-200 transition-colors text-xs"
+                      title="下移"
+                    >
+                      ↓
+                    </button>
+                  </div>
 
                   <div className="hidden md:flex w-24 justify-center flex-shrink-0">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${
@@ -274,8 +276,6 @@ export default function AudioList() {
                     </div>
                   );
                 })}
-              </div>
-            ))}
           </div>
 
           {/* 分页控件 */}

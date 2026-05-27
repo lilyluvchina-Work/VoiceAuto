@@ -8,6 +8,29 @@ import { playAudioItem } from '../utils/audioHelpers';
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+const pad = (value) => String(value).padStart(2, '0');
+
+const createReportRunId = () => {
+  const now = new Date();
+  return [
+    'RUN_',
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+    '_',
+    pad(now.getHours()),
+    pad(now.getMinutes()),
+    pad(now.getSeconds()),
+  ].join('');
+};
+
+const resolveAudioCaseId = (audio, index) => {
+  if (audio?.caseId || audio?.case_id) return audio.caseId || audio.case_id;
+  if (audio?.tapdCaseId && audio?.humanIndex) return `${audio.tapdCaseId}_${audio.humanIndex}`;
+  if (audio?.tapdCaseId) return audio.tapdCaseId;
+  return audio?.id || `case_${index + 1}`;
+};
+
 const buildQueue = (audios, loopCount) => {
   const queue = [];
   for (let round = 0; round < loopCount; round++) {
@@ -44,6 +67,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
   const isPlayingRef = useRef(false);
   const isPausedRef = useRef(false);
   const runIdRef = useRef(0);
+  const reportRunIdRef = useRef('');
 
   const estimateRemainingTime = useCallback(() => {
     if (totalCases === 0 || playback.currentIndex < 0) return 0;
@@ -61,7 +85,10 @@ export default function useTestRunner({ onTestComplete } = {}) {
     const queue = buildQueue(playableAudios, testOptions.loopCount);
     const shouldStop = () => !isPlayingRef.current || runIdRef.current !== runId;
 
-    dispatch(actions.startPlayback());
+    const reportRunId = createReportRunId();
+    reportRunIdRef.current = reportRunId;
+
+    dispatch(actions.startPlayback(reportRunId));
     isPlayingRef.current = true;
     isPausedRef.current = false;
     startTimeRef.current = Date.now();
@@ -128,21 +155,36 @@ export default function useTestRunner({ onTestComplete } = {}) {
         }
 
         let success = true;
+        const caseId = resolveAudioCaseId(item.audio, item.listIndex);
+        const playStartTime = Date.now();
         try {
           await playAudioItem(item.audio, ttsService);
         } catch (err) {
           success = false;
           console.error('Audio playback failed:', err);
         }
+        const playEndTime = Date.now();
 
-        lastTestAudioTimeRef.current = Date.now();
+        lastTestAudioTimeRef.current = playEndTime;
         dispatch(actions.setReport({ lastTestAudioTime: lastTestAudioTimeRef.current }));
 
         // 记录结果
         dispatch(actions.addReportCase({
           index: cursor,
+          listIndex: item.listIndex,
           round: item.round,
+          runId: reportRunIdRef.current,
+          caseId,
+          playIndex: cursor + 1,
+          audioId: item.audio.id,
+          audioFile: `${reportRunIdRef.current}_${caseId}.wav`,
           text: item.audio.text,
+          targetText: item.audio.text,
+          targetAgent: item.audio.targetAgent || item.audio.expectedAgent || '',
+          tapdCaseId: item.audio.tapdCaseId || '',
+          humanIndex: item.audio.humanIndex || '',
+          playStartTime,
+          playEndTime,
           success,
           duration: item.audio.duration || 0
         }));

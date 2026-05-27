@@ -6,17 +6,15 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { fetchTraces, fetchObservations, FetchController, ENVIRONMENTS } from '../modules/langfuse/services/langfuseService';
 import { exportToExcel, exportSessionExcel, buildSessionRows, downloadJSON } from '../modules/langfuse/utils/excelExporter';
 import { createTapdBug } from '../modules/tapd/services/tapdService';
-import {
-  SUMMARY_REPORT_EMAIL,
-  sendSummaryReportEmailAuto,
-  openSummaryReportMailClient,
-} from '../services/emailService';
 import { useTest } from '../stores/testStore';
+import {
+  SUMMARY_REPORT_EVENT,
+  SUMMARY_REPORT_STORAGE_KEY,
+  buildSummaryReportPayload,
+} from '../utils/summaryReportBuilder';
 
 const LANGFUSE_PAGE_STORAGE_KEY = 'voiceauto_langfuse_page_state';
 const TAPD_CONFIG_KEY = 'voiceauto_tapd_config_v1';
-const SUMMARY_REPORT_STORAGE_KEY = 'voiceauto_summary_report_v1';
-const SUMMARY_REPORT_EVENT = 'voiceauto-summary-report-updated';
 
 function loadTapdConfig() {
   try {
@@ -54,97 +52,6 @@ function resolveCaseNameByHumanText(testAudios, inputText) {
   const matched = (testAudios || []).find((item) => normalizeLine(item?.text) === normalizedInput);
   return normalizeLine(matched?.caseTitle || matched?.name || matched?.tapdCaseTitle || '');
 }
-
-function resolveModuleNameByHumanText(testAudios, inputText) {
-  const normalizedInput = normalizeLine(inputText);
-  if (!normalizedInput) return '未分类';
-  const matched = (testAudios || []).find((item) => normalizeLine(item?.text) === normalizedInput);
-  return normalizeLine(
-    matched?.module
-    || matched?.tapdPlanDirectory
-    || matched?.tapdCategoryName
-    || '未分类'
-  ) || '未分类';
-}
-
-function parseMs(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num < 0) return null;
-  return num;
-}
-
-function buildSummaryReportPayload(sessionRows, testAudios, envKey, range) {
-  const safeRows = Array.isArray(sessionRows) ? sessionRows : [];
-  const executedCases = safeRows.length;
-  const passedCases = safeRows.filter((row) => !normalizeLine(row?.error)).length;
-  const failedCases = Math.max(0, executedCases - passedCases);
-  const passRate = executedCases > 0 ? `${((passedCases / executedCases) * 100).toFixed(1)}%` : '0.0%';
-
-  const moduleMap = new Map();
-  for (const row of safeRows) {
-    const moduleName = resolveModuleNameByHumanText(testAudios, row?.InputText);
-    const responseMs = parseMs(row?.['first_token.total']);
-
-    if (!moduleMap.has(moduleName)) {
-      moduleMap.set(moduleName, {
-        module: moduleName,
-        caseCount: 0,
-        responseCount: 0,
-        responseTotalMs: 0,
-      });
-    }
-    const item = moduleMap.get(moduleName);
-    item.caseCount += 1;
-    if (responseMs != null) {
-      item.responseCount += 1;
-      item.responseTotalMs += responseMs;
-    }
-  }
-
-  const moduleAverages = Array.from(moduleMap.values())
-    .map((item) => ({
-      module: item.module,
-      caseCount: item.caseCount,
-      avgResponseMs: item.responseCount > 0 ? Number((item.responseTotalMs / item.responseCount).toFixed(1)) : null,
-    }))
-    .sort((a, b) => a.module.localeCompare(b.module, 'zh-CN'));
-
-  const envLabel = ENVIRONMENTS[envKey]?.label || envKey;
-  const testEnvironment = `${envLabel} (${envKey})`;
-  const generatedAt = Date.now();
-  const generatedAtText = new Date(generatedAt).toLocaleString('zh-CN');
-  const rangeText = `${range.fromDate} ${range.fromTime} -> ${range.toDate} ${range.toTime}`;
-
-  const moduleLines = moduleAverages.length > 0
-    ? moduleAverages.map((item) => `- ${item.module}: ${item.avgResponseMs == null ? '-' : `${item.avgResponseMs}ms`}（${item.caseCount} 条）`).join('\n')
-    : '- 无可用数据';
-
-  const text = [
-    'VoiceAuto 总结报告',
-    `生成时间: ${generatedAtText}`,
-    `测试环境: ${testEnvironment}`,
-    `时间范围: ${rangeText}`,
-    `执行用例条数: ${executedCases}`,
-    `执行通过率: ${passRate}`,
-    '',
-    '每个模块平均响应时间:',
-    moduleLines,
-  ].join('\n');
-
-  return {
-    generatedAt,
-    generatedAtText,
-    testEnvironment,
-    rangeText,
-    executedCases,
-    passedCases,
-    failedCases,
-    passRate,
-    moduleAverages,
-    text,
-  };
-}
-
 
 function buildBugTitle(caseName, humanText, errorMessage) {
   const title = [
@@ -828,18 +735,20 @@ export default function LangfuseFetcher() {
     );
   };
 
-  const handleGenerateSummaryAndSendEmail = async () => {
+  const handleGenerateSummaryReport = async () => {
     if (sessionRows.length === 0) {
       setError('暂无可生成总结报告的数据，请先获取 Langfuse 日志。');
       return;
     }
 
-    const reportPayload = buildSummaryReportPayload(
+    const reportPayload = buildSummaryReportPayload({
       sessionRows,
-      state.testAudios,
+      testAudios: state.testAudios,
+      envLabel: ENVIRONMENTS[envKey]?.label,
       envKey,
-      { fromDate, fromTime, toDate, toTime }
-    );
+      range: { fromDate, fromTime, toDate, toTime },
+      testReport: state.report,
+    });
 
     try {
       localStorage.setItem(SUMMARY_REPORT_STORAGE_KEY, JSON.stringify(reportPayload));
@@ -848,13 +757,8 @@ export default function LangfuseFetcher() {
     }
 
     window.dispatchEvent(new CustomEvent(SUMMARY_REPORT_EVENT, { detail: reportPayload }));
-    try {
-      await sendSummaryReportEmailAuto(reportPayload, SUMMARY_REPORT_EMAIL);
-      setError(`总结报告已自动发送到 ${SUMMARY_REPORT_EMAIL}`);
-    } catch {
-      openSummaryReportMailClient(reportPayload, SUMMARY_REPORT_EMAIL);
-      setError(`自动发送失败，已回退为唤起邮件客户端发送到 ${SUMMARY_REPORT_EMAIL}`);
-    }
+    setError('总结报告已生成，可在“总结报告”菜单查看。');
+    window.alert('报告生成成功');
   };
 
   const isFetching = status === 'fetching';
@@ -1046,12 +950,12 @@ export default function LangfuseFetcher() {
           <div className="bg-dark rounded-xl p-5 border border-gray-700">
             <h3 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2"><span>⬇️</span> 下载数据</h3>
             <div className="flex flex-wrap gap-3">
-              <button onClick={handleGenerateSummaryAndSendEmail}
+              <button onClick={handleGenerateSummaryReport}
                 className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8m-18 8h18a2 2 0 002-2V8a2 2 0 00-2-2H3a2 2 0 00-2 2v6a2 2 0 002 2z" />
                 </svg>
-                生成总结报告并发送邮件
+                生成报告
               </button>
               <button onClick={handleSessionExcel}
                 className="flex items-center gap-2 px-5 py-2.5 bg-secondary hover:bg-purple-400 text-white text-sm font-medium rounded-lg transition-colors">

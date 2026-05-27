@@ -6,6 +6,8 @@
 
 const BASE = '/tapd-api';
 const BATCH_SIZE = 50; // 每批查询用例数
+const TARGET_AGENT_ALIASES = ['目标Agent', '目标agent', '预期Agent', '期望Agent', '目标智能体', 'Agent', 'target_agent', 'TargetAgent', 'Target Agent'];
+const TARGET_TEXT_ALIASES = ['目标文本', '目标语句', '测试文本', '输入文本', 'target_text', 'TargetText', 'Target Text'];
 
 function normalizeInput(value) {
   return String(value ?? '').trim();
@@ -22,6 +24,62 @@ function toBase64Utf8(value) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function normalizeFieldName(value) {
+  return String(value || '').replace(/[\s_\-：:]/g, '').toLowerCase();
+}
+
+function parseOptions(value) {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    const parsed = tryParseJsonString(value);
+    if (parsed) return parseOptions(parsed);
+    return {};
+  }
+  if (Array.isArray(value)) {
+    return value.reduce((acc, item) => {
+      const key = String(item?.id ?? item?.value ?? item?.key ?? '').trim();
+      const label = pickReadableText(item?.label ?? item?.name ?? item?.text ?? item?.value);
+      if (key && label) acc[key] = label;
+      return acc;
+    }, {});
+  }
+  if (typeof value === 'object') {
+    return Object.entries(value).reduce((acc, [key, optionValue]) => {
+      const label = pickReadableText(optionValue);
+      if (key && label) acc[String(key).trim()] = label;
+      return acc;
+    }, {});
+  }
+  return {};
+}
+
+function normalizeCustomFieldRecord(item) {
+  const raw = item?.CustomFieldConfig || item?.CustomFieldSetting || item?.TcaseCustomFieldConfig || item || {};
+  const customField = String(raw.custom_field || raw.field || raw.key || raw.name_key || '').trim();
+  const name = String(raw.name || raw.label || raw.title || '').trim();
+  return {
+    customField,
+    name,
+    type: String(raw.type || raw.field_type || '').trim(),
+    options: parseOptions(raw.options || raw.option || raw.enums || raw.values),
+  };
+}
+
+function findCustomFieldByAliases(settings, aliases) {
+  const aliasSet = new Set(aliases.map(normalizeFieldName));
+  return (settings || []).find((item) => aliasSet.has(normalizeFieldName(item.name))) || null;
+}
+
+function resolveCustomFieldDisplayValue(rawValue, config) {
+  const rawText = pickReadableText(rawValue);
+  if (!rawText) return '';
+
+  const options = config?.options || {};
+  const parts = rawText.split(/[,\s;；，]+/).map((item) => item.trim()).filter(Boolean);
+  const mappedParts = parts.map((part) => options[part] || part);
+  return mappedParts.join(' / ').trim();
 }
 
 function isIdLikePath(value) {
@@ -555,11 +613,36 @@ export async function fetchPlanCaseIds(workspaceId, testPlanId, apiUser, apiPass
 }
 
 /**
+ * 获取测试用例自定义字段配置，并识别目标 Agent / 目标文本字段。
+ */
+export async function fetchTcaseCustomFieldSettings(workspaceId, apiUser, apiPassword) {
+  const data = await tapdGet(
+    '/tcases/custom_fields_settings',
+    { workspace_id: workspaceId },
+    apiUser,
+    apiPassword
+  );
+
+  const settings = (data.data || [])
+    .map(normalizeCustomFieldRecord)
+    .filter((item) => item.customField && item.name);
+
+  const targetAgentField = findCustomFieldByAliases(settings, TARGET_AGENT_ALIASES);
+  const targetTextField = findCustomFieldByAliases(settings, TARGET_TEXT_ALIASES);
+
+  return {
+    settings,
+    targetAgentField,
+    targetTextField,
+  };
+}
+
+/**
  * 批量获取用例详情
  * @param {string[]} caseIds
  * @returns {TapdCase[]}
  */
-export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPassword) {
+export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPassword, options = {}) {
   if (!Array.isArray(caseIds) || caseIds.length === 0) {
     return [];
   }
@@ -571,6 +654,29 @@ export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPasswor
 
   const cases = [];
   const categoryLookup = await fetchCaseCategoryLookup(workspaceId, apiUser, apiPassword);
+  const customFieldInfo = options.customFieldInfo || await fetchTcaseCustomFieldSettings(workspaceId, apiUser, apiPassword).catch(() => ({
+    settings: [],
+    targetAgentField: null,
+    targetTextField: null,
+  }));
+  const targetAgentField = customFieldInfo.targetAgentField;
+  const targetTextField = customFieldInfo.targetTextField;
+  const extraFields = [
+    targetAgentField?.customField,
+    targetTextField?.customField,
+  ].filter(Boolean);
+  const fields = Array.from(new Set([
+    'id',
+    'name',
+    'steps',
+    'expectation',
+    'priority',
+    'status',
+    'category_id',
+    'category_name',
+    'module_name',
+    ...extraFields,
+  ])).join(',');
 
   for (let i = 0; i < normalizedCaseIds.length; i += BATCH_SIZE) {
     const batch = normalizedCaseIds.slice(i, i + BATCH_SIZE);
@@ -579,7 +685,7 @@ export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPasswor
       {
         workspace_id: workspaceId,
         id: batch.join(','),
-        fields: 'id,name,steps,expectation,priority,status,category_id,category_name,module_name',
+        fields,
         limit: 200,
       },
       apiUser,
@@ -606,12 +712,22 @@ export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPasswor
         || normalizeDirectoryText(categoryObj.name)
         || splitPathSegments(caseDirectoryPath).slice(-1)[0]
       ).trim();
+      const targetAgentRaw = targetAgentField?.customField ? c[targetAgentField.customField] : '';
+      const targetTextRaw = targetTextField?.customField ? c[targetTextField.customField] : '';
+      const targetAgent = resolveCustomFieldDisplayValue(targetAgentRaw, targetAgentField);
+      const targetText = resolveCustomFieldDisplayValue(targetTextRaw, targetTextField);
 
       cases.push({
         id: String(c.id || ''),
         name: c.name || '',
         steps: c.steps || '',
         expectation: c.expectation || '',
+        targetText,
+        targetTextField: targetTextField?.customField || '',
+        targetAgent,
+        targetAgentField: targetAgentField?.customField || '',
+        targetAgentFieldName: targetAgentField?.name || '',
+        targetAgentSource: targetAgent ? (targetAgentField?.customField || 'custom_field') : '',
         priority: c.priority || '',
         status: c.status || '',
         categoryId,

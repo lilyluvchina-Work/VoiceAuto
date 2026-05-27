@@ -234,6 +234,71 @@ curl -u 'api_user:api_password' \
 
 ---
 
+### 3.5 获取测试用例自定义字段配置
+
+用于识别 TAPD 测试用例中“目标Agent”“目标文本”对应的 `custom_field_xx`，避免依赖步骤描述解析。
+
+```http
+GET https://api.tapd.cn/tcases/custom_fields_settings
+```
+
+请求参数：
+
+| 参数 | 是否必填 | 说明 |
+|---|---:|---|
+| `workspace_id` | 是 | 项目 ID |
+
+curl 示例：
+
+```bash
+curl -u 'api_user:api_password' \
+'https://api.tapd.cn/tcases/custom_fields_settings?workspace_id=10158231'
+```
+
+处理规则：
+
+1. 遍历返回的自定义字段配置。
+2. 查找字段名为“目标Agent”的配置，兼容别名：`预期Agent`、`期望Agent`、`目标智能体`、`Agent`、`target_agent`。
+3. 读取该配置中的 `custom_field`，例如 `custom_field_30`。
+4. 如果字段类型为下拉枚举，需要读取 `options`，用于将接口返回值转换为真实 Agent 名称。
+5. 同理可查找“目标文本”字段，兼容 `目标语句`、`测试文本`、`输入文本`、`target_text` 等别名。
+
+示例配置：
+
+```json
+{
+  "name": "目标Agent",
+  "custom_field": "custom_field_30",
+  "type": "select",
+  "options": {
+    "1": "WeatherAgent",
+    "2": "MusicAgent",
+    "3": "DeviceControlAgent"
+  }
+}
+```
+
+最终查询 `/tcases` 时应动态追加字段：
+
+```text
+id,name,steps,expectation,priority,status,category_id,category_name,module_name,custom_field_30
+```
+
+若“目标文本”也有自定义字段，例如 `custom_field_31`，则同步追加：
+
+```text
+id,name,steps,expectation,priority,status,category_id,category_name,module_name,custom_field_30,custom_field_31
+```
+
+目标字段优先级：
+
+| 数据 | 优先级 |
+|---|---|
+| 目标 Agent | TAPD 自定义字段 -> steps/expectation/name 文本解析兜底 |
+| 目标文本 | TAPD 自定义字段 -> steps 中 Human/User/用户/人类语句 |
+
+---
+
 ## 4. 页面功能设计
 
 ### 4.1 测试用例管理菜单

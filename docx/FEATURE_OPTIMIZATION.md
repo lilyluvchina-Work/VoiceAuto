@@ -20,6 +20,13 @@
 - src/utils/reportGenerator.js
 - src/utils/logAnalysis.js
 - src/utils/audioUtils.jsx
+- src/utils/summaryReportBuilder.js
+- src/components/SummaryReport.jsx
+- src/components/AudioList.jsx
+- src/components/TapdImportWizard.jsx
+- src/modules/tapd/services/tapdService.js
+- src/modules/tapd/utils/tapdParser.js
+- src/modules/langfuse/utils/sessionExtractor.js
 - deploy/nginx/langfuse-proxy.conf.example
 - deploy/nginx/voice-auto.server.conf.template
 - deploy/scripts/build_deploy_bundle.ps1
@@ -171,6 +178,43 @@
 6. 总结报告菜单临时隐藏。
    - 顶部导航暂时移除“总结报告”菜单入口。
    - 总结报告相关代码能力保留，仅隐藏菜单展示，后续可快速恢复。
+
+### 2026-05-27
+
+1. 总结报告能力升级。
+   - 恢复“总结报告”菜单入口，Langfuse 页面按钮调整为“生成报告”，生成后弹窗提示成功。
+   - 取消报告邮件发送链路，报告生成后仅保存到本地并在总结报告页展示。
+   - 报告基础信息补充导入测试计划、用例总数、执行数量、执行率、测试时间、测试负责人。
+   - 提测参数补充租户 ID、用户 ID、家庭 ID，缺失字段统一以 `/` 展示。
+   - 总结报告页面支持基础信息、提测参数、模块统计和正文编辑；报告明细表格保持只读。
+   - 报告排版优化为分区展示，提升可读性。
+2. 报告表格与统计口径升级。
+   - 报告表格以测试计划目标文本为主，显示全部目标文本。
+   - 表格字段整理为：用例 ID、目标文本、目标 Agent、实际输入、命中 Agent、Agent 是否命中、文本相似度、匹配状态、匹配方式、结论、输出、VadDuration、ASRDuration、TTSDuration、LLMDuration、FirstToken、错误信息。
+   - Agent 命中率按功能模块统计，并输出整体 Agent 命中率。
+   - 平均耗时按功能模块统计，并输出整体平均耗时。
+   - FirstToken 按 `TTSDuration + LLMDuration` 计算。
+3. 用例与日志对齐方案落地。
+   - 测试执行时生成测试批次 `runId`，每条播放记录保存 `caseId`、播放顺序、音频 ID、音频文件名、播放开始/结束时间。
+   - TAPD 导入用例生成稳定 `caseId`，格式优先为 `tapdCaseId_humanIndex`。
+   - 报告匹配优先级调整为：`run_id + case_id`、`case_id`、`audio_file`、播放时间窗口、文本相似度、顺序兜底。
+   - 同一条 Langfuse 日志只允许匹配到一条目标文本，避免实际输入与目标文本多对一错配。
+   - 是否通过调整为目标 Agent 与命中 Agent 一致即通过，文本相似度仅作为对齐质量辅助字段。
+4. TAPD 目标 Agent 获取方案落地。
+   - 导入测试计划时先调用 `tcases/custom_fields_settings` 获取测试用例自定义字段配置。
+   - 自动识别“目标Agent”字段，支持“预期Agent”“期望Agent”“目标智能体”“Agent”“target_agent”等别名。
+   - 查询 `/tcases` 用例详情时动态追加目标 Agent 对应的 `custom_field_xx`。
+   - 目标 Agent 为下拉枚举时，根据自定义字段 `options` 自动转换为真实 Agent 名称。
+   - 同步支持“目标文本”自定义字段，优先使用该字段生成测试音频；无字段时继续从 steps 中解析 Human 文本。
+   - 保留步骤/预期结果解析作为目标 Agent 兜底。
+5. Langfuse 日志提取增强。
+   - 命中 Agent 优先从 `[run_agent]` observation 的 `input.agent_code` 提取。
+   - 兼容 `input`、`input_data`、`inputData` 以及数组结构中的 `agent_code`。
+   - 输出文本优先从 `[full_answer]` observation 的 `output.content` 提取，兼容对象、数组与 message.content 结构。
+   - 日志提取行补充 `run_id`、`case_id`、`audio_file`、`play_index`、`timestamp` 等字段，用于报告强匹配。
+6. 测试音频列表顺序控制。
+   - 测试音频列表支持上移/下移调整播放顺序。
+   - 删除或调整顺序后，列表立即生效，测试执行按当前列表顺序播放。
 
 ## 归档来源
 

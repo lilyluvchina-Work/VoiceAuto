@@ -10,6 +10,7 @@ import {
   fetchProjects,
   fetchOpenTestPlans,
   fetchPlanCases,
+  fetchTcaseCustomFieldSettings,
   fetchCaseDetails,
 } from '../modules/tapd/services/tapdService';
 import { tapdCaseToTestAudios } from '../modules/tapd/utils/tapdParser';
@@ -361,6 +362,11 @@ export default function TapdImportWizard({ onClose }) {
     let currentStage = '';
 
     try {
+      currentStage = '获取自定义字段配置';
+      setImportStage(currentStage);
+      setImportProgress('正在识别“目标Agent”自定义字段...');
+      const customFieldInfo = await fetchTcaseCustomFieldSettings(project.workspaceId, cfg.apiUser, cfg.apiPassword);
+
       currentStage = '获取用例清单';
       setImportStage(currentStage);
       setImportProgress('正在获取用例清单...');
@@ -380,8 +386,11 @@ export default function TapdImportWizard({ onClose }) {
 
       currentStage = '获取用例详情';
       setImportStage(currentStage);
-      setImportProgress(`共 ${caseIds.length} 条用例，正在获取详情...`);
-      const cases = await fetchCaseDetails(project.workspaceId, caseIds, cfg.apiUser, cfg.apiPassword);
+      const targetAgentFieldText = customFieldInfo.targetAgentField
+        ? `目标Agent字段：${customFieldInfo.targetAgentField.name}（${customFieldInfo.targetAgentField.customField}）`
+        : '未找到目标Agent字段，将使用步骤/预期结果兜底解析';
+      setImportProgress(`共 ${caseIds.length} 条用例，正在获取详情...${targetAgentFieldText}`);
+      const cases = await fetchCaseDetails(project.workspaceId, caseIds, cfg.apiUser, cfg.apiPassword, { customFieldInfo });
 
       // 已有用例文本 set（用于重复检测）
       const existingTexts = new Set(state.testAudios.map(a => a.text));
@@ -390,6 +399,7 @@ export default function TapdImportWizard({ onClose }) {
         workspaceName: project.workspaceName,
         testPlanId: plan.testPlanId,
         testPlanName: plan.testPlanName,
+        testPlanOwner: plan.owner,
       };
 
       currentStage = '解析并导入';
@@ -414,10 +424,15 @@ export default function TapdImportWizard({ onClose }) {
       }
 
       if (cfg?.debugDirectoryMapping) {
+        console.group('[TAPD Target Agent Debug] custom field settings');
+        console.info('目标Agent字段:', customFieldInfo.targetAgentField || null);
+        console.info('目标文本字段:', customFieldInfo.targetTextField || null);
+        console.groupEnd();
+
         console.group('[TAPD Directory Debug] category mapping result');
         cases.slice(0, 30).forEach((item, index) => {
           console.log(
-            `[#${index + 1}] caseId=${item.id}; category_id=${item.categoryId}; categoryName=${item.categoryName || '(empty)'}; categoryPath=${item.categoryPath || '(empty)'}`,
+            `[#${index + 1}] caseId=${item.id}; targetAgent=${item.targetAgent || '(empty)'}; field=${item.targetAgentField || '(none)'}; category_id=${item.categoryId}; categoryName=${item.categoryName || '(empty)'}; categoryPath=${item.categoryPath || '(empty)'}`,
             item
           );
         });

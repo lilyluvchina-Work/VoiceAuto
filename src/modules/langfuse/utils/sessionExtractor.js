@@ -6,6 +6,8 @@
 // ─── 字段定义 ───
 export const INPUT_FIELDS = [
   'tenantid', 'family_id', 'family_uuid', 'device_id', 'device_type',
+  'user_id', 'userId', 'uid', 'run_id', 'runId', 'case_id', 'caseId',
+  'play_index', 'playIndex', 'audio_file', 'audioFile',
   'request_id', 'tts_code', 'stt_code', 'tts_voice', 'live_model',
   'llm_model', 'app_id',
 ];
@@ -31,6 +33,23 @@ function deepFind(obj, key, maxDepth = 3) {
       const r = deepFind(v, key, maxDepth - 1);
       if (r != null) return r;
     }
+  }
+  return undefined;
+}
+
+function deepFindAny(value, key, maxDepth = 4) {
+  if (maxDepth <= 0 || value == null || typeof value !== 'object') return undefined;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const result = deepFindAny(item, key, maxDepth - 1);
+      if (result != null) return result;
+    }
+    return undefined;
+  }
+  if (key in value && value[key] != null) return value[key];
+  for (const child of Object.values(value)) {
+    const result = deepFindAny(child, key, maxDepth - 1);
+    if (result != null) return result;
   }
   return undefined;
 }
@@ -83,6 +102,26 @@ function resolveDuration(obs, field) {
   return undefined;
 }
 
+function resolveObservationValue(obs, fields) {
+  const sources = [
+    parseIfString(obs?.input_data ?? obs?.inputData),
+    parseIfString(obs?.input),
+    parseIfString(obs?.output_data ?? obs?.outputData),
+    parseIfString(obs?.output),
+    obs?.metadata,
+  ];
+
+  for (const source of sources) {
+    if (source == null || typeof source !== 'object') continue;
+    for (const field of fields) {
+      const direct = deepFindAny(source, field, 4);
+      if (direct != null && direct !== '') return direct;
+    }
+  }
+
+  return '';
+}
+
 function stringifyError(value) {
   if (value == null) return '';
   if (typeof value === 'string') return value.trim();
@@ -109,13 +148,28 @@ function stringifyError(value) {
   return '';
 }
 
+function isFullAnswerObservation(obs) {
+  const obsName = String(obs?.name || '').toLowerCase();
+  return obsName === 'full_answer'
+    || obsName === 'full-answer'
+    || obsName.includes('full_answer')
+    || obsName.includes('full-answer');
+}
+
 function resolveOutputContent(obs) {
   if (obs?.output == null) return '';
 
   const out = parseIfString(obs.output);
-  if (typeof out === 'string' || out == null || typeof out !== 'object') return '';
-  const obsName = String(obs?.name || '').toLowerCase();
-  const isFullAnswerObservation = obsName === 'full_answer' || obsName === 'full-answer' || obsName.includes('full_answer') || obsName.includes('full-answer');
+  if (typeof out === 'string') return isFullAnswerObservation(obs) ? out.trim() : '';
+  if (out == null || typeof out !== 'object') return '';
+
+  if (Array.isArray(out)) {
+    return out
+      .map((item) => stringifyError(item?.content ?? item?.message?.content ?? item?.text ?? item))
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+  }
 
   const fullAnswer =
     out['full-answer']
@@ -138,11 +192,11 @@ function resolveOutputContent(obs) {
   }
 
   // 兼容截图场景：observation 名称为 full_answer，content 直接挂在 output.content
-  if (isFullAnswerObservation) {
+  if (isFullAnswerObservation(obs)) {
     return stringifyError(out.content ?? out.message?.content ?? out.text);
   }
 
-  return '';
+  return stringifyError(out.content ?? out.message?.content ?? out.text ?? out.output?.content);
 }
 
 function resolveObservationError(obs) {
@@ -208,23 +262,50 @@ export function buildSessionRows(traces, observations) {
     );
 
     // ── AgentCode ──
-    // 优先取 name 包含 'run_agent' 的 observation 的 input.agent_code（时间最晚）
-    // 兜底取 name 包含 'llmchat' 的 observation 的 input.agent_code（时间最晚）
+    // 优先取 [run_agent] observation 的 input.agent_code。
     const agentCode = (() => {
+      const agentFields = [
+        'agent_code',
+        'agentCode',
+        'AgentCode',
+        'final_agent',
+        'finalAgent',
+        'primary_hit_agent',
+        'primaryHitAgent',
+        'hit_agent',
+        'hitAgent',
+      ];
       const findAgentCode = (nameKeyword) => {
         for (let i = sortedObs.length - 1; i >= 0; i--) {
           const o = sortedObs[i];
-          if (typeof o.name !== 'string' || !o.name.includes(nameKeyword)) continue;
-          const inp = parseIfString(o.input);
-          if (inp != null && typeof inp === 'object' && inp.agent_code) return String(inp.agent_code);
+          const name = String(o.name || '').toLowerCase();
+          if (!name.includes(nameKeyword)) continue;
+          const value = resolveObservationValue(o, agentFields);
+          if (value) return String(value);
         }
         return '';
       };
-      return findAgentCode('run_agent') || findAgentCode('llmchat');
+      const runAgentCode = findAgentCode('run_agent');
+      if (runAgentCode) return runAgentCode;
+
+      for (let i = sortedObs.length - 1; i >= 0; i--) {
+        const o = sortedObs[i];
+        const name = String(o.name || '').toLowerCase();
+        if (!name.includes('agent') && !name.includes('route') && !name.includes('router')) continue;
+        const value = resolveObservationValue(o, agentFields);
+        if (value) return String(value);
+      }
+      return findAgentCode('llmchat')
+        || String(resolveInputField(firstTrace, 'final_agent') || resolveInputField(firstTrace, 'hit_agent') || resolveInputField(firstTrace, 'agent_code') || resolveInputField(firstTrace, 'agentCode') || '');
     })();
 
-    // ── output.content ── 优先取 full-answer.content，按时间顺序拼接
-    const outputContent = sortedObs
+    // ── output.content ── 优先取 [full_answer] observation 的 output.content。
+    const fullAnswerContent = sortedObs
+      .filter((o) => isFullAnswerObservation(o))
+      .map((o) => resolveOutputContent(o))
+      .filter(Boolean)
+      .join('\n');
+    const outputContent = fullAnswerContent || sortedObs
       .map((o) => resolveOutputContent(o))
       .filter(Boolean)
       .join('\n');
@@ -260,9 +341,21 @@ export function buildSessionRows(traces, observations) {
       typeof o.name === 'string' && o.name.includes('ASR') && o.name.includes('final')
     );
     const inputText = (() => {
-      if (!asrFinalObs) return '';
-      const inp = parseIfString(asrFinalObs.input);
-      if (inp != null && typeof inp === 'object') return inp.text ?? inp.recognized_text ?? '';
+      const inputFields = ['actual_input_text', 'actualInputText', 'recognized_text', 'recognizedText', 'input_text', 'inputText', 'query', 'question', 'text'];
+      if (asrFinalObs) {
+        const asrValue = resolveObservationValue(asrFinalObs, inputFields);
+        if (asrValue) return asrValue;
+      }
+      for (const o of sortedObs) {
+        const name = String(o.name || '').toLowerCase();
+        if (!name.includes('asr') && !name.includes('input') && !name.includes('speech')) continue;
+        const value = resolveObservationValue(o, inputFields);
+        if (value) return value;
+      }
+      for (const field of inputFields) {
+        const value = resolveInputField(firstTrace, field);
+        if (value) return value;
+      }
       return '';
     })();
 
@@ -274,6 +367,8 @@ export function buildSessionRows(traces, observations) {
 
     const row = {
       sessionID: sid,
+      traceID: firstTrace?.id || '',
+      timestamp: firstTrace?.timestamp || firstTrace?.createdAt || '',
       InputText: inputText,
       AgentCode: agentCode,
       'output.content': outputContent,
@@ -304,6 +399,7 @@ export function buildSessionRows(traces, observations) {
 
     // 过滤无效行
     const hasPayload =
+      row.InputText !== '' ||
       row.AgentCode !== '' ||
       row['output.content'] !== '' ||
       FIRST_TOKEN_DURATIONS.some((k) => row[`first_token.${k}`] !== '') ||
