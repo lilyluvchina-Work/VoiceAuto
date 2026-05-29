@@ -8,6 +8,10 @@ import { generateId } from '../utils/formatters';
 
 const STORAGE_KEY = 'voiceauto_state';
 
+const shouldKeepImportedCaseAfterAudioDelete = (audio) => {
+  return audio?.source === 'tapd' || Boolean(audio?.tapdCaseId || audio?.tapdTestPlanId);
+};
+
 // 初始状态
 const initialState = {
   // 唤醒词配置
@@ -37,6 +41,7 @@ const initialState = {
     loopCount: 1,
     debugSequence: false,
     autoFetchLangfuseLogs: true,
+    selectedLangfuseEnv: 'UAT',
     selectedTestModule: 'all'
   },
 
@@ -59,6 +64,9 @@ const initialState = {
     endTime: null,
     firstTestAudioTime: null,
     lastTestAudioTime: null,
+    langfuseFetchEndTime: null,
+    langfuseAutoFetchRequestedAt: null,
+    langfuseEnvKey: 'UAT',
     successCount: 0,
     failCount: 0,
     cases: []
@@ -80,6 +88,7 @@ const ActionTypes = {
   SET_LOOP_COUNT: 'SET_LOOP_COUNT',
   SET_DEBUG_SEQUENCE: 'SET_DEBUG_SEQUENCE',
   SET_AUTO_FETCH_LANGFUSE_LOGS: 'SET_AUTO_FETCH_LANGFUSE_LOGS',
+  SET_SELECTED_LANGFUSE_ENV: 'SET_SELECTED_LANGFUSE_ENV',
   SET_SELECTED_TEST_MODULE: 'SET_SELECTED_TEST_MODULE',
   SET_PLAYBACK_STATE: 'SET_PLAYBACK_STATE',
   START_PLAYBACK: 'START_PLAYBACK',
@@ -138,7 +147,23 @@ function testReducer(state, action) {
     case ActionTypes.REMOVE_TEST_AUDIO:
       return {
         ...state,
-        testAudios: state.testAudios.filter(a => a.id !== action.payload),
+        testAudios: state.testAudios.flatMap(a => {
+          if (a.id !== action.payload) {
+            return [a];
+          }
+
+          if (!shouldKeepImportedCaseAfterAudioDelete(a)) {
+            return [];
+          }
+
+          return [{
+            ...a,
+            audioStatus: 'not_generated',
+            audioBlob: null,
+            audioUrl: null,
+            duration: 0
+          }];
+        }),
         playback: state.playback.currentAudioId === action.payload
           ? {
               ...state.playback,
@@ -197,6 +222,15 @@ function testReducer(state, action) {
         }
       };
 
+    case ActionTypes.SET_SELECTED_LANGFUSE_ENV:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          selectedLangfuseEnv: action.payload || 'UAT'
+        }
+      };
+
     case ActionTypes.SET_SELECTED_TEST_MODULE:
       return {
         ...state,
@@ -230,6 +264,9 @@ function testReducer(state, action) {
           endTime: null,
           firstTestAudioTime: null,
           lastTestAudioTime: null,
+          langfuseFetchEndTime: null,
+          langfuseAutoFetchRequestedAt: null,
+          langfuseEnvKey: state.testOptions.selectedLangfuseEnv || 'UAT',
           successCount: 0,
           failCount: 0,
           cases: []
@@ -343,6 +380,7 @@ export function TestProvider({ children }) {
             loopCount: Math.max(1, Math.min(99, parsed.testOptions?.loopCount || init.testOptions.loopCount)),
             debugSequence: Boolean(parsed.testOptions?.debugSequence),
             autoFetchLangfuseLogs: parsed.testOptions?.autoFetchLangfuseLogs !== false,
+            selectedLangfuseEnv: parsed.testOptions?.selectedLangfuseEnv || 'UAT',
             selectedTestModule: parsed.testOptions?.selectedTestModule || 'all'
           }
         };
@@ -465,6 +503,11 @@ export const actions = {
   setAutoFetchLangfuseLogs: (enabled) => ({
     type: ActionTypes.SET_AUTO_FETCH_LANGFUSE_LOGS,
     payload: enabled
+  }),
+
+  setSelectedLangfuseEnv: (envKey) => ({
+    type: ActionTypes.SET_SELECTED_LANGFUSE_ENV,
+    payload: envKey
   }),
 
   setSelectedTestModule: (moduleName) => ({

@@ -10,6 +10,12 @@ export const ENVIRONMENTS = {
     publicKey: 'pk-lf-e2e66182-6508-4abf-914f-d227a678c048',
     secretKey: 'sk-lf-6ea10ab6-2ab5-4ae8-8167-d514e2377538',
   },
+  UAT_LOCAL: {
+    label: 'UAT-Local',
+    proxyBase: '/langfuse-api-uat-local',
+    publicKey: 'pk-lf-9cd5f164-a78c-4c49-8593-74f2298c97f3',
+    secretKey: 'sk-lf-69f34a45-47a0-4cb8-a238-2cdffa3f5a97',
+  },
   TEST: {
     label: 'TEST',
     proxyBase: '/langfuse-api-test',
@@ -27,6 +33,48 @@ export const ENVIRONMENTS = {
 function makeAuthHeader(envKey) {
   const env = ENVIRONMENTS[envKey];
   return 'Basic ' + btoa(`${env.publicKey}:${env.secretKey}`);
+}
+
+const RETRYABLE_NETWORK_PATTERNS = [
+  'econnreset',
+  'etimedout',
+  'socket hang up',
+  'networkerror',
+  'failed to fetch',
+];
+
+function isRetryableNetworkError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return RETRYABLE_NETWORK_PATTERNS.some((token) => message.includes(token));
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url, options, controller, maxRetries = 3) {
+  let attempt = 0;
+  let lastError = null;
+
+  while (attempt <= maxRetries) {
+    if (controller?.aborted) {
+      throw new Error('请求已终止');
+    }
+
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      lastError = error;
+      const shouldRetry = isRetryableNetworkError(error) && attempt < maxRetries;
+      if (!shouldRetry) break;
+
+      const delayMs = Math.min(1000 * (attempt + 1), 3000);
+      await wait(delayMs);
+      attempt++;
+    }
+  }
+
+  throw lastError;
 }
 
 /**
@@ -70,7 +118,7 @@ export class FetchController {
 
 /**
  * 分页拉取所有数据（支持控制器）
- * @param {string} envKey  - 环境 key: 'UAT' | 'TEST' | 'PROD'
+ * @param {string} envKey  - 环境 key: 'UAT' | 'UAT_LOCAL' | 'TEST' | 'PROD'
  */
 async function fetchAllPages(envKey, endpoint, params, onProgress, controller) {
   const env = ENVIRONMENTS[envKey];
@@ -95,9 +143,9 @@ async function fetchAllPages(envKey, endpoint, params, onProgress, controller) {
       }
     });
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithRetry(url.toString(), {
       headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
-    });
+    }, controller);
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');

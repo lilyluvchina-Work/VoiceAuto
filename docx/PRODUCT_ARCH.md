@@ -27,7 +27,7 @@ flowchart LR
 ### 2.1 视图层（Components）
 
 - 负责页面展示、交互输入、结果反馈。
-- 关键组件：`AudioImporter`、`AudioList`、`PlaybackConsole`、`TestCaseManager`、`TapdImportWizard`、`LangfuseFetcher`。
+- 关键组件：`AudioImporter`、`AudioList`、`PlaybackConsole`、`TestCaseManager`、`TapdImportWizard`、`LangfuseFetcher`、`SummaryReport`。
 
 ### 2.2 业务编排层（Hooks + Store）
 
@@ -38,7 +38,7 @@ flowchart LR
 
 - `ttsService`：统一语音合成入口（Doubao 优先，Web Speech 回退）。
 - `tapdService`：TAPD 计划/用例/目录接口编排。
-- `langfuseService`：多环境日志分页拉取。
+- `langfuseService`：多环境日志分页拉取，含网络瞬时错误重试。
 
 ### 2.4 工具层（Utils）
 
@@ -62,7 +62,8 @@ flowchart TD
 
   M -->|Langfuse日志| L1[选择环境与时间范围]
   L1 --> L2[分页拉取 traces/observations]
-  L2 --> L3[关联 session 并导出]
+  L2 --> L3[提取有效 trace/request 行]
+  L3 --> L4[筛选并生成报告/导出]
 ```
 
 ## 4. TAPD 导入架构（目录映射）
@@ -104,13 +105,14 @@ sequenceDiagram
 
 - `wakeWord`、`defaultVoiceConfig`
 - `testAudios`（含 TAPD 元数据）
-- `testOptions`（循环次数、调试开关、模块筛选）
-- `playback`、`report`
+- `testOptions`（循环次数、调试开关、自动拉取日志、Langfuse 环境、模块筛选）
+- `playback`、`report`（含执行记录、自动拉取时间窗、Langfuse 环境）
 
 持久化策略：
 
 - `voiceauto_state`：测试配置与用例信息
 - `voiceauto_log_records_v1`：日志记录归档
+- `voiceauto_summary_report_v1`：最新总结报告
 
 ## 6. 容错与稳定性设计
 
@@ -118,7 +120,9 @@ sequenceDiagram
 - 播放容错：单条失败不阻断整轮执行。
 - 存储容错：`localStorage` 超限时降级保存。
 - TAPD 导入容错：分页拉取、批量去重、阶段化报错（清单/详情/导入）。
-- Langfuse 拉取容错：支持暂停/继续/终止并保留中间态。
+- Langfuse 拉取容错：支持暂停/继续/终止并保留中间态；网络瞬时错误按指数退避重试。
+- 自动拉取容错：测试完成后延迟 2 分钟再拉取 Langfuse 日志，降低日志落库延迟导致的漏数。
+- 报告口径容错：总结报告以本次执行记录反查音频，只统计实际执行音频。
 
 ## 7. 模块化目录与演进
 

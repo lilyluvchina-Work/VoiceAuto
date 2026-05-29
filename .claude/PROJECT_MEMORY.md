@@ -86,13 +86,13 @@ mindmap
 
 ## 5. 测试报告与数据对齐记忆
 
-- 报告预期值来源：目标文本、目标 Agent 优先从 TAPD 测试计划关联的测试用例中获取。
+- 报告预期值来源：目标文本、目标 Agent 优先从本次实际执行音频关联的 TAPD 测试用例中获取。
 - TAPD 目标 Agent 推荐维护在测试用例自定义字段“目标Agent”中；导入时通过 `tcases/custom_fields_settings` 识别对应 `custom_field_xx`，再在 `/tcases` 查询详情时读取并转换枚举值。
 - TAPD 目标文本可维护在测试用例自定义字段“目标文本”中；没有该字段时继续从步骤里的 Human/User/用户/人类语句提取。
-- Langfuse 实际值来源：实际输入文本从 ASR final/input 类 observation 提取；命中 Agent 优先从 `[run_agent]` observation 的 `input.agent_code` 提取；输出文本优先从 `[full_answer]` observation 的 `output.content` 提取。
-- 报告表格以测试计划目标文本为主，必须显示全部目标文本；Langfuse 日志只用于填充实际输入、命中 Agent、输出、耗时、错误信息等实际值。
+- Langfuse 实际值来源：实际输入文本从 ASR final/input 类 observation 提取；命中 Agent 优先从 `[full_answer]`、`[response_complete]`、`[run_agent]`、`[generation_complete]` 提取；输出文本优先从 `[full_answer]` / `[response_complete]` 的 `output.content` 提取；错误信息从 `[error]` observation 提取。
+- 报告表格以本次实际执行音频为主，不把未执行的导入用例计入本次报告；Langfuse 日志只用于填充实际输入、命中 Agent、命中子 Agent、输出、耗时、错误信息等实际值。
 - 用例对齐优先级：`run_id + case_id` -> `case_id` -> `audio_file` -> 播放时间窗口 -> 文本相似度 -> 顺序兜底。
-- 是否通过的核心判定：目标 Agent 与命中 Agent 一致即意图识别通过；文本相似度仅用于辅助说明对齐质量，不作为主要通过条件。
+- 是否通过的核心判定：目标 Agent 与命中 Agent 或命中子 Agent 一致即意图识别通过；文本相似度仅用于辅助说明对齐质量，不作为主要通过条件；存在日志错误时按不通过处理。
 
 ## 6. 非架构信息归档说明
 

@@ -156,6 +156,10 @@ function isFullAnswerObservation(obs) {
     || obsName.includes('full-answer');
 }
 
+function isErrorObservation(obs) {
+  return String(obs?.name || '').toLowerCase().includes('[error]');
+}
+
 function resolveOutputContent(obs) {
   if (obs?.output == null) return '';
 
@@ -200,124 +204,504 @@ function resolveOutputContent(obs) {
 }
 
 function resolveObservationError(obs) {
-  const nameText = String(obs?.name || '').trim();
-  const nameMatch = nameText.match(/^\[error\]\s*:\s*(.+)$/i);
-  if (!nameMatch) return '';
-
-  const agentFromName = String(nameMatch[1] || '').trim();
-
-  const inputData = parseIfString(obs?.input_data ?? obs?.inputData ?? obs?.input);
-  const agentFromInput = stringifyError(inputData?.agent_code ?? inputData?.agentCode);
-  const agentCode = agentFromInput || agentFromName;
+  if (!isErrorObservation(obs)) return '';
 
   const outputData = parseIfString(obs?.output_data ?? obs?.outputData ?? obs?.output);
-  const errorContent = stringifyError(outputData?.content ?? outputData?.message?.content ?? outputData?.text);
-  if (!errorContent) return '';
+  return resolveErrorContent(outputData);
+}
 
-  return agentCode ? `[error]: ${agentCode} | ${errorContent}` : `[error] | ${errorContent}`;
+function resolveErrorContent(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => resolveErrorContent(item))
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+  }
+  if (typeof value === 'object') {
+    const direct = stringifyError(
+      value.content
+      ?? value.message?.content
+      ?? value.output?.content
+      ?? value.text
+    );
+    if (direct) return direct;
+
+    const fallback = stringifyError(
+      value.message
+      ?? value.error
+      ?? value.reason
+      ?? value.detail
+      ?? value.description
+    );
+    if (fallback) return fallback;
+  }
+
+  return '';
+}
+
+function getEventName(obs) {
+  return String(obs?.name || '').trim();
+}
+
+function getEventNameLower(obs) {
+  return getEventName(obs).toLowerCase();
+}
+
+function nameIncludes(obs, keyword) {
+  return getEventNameLower(obs).includes(String(keyword || '').toLowerCase());
+}
+
+function findLatestObservation(observations, predicate) {
+  for (let i = (observations || []).length - 1; i >= 0; i -= 1) {
+    if (predicate(observations[i])) return observations[i];
+  }
+  return null;
+}
+
+function findObservations(observations, predicate) {
+  return (observations || []).filter(predicate);
+}
+
+function parseAgentFromName(obs) {
+  const match = getEventName(obs).match(/^\[[^\]]+\]\s*:\s*(.+)$/);
+  return String(match?.[1] || '').trim();
+}
+
+function resolveTraceValue(trace, fields) {
+  const sources = [
+    parseIfString(trace?.input),
+    trace?.metadata,
+    parseIfString(trace?.output),
+  ];
+
+  for (const source of sources) {
+    if (source == null || typeof source !== 'object') continue;
+    for (const field of fields) {
+      const value = deepFindAny(source, field, 4);
+      if (value != null && value !== '') return value;
+    }
+  }
+
+  return '';
+}
+
+function stripMessageName(trace) {
+  const name = String(trace?.name || '').trim();
+  return name.replace(/^\[message\]\s*:\s*/i, '').trim();
+}
+
+function isAlphaNumericMachineInput(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  return /^[A-Za-z0-9]+$/.test(text)
+    && /[A-Za-z]/.test(text)
+    && /\d/.test(text);
+}
+
+function resolveAgentCodeFromObservation(obs) {
+  return String(
+    resolveObservationValue(obs, ['agent_code', 'agentCode', 'AgentCode', 'agent'])
+    || parseAgentFromName(obs)
+    || ''
+  ).trim();
+}
+
+function resolveInputTextFromInputTextObservation(obs) {
+  const outputData = parseIfString(obs?.output_data ?? obs?.outputData ?? obs?.output);
+  return resolveErrorContent(outputData);
+}
+
+function resolveActualInputText(trace, sortedObs) {
+  const asrFinal = findLatestObservation(sortedObs, (obs) => nameIncludes(obs, '[asr]: final'));
+  if (asrFinal) {
+    const value = resolveObservationValue(asrFinal, [
+      'recognized_text',
+      'recognizedText',
+      'actual_input_text',
+      'actualInputText',
+      'text',
+    ]);
+    if (value) return String(value).trim();
+  }
+
+  const inputTextObs = findLatestObservation(sortedObs, (obs) => nameIncludes(obs, '[input_text]'));
+  if (inputTextObs) {
+    const value = resolveInputTextFromInputTextObservation(inputTextObs);
+    if (value) return value;
+  }
+
+  const traceText = resolveTraceValue(trace, ['text', 'recognized_text', 'recognizedText', 'input_text', 'inputText']);
+  if (traceText) return String(traceText).trim();
+
+  return stripMessageName(trace);
+}
+
+function isTruthyContent(obs) {
+  const outputData = parseIfString(obs?.output_data ?? obs?.outputData ?? obs?.output);
+  const value = deepFindAny(outputData, 'content', 4);
+  if (value === true) return true;
+  if (typeof value === 'string') return value.trim().toLowerCase() === 'true';
+  return Boolean(value);
+}
+
+function isBusinessAgent(agentCode) {
+  const value = String(agentCode || '').trim().toLowerCase();
+  return value !== '' && value !== 'rag' && value !== 'router';
+}
+
+function resolveHitAgent(sortedObs) {
+  const fullAnswer = findLatestObservation(sortedObs, (obs) => isFullAnswerObservation(obs));
+  if (fullAnswer) {
+    const agentCode = resolveAgentCodeFromObservation(fullAnswer);
+    if (agentCode) return { agent: agentCode, source: 'full_answer', confidence: 'high' };
+  }
+
+  const responseComplete = findLatestObservation(sortedObs, (obs) => nameIncludes(obs, '[response_complete]'));
+  if (responseComplete) {
+    const agentCode = resolveAgentCodeFromObservation(responseComplete);
+    if (agentCode) return { agent: agentCode, source: 'response_complete', confidence: 'high' };
+  }
+
+  const runAgent = findLatestObservation(sortedObs, (obs) => nameIncludes(obs, '[run_agent]'));
+  if (runAgent) {
+    const agentCode = resolveAgentCodeFromObservation(runAgent);
+    if (agentCode) return { agent: agentCode, source: 'run_agent', confidence: 'high' };
+  }
+
+  const generations = findObservations(sortedObs, (obs) => nameIncludes(obs, '[generation_complete]'));
+  const completedGenerations = generations.filter(isTruthyContent);
+  const businessGeneration = [...completedGenerations]
+    .reverse()
+    .find((obs) => isBusinessAgent(resolveAgentCodeFromObservation(obs)));
+  if (businessGeneration) {
+    return {
+      agent: resolveAgentCodeFromObservation(businessGeneration),
+      source: 'generation_complete',
+      confidence: 'medium',
+    };
+  }
+
+  const fallbackGeneration = completedGenerations[completedGenerations.length - 1];
+  if (fallbackGeneration) {
+    return {
+      agent: resolveAgentCodeFromObservation(fallbackGeneration),
+      source: 'generation_complete_only',
+      confidence: 'low',
+    };
+  }
+
+  return { agent: '', source: 'not_found', confidence: 'none' };
+}
+
+function resolveHitSubAgent(sortedObs) {
+  const subAgentObs = findLatestObservation(sortedObs, (obs) => (
+    nameIncludes(obs, '[output_tool]')
+    || nameIncludes(obs, '[output_action]')
+  ));
+  return resolveAgentCodeFromObservation(subAgentObs);
+}
+
+function resolveAgentCandidates(sortedObs) {
+  const candidates = [];
+  const seen = new Set();
+
+  for (const obs of sortedObs || []) {
+    if (!nameIncludes(obs, '[generation_complete]')) continue;
+    const agentCode = resolveAgentCodeFromObservation(obs);
+    if (!agentCode || seen.has(agentCode)) continue;
+    seen.add(agentCode);
+    candidates.push(agentCode);
+  }
+
+  return candidates;
+}
+
+function resolveFullAnswerText(sortedObs) {
+  const fullAnswerContent = (sortedObs || [])
+    .filter((obs) => isFullAnswerObservation(obs))
+    .map((obs) => resolveOutputContent(obs))
+    .filter(Boolean)
+    .join('\n');
+  if (fullAnswerContent) return fullAnswerContent;
+
+  return (sortedObs || [])
+    .filter((obs) => nameIncludes(obs, '[response_complete]'))
+    .map((obs) => resolveOutputContent(obs))
+    .filter(Boolean)
+    .join('\n');
+}
+
+function resolveErrorInfo(sortedObs) {
+  const errorObs = findObservations(sortedObs, (obs) => isErrorObservation(obs));
+  const messages = [];
+  const agents = [];
+
+  for (const obs of errorObs) {
+    const message = resolveObservationError(obs);
+    if (message) messages.push(message);
+    const agentCode = resolveAgentCodeFromObservation(obs);
+    if (agentCode) agents.push(agentCode);
+  }
+
+  return {
+    message: Array.from(new Set(messages)).join('\n'),
+    agent: Array.from(new Set(agents)).join(' / '),
+  };
+}
+
+function resolveLanguage(trace, sortedObs) {
+  const asrFinal = findLatestObservation(sortedObs, (obs) => nameIncludes(obs, '[asr]: final'));
+  return String(
+    resolveObservationValue(asrFinal, ['language', 'language_code', 'languageCode'])
+    || resolveTraceValue(trace, ['language_code', 'languageCode', 'language'])
+    || ''
+  ).trim();
+}
+
+function resolveVoiceprintVerified(sortedObs) {
+  const asrFinal = findLatestObservation(sortedObs, (obs) => nameIncludes(obs, '[asr]: final'));
+  const value = resolveObservationValue(asrFinal, ['verified']);
+  return value === '' ? '' : String(value);
+}
+
+function resolveAsrDurationMs(sortedObs) {
+  const asrFinal = findLatestObservation(sortedObs, (obs) => nameIncludes(obs, '[asr]: final'));
+  const value = resolveObservationValue(asrFinal, ['duration_ms', 'durationMs']);
+  return value === '' ? '' : value;
+}
+
+function resolveLogStatus(actualInputText, hitAgent, errorMessage) {
+  if (errorMessage) return 'error';
+  if (actualInputText && hitAgent) return 'complete';
+  if (actualInputText && !hitAgent) return 'incomplete_no_agent';
+  if (!actualInputText) return 'invalid_no_input';
+  return 'unknown';
+}
+
+function buildDiagnostics(row) {
+  const errors = [];
+  if (!row.hit_agent) errors.push('hit_agent为空');
+  if (!row.actual_input_text) errors.push('actual_input_text为空');
+  if (!row.response_text) errors.push('response_text为空');
+  if (row.error_message) errors.push(`error: ${row.error_message}`);
+  FIRST_TOKEN_DURATIONS.forEach((k) => {
+    if (row[`first_token.${k}`] == null || row[`first_token.${k}`] === '' || Number.isNaN(row[`first_token.${k}`])) {
+      errors.push(`${k}无数据`);
+    }
+  });
+  INPUT_FIELDS.forEach((field) => {
+    if (row[field] == null || row[field] === '') errors.push(`${field}为空`);
+  });
+  return errors.join('; ');
+}
+
+function mergeOrphanErrorRows(rows) {
+  const sortedRows = [...rows].sort(
+    (a, b) => new Date(a.trace_time || a.timestamp || 0) - new Date(b.trace_time || b.timestamp || 0)
+  );
+  const lastInputRowBySession = new Map();
+  const result = [];
+
+  for (const row of sortedRows) {
+    const sessionKey = row.session_id || row.sessionID || '';
+    const hasMachineInput = isAlphaNumericMachineInput(row.actual_input_text);
+    const hasUsableInput = row.actual_input_text && !hasMachineInput;
+    const isOrphanError = row.error_message && !hasUsableInput;
+
+    if (isOrphanError && sessionKey && lastInputRowBySession.has(sessionKey)) {
+      const target = lastInputRowBySession.get(sessionKey);
+      target.error_message = [target.error_message, row.error_message].filter(Boolean).join('\n');
+      target.error = target.error_message;
+      target.错误信息 = target.error_message;
+      target.error_agent = Array.from(new Set([target.error_agent, row.error_agent].filter(Boolean))).join(' / ');
+      target.has_error = '是';
+      target.log_status = 'error';
+      target.异常信息 = buildDiagnostics(target);
+      continue;
+    }
+
+    if (!hasMachineInput) {
+      result.push(row);
+      if (hasUsableInput && sessionKey) {
+        lastInputRowBySession.set(sessionKey, row);
+      }
+    }
+  }
+
+  return result;
+}
+
+function normalizeDedupeText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function dedupeRows(rows) {
+  const rowByKey = new Map();
+  const deduped = [];
+
+  for (const row of rows || []) {
+    const requestId = normalizeDedupeText(row.request_id);
+    const timeSecond = row.trace_time
+      ? Math.floor(new Date(row.trace_time).getTime() / 1000)
+      : '';
+    const dedupeKey = requestId
+      ? `request:${requestId}`
+      : [
+        'content',
+        normalizeDedupeText(row.session_id || row.sessionID),
+        normalizeDedupeText(row.actual_input_text || row.InputText),
+        normalizeDedupeText(row.hit_agent || row.AgentCode),
+        normalizeDedupeText(row.hit_sub_agent),
+        normalizeDedupeText(row.response_text || row['output.content']),
+        normalizeDedupeText(row.error_message || row.error),
+        timeSecond,
+      ].join('|');
+
+    if (rowByKey.has(dedupeKey)) {
+      mergeDuplicateRow(rowByKey.get(dedupeKey), row);
+      continue;
+    }
+    rowByKey.set(dedupeKey, row);
+    deduped.push(row);
+  }
+
+  return deduped;
+}
+
+function mergeTextValues(left, right, separator = '\n') {
+  const values = [left, right]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(values)).join(separator);
+}
+
+function mergeDuplicateRow(target, source) {
+  if (!target || !source) return;
+
+  target.error_message = mergeTextValues(target.error_message, source.error_message);
+  target.error = target.error_message;
+  target.错误信息 = target.error_message;
+  target.error_agent = mergeTextValues(target.error_agent, source.error_agent, ' / ');
+  target.has_error = target.error_message ? '是' : target.has_error;
+
+  const copyIfEmptyFields = [
+    'response_text',
+    'output.content',
+    '输出',
+    'hit_agent',
+    'AgentCode',
+    '命中Agent',
+    'hit_sub_agent',
+    'agent_candidates',
+    'agent_source',
+    'agent_confidence',
+    'actual_input_text',
+    'InputText',
+    '输入',
+    '响应时长',
+    'response_duration_ms',
+    'asr_duration_ms',
+    'voiceprint_verified',
+  ];
+  for (const field of copyIfEmptyFields) {
+    if (!hasCellValue(target[field]) && hasCellValue(source[field])) {
+      target[field] = source[field];
+    }
+  }
+
+  target.log_status = target.error_message
+    ? 'error'
+    : (target.log_status || source.log_status);
+  target.异常信息 = buildDiagnostics(target);
+}
+
+function hasCellValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== '';
+}
+
+function reorderColumnsByData(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+
+  const preferredColumns = ['输入', '输出', '命中Agent', '错误信息', '响应时长'];
+  const allKeys = [];
+  const seenKeys = new Set();
+
+  for (const row of rows) {
+    for (const key of Object.keys(row || {})) {
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      allKeys.push(key);
+    }
+  }
+
+  const keyIndex = new Map(allKeys.map((key, index) => [key, index]));
+  const dataCount = new Map(allKeys.map((key) => [
+    key,
+    rows.reduce((count, row) => count + (hasCellValue(row?.[key]) ? 1 : 0), 0),
+  ]));
+
+  const preferred = preferredColumns.filter((key) => seenKeys.has(key));
+  const rest = allKeys
+    .filter((key) => !preferred.includes(key))
+    .sort((a, b) => {
+      const countDiff = (dataCount.get(b) || 0) - (dataCount.get(a) || 0);
+      if (countDiff !== 0) return countDiff;
+      return (keyIndex.get(a) || 0) - (keyIndex.get(b) || 0);
+    });
+
+  const orderedKeys = [...preferred, ...rest];
+  return rows.map((row) => {
+    const next = {};
+    for (const key of orderedKeys) {
+      next[key] = row?.[key] ?? '';
+    }
+    return next;
+  });
 }
 
 /**
- * 按 sessionID 聚合 Traces 和 Observations，生成提取行
- * 列顺序：sessionID | InputText | AgentCode | output.content | first_token.* | input fields | 异常信息
+ * 生成 Langfuse 有效日志中间表。
+ * Trace 只作为入口索引；Observation 负责提取实际输入、命中 Agent、响应和错误。
  *
  * @param {object[]} traces       - Traces 数组
  * @param {object[]} observations - Observations 数组
- * @returns {object[]} 每个 sessionID 对应一行
+ * @returns {object[]} 每个有效 trace/request 对应一行
  */
 export function buildSessionRows(traces, observations) {
-  // 以 traceId 为键建立 trace 索引
-  const traceById = new Map(traces.map((t) => [t.id, t]));
-
-  // 按 sessionId 分组 traces
-  const tracesBySession = new Map();
-  for (const t of traces) {
-    if (!t.sessionId) continue;
-    if (!tracesBySession.has(t.sessionId)) tracesBySession.set(t.sessionId, []);
-    tracesBySession.get(t.sessionId).push(t);
-  }
-
-  // 按 sessionId 分组 observations（通过 traceId -> trace -> sessionId 关联）
-  const obsBySession = new Map();
+  const traceById = new Map((traces || []).map((trace) => [trace.id, trace]));
+  const obsByTraceId = new Map();
   for (const obs of observations) {
-    const trace = traceById.get(obs.traceId);
-    if (!trace?.sessionId) continue;
-    if (!obsBySession.has(trace.sessionId)) obsBySession.set(trace.sessionId, []);
-    obsBySession.get(trace.sessionId).push(obs);
+    const traceId = String(obs?.traceId || '').trim();
+    if (!traceId) continue;
+    if (!obsByTraceId.has(traceId)) obsByTraceId.set(traceId, []);
+    obsByTraceId.get(traceId).push(obs);
   }
+
+  const traceIds = new Set([
+    ...(traces || []).map((trace) => String(trace?.id || '').trim()).filter(Boolean),
+    ...Array.from(obsByTraceId.keys()),
+  ]);
 
   const rows = [];
-
-  for (const [sid, sessionTraces] of tracesBySession) {
-    // 按时间排序 traces
-    const sortedTraces = [...sessionTraces].sort(
-      (a, b) => new Date(a.timestamp || a.createdAt || 0) - new Date(b.timestamp || b.createdAt || 0)
-    );
-    const firstTrace = sortedTraces[0];
-
-    // 同一 session 下按时间排序 observations
-    const obsArr = obsBySession.get(sid) || [];
-    const sortedObs = [...obsArr].sort(
+  for (const traceId of traceIds) {
+    const trace = traceById.get(traceId) || { id: traceId };
+    const sortedObs = [...(obsByTraceId.get(traceId) || [])].sort(
       (a, b) => new Date(a.startTime || a.createdAt || 0) - new Date(b.startTime || b.createdAt || 0)
     );
 
-    // ── AgentCode ──
-    // 优先取 [run_agent] observation 的 input.agent_code。
-    const agentCode = (() => {
-      const agentFields = [
-        'agent_code',
-        'agentCode',
-        'AgentCode',
-        'final_agent',
-        'finalAgent',
-        'primary_hit_agent',
-        'primaryHitAgent',
-        'hit_agent',
-        'hitAgent',
-      ];
-      const findAgentCode = (nameKeyword) => {
-        for (let i = sortedObs.length - 1; i >= 0; i--) {
-          const o = sortedObs[i];
-          const name = String(o.name || '').toLowerCase();
-          if (!name.includes(nameKeyword)) continue;
-          const value = resolveObservationValue(o, agentFields);
-          if (value) return String(value);
-        }
-        return '';
-      };
-      const runAgentCode = findAgentCode('run_agent');
-      if (runAgentCode) return runAgentCode;
+    const actualInputText = resolveActualInputText(trace, sortedObs);
+    const hitAgentInfo = resolveHitAgent(sortedObs);
+    const hitSubAgent = resolveHitSubAgent(sortedObs);
+    const agentCandidates = resolveAgentCandidates(sortedObs);
+    const responseText = resolveFullAnswerText(sortedObs);
+    const errorInfo = resolveErrorInfo(sortedObs);
+    const logStatus = resolveLogStatus(actualInputText, hitAgentInfo.agent, errorInfo.message);
 
-      for (let i = sortedObs.length - 1; i >= 0; i--) {
-        const o = sortedObs[i];
-        const name = String(o.name || '').toLowerCase();
-        if (!name.includes('agent') && !name.includes('route') && !name.includes('router')) continue;
-        const value = resolveObservationValue(o, agentFields);
-        if (value) return String(value);
-      }
-      return findAgentCode('llmchat')
-        || String(resolveInputField(firstTrace, 'final_agent') || resolveInputField(firstTrace, 'hit_agent') || resolveInputField(firstTrace, 'agent_code') || resolveInputField(firstTrace, 'agentCode') || '');
-    })();
-
-    // ── output.content ── 优先取 [full_answer] observation 的 output.content。
-    const fullAnswerContent = sortedObs
-      .filter((o) => isFullAnswerObservation(o))
-      .map((o) => resolveOutputContent(o))
-      .filter(Boolean)
-      .join('\n');
-    const outputContent = fullAnswerContent || sortedObs
-      .map((o) => resolveOutputContent(o))
-      .filter(Boolean)
-      .join('\n');
-
-    // ── error ── 从 observation.error 汇总
-    const errorText = sortedObs
-      .map((o) => resolveObservationError(o))
-      .filter(Boolean)
-      .join('\n');
-
-    // ── first_token durations ──
-    const ftNamedObs = sortedObs.find((o) =>
+    const ftNamedObs = findLatestObservation(sortedObs, (o) =>
       o.name === 'first_token' ||
       o.name === 'firstToken' ||
       (typeof o.name === 'string' && o.name.includes('first_token'))
@@ -336,44 +720,47 @@ export function buildSessionRows(traces, observations) {
     const allNull = durations.every((v) => v === null);
     const ftTotal = allNull ? '' : durations.reduce((sum, v) => sum + (v ?? 0), 0);
 
-    // ── InputText ──
-    const asrFinalObs = sortedObs.find((o) =>
-      typeof o.name === 'string' && o.name.includes('ASR') && o.name.includes('final')
-    );
-    const inputText = (() => {
-      const inputFields = ['actual_input_text', 'actualInputText', 'recognized_text', 'recognizedText', 'input_text', 'inputText', 'query', 'question', 'text'];
-      if (asrFinalObs) {
-        const asrValue = resolveObservationValue(asrFinalObs, inputFields);
-        if (asrValue) return asrValue;
-      }
-      for (const o of sortedObs) {
-        const name = String(o.name || '').toLowerCase();
-        if (!name.includes('asr') && !name.includes('input') && !name.includes('speech')) continue;
-        const value = resolveObservationValue(o, inputFields);
-        if (value) return value;
-      }
-      for (const field of inputFields) {
-        const value = resolveInputField(firstTrace, field);
-        if (value) return value;
-      }
-      return '';
-    })();
-
-    // 先解析 input 字段
     const inputValues = {};
     for (const field of INPUT_FIELDS) {
-      inputValues[field] = resolveInputField(firstTrace, field);
+      inputValues[field] = resolveInputField(trace, field);
     }
 
+    const responseDurationMs = ftTotal;
+
     const row = {
-      sessionID: sid,
-      traceID: firstTrace?.id || '',
-      timestamp: firstTrace?.timestamp || firstTrace?.createdAt || '',
-      InputText: inputText,
-      AgentCode: agentCode,
-      'output.content': outputContent,
-      error: errorText,
+      输入: actualInputText,
+      输出: responseText,
+      命中Agent: hitAgentInfo.agent,
+      错误信息: errorInfo.message,
+      响应时长: responseDurationMs,
+      trace_id: traceId,
+      request_id: String(resolveTraceValue(trace, ['request_id', 'requestId']) || inputValues.request_id || '').trim(),
+      session_id: String(trace?.sessionId || trace?.session_id || trace?.metadata?.session_id || '').trim(),
+      trace_time: trace?.timestamp || trace?.createdAt || '',
       ...inputValues,
+      actual_input_text: actualInputText,
+      language: resolveLanguage(trace, sortedObs),
+      tts_voice: String(resolveTraceValue(trace, ['tts_voice', 'ttsVoice']) || inputValues.tts_voice || '').trim(),
+      hit_agent: hitAgentInfo.agent,
+      hit_sub_agent: hitSubAgent,
+      agent_candidates: agentCandidates.join(' / '),
+      agent_source: hitAgentInfo.source,
+      agent_confidence: hitAgentInfo.confidence,
+      response_text: responseText,
+      response_duration_ms: responseDurationMs,
+      has_error: errorInfo.message ? '是' : '否',
+      error_agent: errorInfo.agent,
+      error_message: errorInfo.message,
+      asr_duration_ms: resolveAsrDurationMs(sortedObs),
+      voiceprint_verified: resolveVoiceprintVerified(sortedObs),
+      log_status: logStatus,
+      sessionID: String(trace?.sessionId || trace?.session_id || '').trim(),
+      traceID: traceId,
+      timestamp: trace?.timestamp || trace?.createdAt || '',
+      InputText: actualInputText,
+      AgentCode: hitAgentInfo.agent,
+      'output.content': responseText,
+      error: errorInfo.message,
       异常信息: '',
     };
 
@@ -383,30 +770,21 @@ export function buildSessionRows(traces, observations) {
     });
     row['first_token.total'] = ftTotal;
 
-    // 异常信息收集
-    const errors = [];
-    if (!agentCode) errors.push('AgentCode为空');
-    if (!inputText) errors.push('InputText为空');
-    if (!outputContent) errors.push('output.content为空');
-    if (errorText) errors.push(`error: ${errorText}`);
-    FIRST_TOKEN_DURATIONS.forEach((k, i) => {
-      if (durations[i] == null || durations[i] === '' || Number.isNaN(durations[i])) errors.push(`${k}无数据`);
-    });
-    INPUT_FIELDS.forEach((f) => {
-      if (row[f] == null || row[f] === '') errors.push(`${f}为空`);
-    });
-    row.异常信息 = errors.join('; ');
+    row.异常信息 = buildDiagnostics(row);
 
-    // 过滤无效行
     const hasPayload =
-      row.InputText !== '' ||
-      row.AgentCode !== '' ||
-      row['output.content'] !== '' ||
-      FIRST_TOKEN_DURATIONS.some((k) => row[`first_token.${k}`] !== '') ||
-      INPUT_FIELDS.some((f) => row[f] !== '');
+      row.trace_id !== '' &&
+      (
+        row.actual_input_text !== '' ||
+        row.hit_agent !== '' ||
+        row.hit_sub_agent !== '' ||
+        row.response_text !== '' ||
+        row.error_message !== '' ||
+        row.request_id !== ''
+      );
 
     if (hasPayload) rows.push(row);
   }
 
-  return rows;
+  return reorderColumnsByData(dedupeRows(mergeOrphanErrorRows(rows)));
 }

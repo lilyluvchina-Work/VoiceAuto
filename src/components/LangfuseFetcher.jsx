@@ -6,7 +6,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { fetchTraces, fetchObservations, FetchController, ENVIRONMENTS } from '../modules/langfuse/services/langfuseService';
 import { exportToExcel, exportSessionExcel, buildSessionRows, downloadJSON } from '../modules/langfuse/utils/excelExporter';
 import { createTapdBug } from '../modules/tapd/services/tapdService';
-import { useTest } from '../stores/testStore';
+import { useTest, actions } from '../stores/testStore';
 import {
   SUMMARY_REPORT_EVENT,
   SUMMARY_REPORT_STORAGE_KEY,
@@ -149,6 +149,18 @@ function splitDT(d) {
 function makeFilename(prefix, fromDate, fromTime, toDate, toTime) {
   const fmt = (dt, t) => `${dt}_${t.replace(/:/g, '-')}`;
   return `${prefix}_${fmt(fromDate, fromTime)}_TO_${fmt(toDate, toTime)}`;
+}
+
+function normalizeFilterValue(value) {
+  return String(value ?? '').trim();
+}
+
+function resolveFamilyId(row) {
+  return normalizeFilterValue(row?.family_id || row?.familyid || row?.family_uuid || '');
+}
+
+function resolveDeviceId(row) {
+  return normalizeFilterValue(row?.device_id || row?.deviceid || '');
 }
 
 /* ─── 空记录过滤 ─── */
@@ -434,6 +446,7 @@ function FetchControls({ status, onPause, onResume, onAbort }) {
 /* ─── 环境标签颜色映射 ─── */
 const ENV_STYLES = {
   UAT:  { badge: 'bg-purple-900/50 border-purple-600 text-purple-300', dot: 'bg-purple-400', active: 'ring-purple-500' },
+  UAT_LOCAL: { badge: 'bg-cyan-900/50 border-cyan-600 text-cyan-300', dot: 'bg-cyan-400', active: 'ring-cyan-500' },
   TEST: { badge: 'bg-yellow-900/50 border-yellow-600 text-yellow-300', dot: 'bg-yellow-400', active: 'ring-yellow-500' },
   PROD: { badge: 'bg-red-900/50  border-red-600  text-red-300',    dot: 'bg-red-400',    active: 'ring-red-500'    },
 };
@@ -457,9 +470,9 @@ const JSON_EXPORT_META = {
   observations: 'Observations',
 };
 
-function buildAutoFetchRange(firstTestAudioTime, lastTestAudioTime) {
+function buildAutoFetchRange(firstTestAudioTime, fetchEndTime) {
   const fromTs = Number(firstTestAudioTime);
-  const toTsRaw = Number(lastTestAudioTime);
+  const toTsRaw = Number(fetchEndTime);
   const toTs = toTsRaw > fromTs ? toTsRaw : fromTs + 1000;
   return {
     from: splitDT(new Date(fromTs)),
@@ -469,12 +482,13 @@ function buildAutoFetchRange(firstTestAudioTime, lastTestAudioTime) {
 
 /* ─── 主组件 ─── */
 export default function LangfuseFetcher() {
-  const { state } = useTest();
+  const { state, dispatch } = useTest();
   const initFrom = splitDT(new Date(Date.now() - 60 * 60 * 1000));
   const initTo = splitDT(new Date());
   const shouldAutoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
+  const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || 'UAT';
 
-  const [envKey, setEnvKey] = useState('UAT');
+  const [envKey, setEnvKey] = useState(selectedLangfuseEnv);
 
   const [fromDate, setFromDate] = useState(initFrom.date);
   const [fromTime, setFromTime] = useState(initFrom.time);
@@ -491,6 +505,8 @@ export default function LangfuseFetcher() {
   const [observations, setObservations] = useState([]);
   const [sessionIds, setSessionIds] = useState([]);
   const [filteredCount, setFilteredCount] = useState({ traces: 0, obs: 0 });
+  const [familyIdFilter, setFamilyIdFilter] = useState('');
+  const [deviceIdFilter, setDeviceIdFilter] = useState('');
 
   // 中间态数据（终止时使用）
   const partialTraces = useRef([]);
@@ -507,6 +523,42 @@ export default function LangfuseFetcher() {
   };
 
   const sessionRows = useMemo(() => buildSessionRows(traces, observations), [traces, observations]);
+  const familyIdOptions = useMemo(
+    () => Array.from(new Set(sessionRows.map((row) => resolveFamilyId(row)).filter(Boolean))).sort(),
+    [sessionRows]
+  );
+  const deviceIdOptions = useMemo(
+    () => Array.from(new Set(sessionRows.map((row) => resolveDeviceId(row)).filter(Boolean))).sort(),
+    [sessionRows]
+  );
+
+  const filteredSessionRows = useMemo(() => {
+    const familyNeedle = normalizeFilterValue(familyIdFilter).toLowerCase();
+    const deviceNeedle = normalizeFilterValue(deviceIdFilter).toLowerCase();
+
+    return sessionRows.filter((row) => {
+      const familyValue = resolveFamilyId(row).toLowerCase();
+      const deviceValue = resolveDeviceId(row).toLowerCase();
+      const familyMatched = !familyNeedle || familyValue.includes(familyNeedle);
+      const deviceMatched = !deviceNeedle || deviceValue.includes(deviceNeedle);
+      return familyMatched && deviceMatched;
+    });
+  }, [sessionRows, familyIdFilter, deviceIdFilter]);
+
+  const filteredTraceIds = useMemo(
+    () => new Set(filteredSessionRows.map((row) => normalizeFilterValue(row?.trace_id || row?.traceID)).filter(Boolean)),
+    [filteredSessionRows]
+  );
+
+  const filteredTraces = useMemo(() => {
+    if (!familyIdFilter && !deviceIdFilter) return traces;
+    return traces.filter((trace) => filteredTraceIds.has(normalizeFilterValue(trace?.id)));
+  }, [traces, filteredTraceIds, familyIdFilter, deviceIdFilter]);
+
+  const filteredObservations = useMemo(() => {
+    if (!familyIdFilter && !deviceIdFilter) return observations;
+    return observations.filter((obs) => filteredTraceIds.has(normalizeFilterValue(obs?.traceId)));
+  }, [observations, filteredTraceIds, familyIdFilter, deviceIdFilter]);
 
   const resetFetchedResultState = () => {
     setTraces([]);
@@ -523,7 +575,7 @@ export default function LangfuseFetcher() {
       if (!raw) return;
       const cached = JSON.parse(raw);
 
-      setEnvKey(cached.envKey || 'UAT');
+      setEnvKey(cached.envKey || selectedLangfuseEnv);
       setFromDate(cached.fromDate || initFrom.date);
       setFromTime(cached.fromTime || initFrom.time);
       setToDate(cached.toDate || initTo.date);
@@ -535,6 +587,8 @@ export default function LangfuseFetcher() {
       setObservations(Array.isArray(cached.observations) ? cached.observations : []);
       setSessionIds(Array.isArray(cached.sessionIds) ? cached.sessionIds : []);
       setFilteredCount(cached.filteredCount || { traces: 0, obs: 0 });
+      setFamilyIdFilter(cached.familyIdFilter || '');
+      setDeviceIdFilter(cached.deviceIdFilter || '');
       autoFilledRunEndRef.current = cached.autoFilledRunEndRef || null;
 
       const cachedStatus = cached.status || 'idle';
@@ -543,6 +597,12 @@ export default function LangfuseFetcher() {
       // ignore invalid cache
     }
   }, []);
+
+  useEffect(() => {
+    if (status === 'fetching' || status === 'paused') return;
+    if (envKey === selectedLangfuseEnv) return;
+    setEnvKey(selectedLangfuseEnv);
+  }, [envKey, selectedLangfuseEnv, status]);
 
   useEffect(() => {
     try {
@@ -562,6 +622,8 @@ export default function LangfuseFetcher() {
           observations,
           sessionIds,
           filteredCount,
+          familyIdFilter,
+          deviceIdFilter,
           autoFilledRunEndRef: autoFilledRunEndRef.current,
           savedAt: Date.now(),
         })
@@ -583,7 +645,21 @@ export default function LangfuseFetcher() {
     observations,
     sessionIds,
     filteredCount,
+    familyIdFilter,
+    deviceIdFilter,
   ]);
+
+  useEffect(() => {
+    if (!familyIdFilter) return;
+    if (familyIdOptions.includes(familyIdFilter)) return;
+    setFamilyIdFilter('');
+  }, [familyIdFilter, familyIdOptions]);
+
+  useEffect(() => {
+    if (!deviceIdFilter) return;
+    if (deviceIdOptions.includes(deviceIdFilter)) return;
+    setDeviceIdFilter('');
+  }, [deviceIdFilter, deviceIdOptions]);
 
   const applyPreset = (mins) => {
     const end = new Date(); const start = new Date(end.getTime() - mins * 60 * 1000);
@@ -617,14 +693,23 @@ export default function LangfuseFetcher() {
   const handleClear = () => {
     setStatus('idle');
     setError('');
+    setFamilyIdFilter('');
+    setDeviceIdFilter('');
     resetFetchedResultState();
     partialTraces.current = [];
     partialObs.current = [];
   };
 
+  const handleEnvChange = (nextEnvKey) => {
+    setEnvKey(nextEnvKey);
+    dispatch(actions.setSelectedLangfuseEnv(nextEnvKey));
+    handleClear();
+  };
+
   /* 获取日志 */
   const handleFetch = useCallback(async (overrideRange = null, options = {}) => {
-    const { autoExportSession = false } = options;
+    const { autoExportSession = false, envKey: envOverride = '' } = options;
+    const fetchEnvKey = envOverride || envKey;
     const range = overrideRange || { fromDate, fromTime, toDate, toTime };
     if (!range.fromDate || !range.fromTime || !range.toDate || !range.toTime) {
       setError('请完整填写开始和结束时间');
@@ -646,12 +731,12 @@ export default function LangfuseFetcher() {
 
     try {
       const [rawTraces, rawObs] = await Promise.all([
-        fetchTraces(envKey, fromISO, toISO_, (items, total) => {
+        fetchTraces(fetchEnvKey, fromISO, toISO_, (items, total) => {
           // items 是 fetchAllPages 内部 results 的引用，实时追踪已获取数据
           setTraceProgress({ fetched: items.length, total });
           partialTraces.current = items;
         }, controller.current),
-        fetchObservations(envKey, fromISO, toISO_, (items, total) => {
+        fetchObservations(fetchEnvKey, fromISO, toISO_, (items, total) => {
           setObsProgress({ fetched: items.length, total });
           partialObs.current = items;
         }, controller.current),
@@ -687,22 +772,29 @@ export default function LangfuseFetcher() {
   }, [envKey, fromDate, fromTime, toDate, toTime, state.testAudios]);
 
   useEffect(() => {
-    const { firstTestAudioTime, lastTestAudioTime, endTime } = state.report || {};
+    const {
+      firstTestAudioTime,
+      langfuseFetchEndTime,
+      langfuseAutoFetchRequestedAt,
+      langfuseEnvKey,
+    } = state.report || {};
     const isCompleted = state.playback?.status === 'completed';
     if (!shouldAutoFetchLangfuseLogs) return;
-    if (!isCompleted || !firstTestAudioTime || !lastTestAudioTime || !endTime) return;
-    if (autoFilledRunEndRef.current === endTime) return;
+    if (!isCompleted || !firstTestAudioTime || !langfuseFetchEndTime || !langfuseAutoFetchRequestedAt) return;
+    if (autoFilledRunEndRef.current === langfuseAutoFetchRequestedAt) return;
 
-    const autoRange = buildAutoFetchRange(firstTestAudioTime, lastTestAudioTime);
+    const autoEnvKey = langfuseEnvKey || selectedLangfuseEnv;
+    const autoRange = buildAutoFetchRange(firstTestAudioTime, langfuseFetchEndTime);
     const fromParts = autoRange.from;
     const toParts = autoRange.to;
 
+    setEnvKey(autoEnvKey);
     setFromDate(fromParts.date);
     setFromTime(fromParts.time);
     setToDate(toParts.date);
     setToTime(toParts.time);
 
-    autoFilledRunEndRef.current = endTime;
+    autoFilledRunEndRef.current = langfuseAutoFetchRequestedAt;
 
     handleFetch(
       {
@@ -710,22 +802,25 @@ export default function LangfuseFetcher() {
         fromTime: fromParts.time,
         toDate: toParts.date,
         toTime: toParts.time,
-      }
+      },
+      { envKey: autoEnvKey }
     );
   }, [
     handleFetch,
     shouldAutoFetchLangfuseLogs,
+    selectedLangfuseEnv,
     state.playback?.status,
     state.report?.firstTestAudioTime,
-    state.report?.lastTestAudioTime,
-    state.report?.endTime,
+    state.report?.langfuseFetchEndTime,
+    state.report?.langfuseAutoFetchRequestedAt,
+    state.report?.langfuseEnvKey,
   ]);
 
   const handleExcel = () => {
     exportToExcel(traces, observations, makeFilename('LangfuseLogs', fromDate, fromTime, toDate, toTime) + '.xlsx');
   };
   const handleSessionExcel = () => {
-    exportSessionExcel(traces, observations, makeFilename('SessionExtract', fromDate, fromTime, toDate, toTime) + '.xlsx');
+    exportSessionExcel(filteredTraces, filteredObservations, makeFilename('SessionExtract', fromDate, fromTime, toDate, toTime) + '.xlsx');
   };
   const handleDownloadJSON = (type) => {
     const prefix = JSON_EXPORT_META[type] || 'Export';
@@ -736,13 +831,13 @@ export default function LangfuseFetcher() {
   };
 
   const handleGenerateSummaryReport = async () => {
-    if (sessionRows.length === 0) {
+    if (filteredSessionRows.length === 0) {
       setError('暂无可生成总结报告的数据，请先获取 Langfuse 日志。');
       return;
     }
 
     const reportPayload = buildSummaryReportPayload({
-      sessionRows,
+      sessionRows: filteredSessionRows,
       testAudios: state.testAudios,
       envLabel: ENVIRONMENTS[envKey]?.label,
       envKey,
@@ -768,6 +863,7 @@ export default function LangfuseFetcher() {
   const totalFiltered = filteredCount.traces + filteredCount.obs;
   const hasFetchedData = traces.length > 0 || observations.length > 0 || sessionIds.length > 0 || totalFiltered > 0;
   const shouldShowResults = isDone || hasFetchedData;
+  const hasSessionFilters = Boolean(familyIdFilter || deviceIdFilter);
 
   const spanLabel = (() => {
     const s = toISO(fromDate, fromTime); const e = toISO(toDate, toTime);
@@ -801,7 +897,7 @@ export default function LangfuseFetcher() {
               <button
                 key={key}
                 disabled={isActive}
-                onClick={() => { setEnvKey(key); handleClear(); }}
+                onClick={() => handleEnvChange(key)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all
                   ${s.badge}
                   ${isActive ? `ring-2 ${s.active} opacity-100` : 'opacity-60 hover:opacity-90'}
@@ -949,6 +1045,9 @@ export default function LangfuseFetcher() {
           {/* 下载 */}
           <div className="bg-dark rounded-xl p-5 border border-gray-700">
             <h3 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2"><span>⬇️</span> 下载数据</h3>
+            {hasSessionFilters && (
+              <p className="text-xs text-yellow-300/90 mb-3">当前已启用筛选，"生成报告"与"下载日志提取 Excel"将基于筛选结果。</p>
+            )}
             <div className="flex flex-wrap gap-3">
               <button onClick={handleGenerateSummaryReport}
                 className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors">
@@ -989,7 +1088,49 @@ export default function LangfuseFetcher() {
               <span>👁️</span> 数据预览
               <span className="text-xs text-gray-500 font-normal ml-1">每页 20 条 · 拖动横向滚动 · 悬浮单元格查看完整内容</span>
             </h3>
-            <DataTable title="日志提取" data={sessionRows} color="secondary" />
+            <div className="rounded-lg border border-gray-800 bg-gray-900/30 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <p className="text-xs text-gray-400">按 familyid / deviceid 筛选日志提取结果</p>
+                {hasSessionFilters && (
+                  <button
+                    onClick={() => { setFamilyIdFilter(''); setDeviceIdFilter(''); }}
+                    className="px-3 py-1.5 text-xs rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+                  >
+                    重置筛选
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-500">familyid</span>
+                  <select
+                    value={familyIdFilter}
+                    onChange={(e) => setFamilyIdFilter(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-100 focus:border-primary focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">全部</option>
+                    {familyIdOptions.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-gray-500">deviceid</span>
+                  <select
+                    value={deviceIdFilter}
+                    onChange={(e) => setDeviceIdFilter(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-100 focus:border-primary focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">全部</option>
+                    {deviceIdOptions.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">筛选结果：{filteredSessionRows.length} / {sessionRows.length} 条</p>
+            </div>
+            <DataTable title="日志提取" data={filteredSessionRows} color="secondary" />
             <div className="border-t border-gray-800 pt-6">
               <DataTable title="Traces" data={traces} color="primary" />
             </div>

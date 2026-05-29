@@ -110,7 +110,7 @@ export default function AudioList() {
             onClick={handleBatchDelete}
             className="px-3 py-1.5 bg-red-500 hover:bg-red-600 rounded-lg text-sm transition-colors"
           >
-            删除选中 ({selectedIds.size})
+            删除选中音频 ({selectedIds.size})
           </button>
         )}
       </div>
@@ -269,7 +269,7 @@ export default function AudioList() {
                     onClick={() => handleDelete(audio.id)}
                     className="w-7 h-7 flex items-center justify-center rounded
                                text-red-400 hover:bg-red-500/20 transition-colors text-sm flex-shrink-0"
-                    title="删除"
+                    title="删除测试音频，保留导入用例"
                   >
                     ✕
                   </button>

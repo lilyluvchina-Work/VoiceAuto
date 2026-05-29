@@ -5,12 +5,14 @@ import React, { useEffect } from 'react';
 import useTestRunner from '../hooks/useTestRunner';
 import { formatTime } from '../utils/formatters';
 import { useTest, actions } from '../stores/testStore';
+import { ENVIRONMENTS } from '../modules/langfuse/services/langfuseService';
 
 export default function PlaybackConsole({ onTestComplete }) {
   const { state, dispatch } = useTest();
   const loopCount = state.testOptions?.loopCount || 1;
   const debugSequence = Boolean(state.testOptions?.debugSequence);
   const autoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
+  const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || 'UAT';
   const selectedTestModule = state.testOptions?.selectedTestModule || 'all';
 
   const moduleOptions = React.useMemo(() => {
@@ -44,6 +46,10 @@ export default function PlaybackConsole({ onTestComplete }) {
 
   const handleAutoFetchLangfuseLogsChange = (e) => {
     dispatch(actions.setAutoFetchLangfuseLogs(e.target.checked));
+  };
+
+  const handleSelectedLangfuseEnvChange = (e) => {
+    dispatch(actions.setSelectedLangfuseEnv(e.target.value));
   };
 
   const handleSelectedModuleChange = (e) => {
@@ -122,6 +128,22 @@ export default function PlaybackConsole({ onTestComplete }) {
         <p className="mt-2 text-xs text-gray-500">
           支持按单独功能模块执行测试。
         </p>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <label className="text-sm text-gray-300">日志环境</label>
+          <select
+            value={selectedLangfuseEnv}
+            onChange={handleSelectedLangfuseEnvChange}
+            disabled={isPlayingRef.current || isPausedRef.current}
+            className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
+          >
+            {Object.entries(ENVIRONMENTS).map(([key, env]) => (
+              <option key={key} value={key}>{env.label}</option>
+            ))}
+          </select>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          测试结束后自动拉取该环境的 Langfuse 日志。
+        </p>
         <label className="mt-3 inline-flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -149,7 +171,7 @@ export default function PlaybackConsole({ onTestComplete }) {
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                 : 'bg-gray-700 text-gray-300 border border-gray-600'
             }`}>
-              {autoFetchLangfuseLogs ? '已开启：测试结束自动跳转 Langfuse' : '已关闭：测试结束停留语音测试'}
+              {autoFetchLangfuseLogs ? '已开启：结束后停留 2 分钟再拉日志' : '已关闭：测试结束停留语音测试'}
             </span>
           </div>
         </div>

@@ -20,6 +20,29 @@
 
 ## 修复记录
 
+### 2026-05-29
+
+1. 修复 Langfuse 日志拉取偶发 `read ECONNRESET` 后整轮失败问题。
+  - 现象：开发环境终端持续出现 `vite http proxy error`，`/api/public/traces` 或 `/api/public/observations` 请求失败后页面报错中断。
+  - 根因：分页拉取链路未对瞬时网络故障（如连接被上游重置）做重试，单次失败直接终止整轮任务。
+  - 修复：在 `src/modules/langfuse/services/langfuseService.js` 与 `src/services/langfuseService.js` 增加网络错误重试（指数退避）；并在 `vite.config.js` 的 Langfuse 代理增加 `timeout/proxyTimeout` 稳定性参数。
+2. 修复自动拉取 Langfuse 日志窗口过短导致末尾日志缺失问题。
+  - 现象：测试完成后立即拉取日志时，最后几条语音交互可能尚未写入 Langfuse，报告中出现实际输入/输出缺失。
+  - 根因：自动拉取结束时间使用最后一条测试音频时间，未给 Langfuse 日志落库留出缓冲。
+  - 修复：测试完成后先停留 2 分钟，再以跳转触发时间作为 `langfuseFetchEndTime` 自动拉取日志。
+3. 修复报告把未执行导入用例计入本次报告的问题。
+  - 现象：仅执行部分模块或部分音频时，报告仍可能按全部导入用例计算总数和明细。
+  - 根因：报告构建直接遍历 `testAudios`，未严格以本次 `testReport.cases` 执行记录为准。
+  - 修复：报告行和统计指标改为从执行记录反查音频生成，只统计本次实际执行音频。
+4. 修复删除 TAPD 测试音频时误移除导入用例的问题。
+  - 现象：在语音测试页删除某条 TAPD 音频后，对应导入用例也从测试音频列表中消失，后续需要重新导入或生成。
+  - 根因：删除动作直接从 `testAudios` 中移除整条记录，未区分“导入用例”和“已生成音频”。
+  - 修复：对 TAPD 来源音频执行删除时仅清空 `audioBlob/audioUrl/duration/audioStatus`，保留用例元数据。
+5. 修复 Langfuse 错误日志与有效输入分离导致报告错误信息缺失问题。
+  - 现象：`[error]` observation 有错误内容，但报告明细或日志提取行未归到对应输入。
+  - 根因：旧提取逻辑按 Session 粗聚合且只识别部分 error 结构，孤立错误行无法挂到最近一次有效输入。
+  - 修复：按 Trace/Request 构造日志提取行，增强 `[error]` output/message/content 解析，并将同 Session 孤立错误合并到最近有效输入行。
+
 ### 2026-04-22
 
 1. 修复第 2 轮起可能出现同一用例连续播放问题。

@@ -29,6 +29,48 @@ function makeAuthHeader(envKey) {
   return 'Basic ' + btoa(`${env.publicKey}:${env.secretKey}`);
 }
 
+const RETRYABLE_NETWORK_PATTERNS = [
+  'econnreset',
+  'etimedout',
+  'socket hang up',
+  'networkerror',
+  'failed to fetch',
+];
+
+function isRetryableNetworkError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return RETRYABLE_NETWORK_PATTERNS.some((token) => message.includes(token));
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url, options, controller, maxRetries = 3) {
+  let attempt = 0;
+  let lastError = null;
+
+  while (attempt <= maxRetries) {
+    if (controller?.aborted) {
+      throw new Error('请求已终止');
+    }
+
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      lastError = error;
+      const shouldRetry = isRetryableNetworkError(error) && attempt < maxRetries;
+      if (!shouldRetry) break;
+
+      const delayMs = Math.min(1000 * (attempt + 1), 3000);
+      await wait(delayMs);
+      attempt++;
+    }
+  }
+
+  throw lastError;
+}
+
 /**
  * 获取控制器 —— 支持暂停 / 继续 / 终止
  */
@@ -95,9 +137,9 @@ async function fetchAllPages(envKey, endpoint, params, onProgress, controller) {
       }
     });
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithRetry(url.toString(), {
       headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
-    });
+    }, controller);
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');

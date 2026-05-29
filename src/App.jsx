@@ -2,8 +2,8 @@
  * VoiceAuto - 语音自动化测试平台
  * 主应用组件
  */
-import React, { useState } from 'react';
-import { TestProvider, useTest } from './stores/testStore';
+import React, { useEffect, useRef, useState } from 'react';
+import { TestProvider, useTest, actions } from './stores/testStore';
 import WakeWordConfig from './components/WakeWordConfig';
 import VoiceConfig from './components/VoiceConfig';
 import AudioImporter from './components/AudioImporter';
@@ -46,16 +46,53 @@ const TAB_ITEMS = [
 ];
 
 function AppContent() {
-  const { state } = useTest();
+  const { state, dispatch } = useTest();
   const [activeMode, setActiveMode] = useState(MODES.cases);
+  const [pendingLangfuseJump, setPendingLangfuseJump] = useState(false);
+  const autoJumpTimerRef = useRef(null);
   const isTesting = state.playback.isPlaying || state.playback.isPaused;
   const shouldAutoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
+  const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || 'UAT';
+
+  useEffect(() => () => {
+    if (autoJumpTimerRef.current) {
+      window.clearTimeout(autoJumpTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!autoJumpTimerRef.current) return;
+    if (!shouldAutoFetchLangfuseLogs || state.playback.status === 'playing') {
+      window.clearTimeout(autoJumpTimerRef.current);
+      autoJumpTimerRef.current = null;
+      setPendingLangfuseJump(false);
+    }
+  }, [shouldAutoFetchLangfuseLogs, state.playback.status]);
 
   const handleTestComplete = () => {
+    if (autoJumpTimerRef.current) {
+      window.clearTimeout(autoJumpTimerRef.current);
+      autoJumpTimerRef.current = null;
+    }
+
     if (shouldAutoFetchLangfuseLogs) {
-      setActiveMode(MODES.langfuse);
+      setActiveMode(MODES.voice);
+      setPendingLangfuseJump(true);
+      autoJumpTimerRef.current = window.setTimeout(() => {
+        const jumpTime = Date.now();
+        dispatch(actions.setReport({
+          langfuseFetchEndTime: jumpTime,
+          langfuseAutoFetchRequestedAt: jumpTime,
+          langfuseEnvKey: selectedLangfuseEnv,
+        }));
+        setPendingLangfuseJump(false);
+        setActiveMode(MODES.langfuse);
+        autoJumpTimerRef.current = null;
+      }, 2 * 60 * 1000);
       return;
     }
+
+    setPendingLangfuseJump(false);
     setActiveMode(MODES.voice);
   };
 
@@ -86,6 +123,11 @@ function AppContent() {
             <div className="space-y-6">
               <WakeWordConfig />
               <VoiceConfig />
+              {pendingLangfuseJump && (
+                <div className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-blue-100">
+                  测试已完成，将在当前页面停留 2 分钟后跳转到 Langfuse 日志，并拉取所选环境日志。
+                </div>
+              )}
               <PlaybackConsole onTestComplete={handleTestComplete} />
             </div>
 
