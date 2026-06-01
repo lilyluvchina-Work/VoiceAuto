@@ -10,6 +10,12 @@ export const ENVIRONMENTS = {
     publicKey: 'pk-lf-e2e66182-6508-4abf-914f-d227a678c048',
     secretKey: 'sk-lf-6ea10ab6-2ab5-4ae8-8167-d514e2377538',
   },
+  UAT_LOCAL: {
+    label: 'UAT-Local',
+    proxyBase: '/langfuse-api-uat-local',
+    publicKey: 'pk-lf-9cd5f164-a78c-4c49-8593-74f2298c97f3',
+    secretKey: 'sk-lf-69f34a45-47a0-4cb8-a238-2cdffa3f5a97',
+  },
   TEST: {
     label: 'TEST',
     proxyBase: '/langfuse-api-test',
@@ -44,6 +50,25 @@ function isRetryableNetworkError(error) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readJsonResponse(response, envKey, endpoint) {
+  const text = await response.text();
+  const contentType = response.headers.get('content-type') || '';
+
+  if (!contentType.toLowerCase().includes('application/json')) {
+    const looksLikeHtml = /^\s*<!doctype html/i.test(text) || /^\s*<html/i.test(text);
+    const hint = looksLikeHtml
+      ? '服务端返回了 HTML 页面，通常是 Nginx 未配置对应 Langfuse 代理前缀。'
+      : 'Langfuse 返回内容不是 JSON。';
+    throw new Error(`${hint} 环境：${envKey}，接口：${endpoint}`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Langfuse JSON 解析失败：${error.message}`);
+  }
 }
 
 async function fetchWithRetry(url, options, controller, maxRetries = 3) {
@@ -146,7 +171,7 @@ async function fetchAllPages(envKey, endpoint, params, onProgress, controller) {
       throw new Error(`Langfuse API 错误 ${response.status}: ${text || response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = await readJsonResponse(response, envKey, endpoint);
     const items = Array.isArray(data.data) ? data.data : [];
     results.push(...items);
 

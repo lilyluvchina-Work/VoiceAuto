@@ -52,6 +52,25 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function readJsonResponse(response, envKey, endpoint) {
+  const text = await response.text();
+  const contentType = response.headers.get('content-type') || '';
+
+  if (!contentType.toLowerCase().includes('application/json')) {
+    const looksLikeHtml = /^\s*<!doctype html/i.test(text) || /^\s*<html/i.test(text);
+    const hint = looksLikeHtml
+      ? '服务端返回了 HTML 页面，通常是 Nginx 未配置对应 Langfuse 代理前缀。'
+      : 'Langfuse 返回内容不是 JSON。';
+    throw new Error(`${hint} 环境：${envKey}，接口：${endpoint}`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Langfuse JSON 解析失败：${error.message}`);
+  }
+}
+
 async function fetchWithRetry(url, options, controller, maxRetries = 3) {
   let attempt = 0;
   let lastError = null;
@@ -152,7 +171,7 @@ async function fetchAllPages(envKey, endpoint, params, onProgress, controller) {
       throw new Error(`Langfuse API 错误 ${response.status}: ${text || response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = await readJsonResponse(response, envKey, endpoint);
     const items = Array.isArray(data.data) ? data.data : [];
     results.push(...items);
 
