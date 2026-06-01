@@ -28,6 +28,10 @@ function normalizeLine(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeComparable(value) {
+  return normalizeLine(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
 function clipText(value, max = 120) {
   const normalized = normalizeLine(value);
   if (!normalized) return '';
@@ -46,11 +50,36 @@ function splitErrorMessages(raw) {
   return Array.from(new Set(pieces));
 }
 
-function resolveCaseNameByHumanText(testAudios, inputText) {
-  const normalizedInput = normalizeLine(inputText);
-  if (!normalizedInput) return '';
-  const matched = (testAudios || []).find((item) => normalizeLine(item?.text) === normalizedInput);
-  return normalizeLine(matched?.caseTitle || matched?.name || matched?.tapdCaseTitle || '');
+function resolveAudioCaseId(audio) {
+  const explicit = normalizeLine(audio?.caseId || audio?.case_id || audio?.testCaseId || audio?.tapdCaseAudioId);
+  if (explicit) return explicit;
+  const tapdCaseId = normalizeLine(audio?.tapdCaseId);
+  const humanIndex = normalizeLine(audio?.humanIndex);
+  if (tapdCaseId && humanIndex) return `${tapdCaseId}_${humanIndex}`;
+  return tapdCaseId;
+}
+
+function resolveAudioBySessionRow(testAudios, row) {
+  const audios = Array.isArray(testAudios) ? testAudios : [];
+  const rowCaseId = normalizeLine(row?.case_id || row?.caseId || row?.test_case_id || row?.testCaseId);
+  if (rowCaseId) {
+    const byCaseId = audios.find((audio) => resolveAudioCaseId(audio) === rowCaseId);
+    if (byCaseId) return byCaseId;
+  }
+
+  const rowAudioFile = normalizeLine(row?.audio_file || row?.audioFile);
+  if (rowAudioFile) {
+    const byAudioFile = audios.find((audio) => normalizeLine(audio?.audioFile) === rowAudioFile);
+    if (byAudioFile) return byAudioFile;
+  }
+
+  const normalizedInput = normalizeComparable(row?.InputText || row?.actual_input_text || row?.输入);
+  if (!normalizedInput) return null;
+  return audios.find((item) => normalizeComparable(item?.text) === normalizedInput) || null;
+}
+
+function resolveCaseNameByAudio(audio) {
+  return normalizeLine(audio?.caseTitle || audio?.name || audio?.tapdCaseTitle || '');
 }
 
 function buildBugTitle(caseName, humanText, errorMessage) {
@@ -85,7 +114,8 @@ async function submitTapdBugsBySessionRows(sessionRows, testAudios) {
   const pendingBugs = [];
   for (const row of rowsWithErrors) {
     const humanText = String(row?.InputText || '').trim();
-    const caseName = resolveCaseNameByHumanText(testAudios, humanText);
+    const matchedAudio = resolveAudioBySessionRow(testAudios, row);
+    const caseName = resolveCaseNameByAudio(matchedAudio);
     const errorMessages = splitErrorMessages(row.error);
     for (const message of errorMessages) {
       const title = buildBugTitle(caseName, humanText, message);

@@ -89,6 +89,34 @@ for (const [category, group, name, aliases] of SUBMISSION_PARAM_ALIASES) {
   }
 }
 
+export const ENVIRONMENT_INFO_FIELDS = [
+  {
+    key: 'cedarServiceEnvVersion',
+    label: 'Cedar服务环境和版本',
+    rowFields: ['cedar_service_env_version', 'cedarServiceEnvVersion', 'cedar_service_version', 'cedarServiceVersion'],
+  },
+  {
+    key: 'xhomeServiceEnvVersion',
+    label: 'XHome服务环境和版本',
+    rowFields: ['xhome_service_env_version', 'xhomeServiceEnvVersion', 'xhome_service_version', 'xhomeServiceVersion'],
+  },
+  {
+    key: 'cedarSpeakerApp',
+    label: 'Cedar Speaker APP',
+    rowFields: ['cedar_speaker_app', 'cedarSpeakerApp', 'speaker_app', 'speakerApp'],
+  },
+  {
+    key: 'cedarTvApp',
+    label: 'Cedar TV APP',
+    rowFields: ['cedar_tv_app', 'cedarTvApp', 'tv_app', 'tvApp'],
+  },
+  {
+    key: 'motongApp',
+    label: '魔童APP',
+    rowFields: ['motong_app', 'motongApp', '魔童APP', '魔童app'],
+  },
+];
+
 function findSubmissionParamTemplate(param) {
   const explicitTemplate = SUBMISSION_PARAM_TEMPLATE_BY_ID.get(submissionParamIdentity(param));
   if (explicitTemplate) return explicitTemplate;
@@ -584,6 +612,26 @@ function buildSubmissionParams(rows) {
   })));
 }
 
+function buildEnvironmentInfo(rows) {
+  return ENVIRONMENT_INFO_FIELDS.reduce((result, field) => ({
+    ...result,
+    [field.key]: firstRowValue(rows, field.rowFields),
+  }), {});
+}
+
+function getEnvironmentInfoRows(report) {
+  return ENVIRONMENT_INFO_FIELDS.map((field) => [field.label, report?.[field.key]]);
+}
+
+function getEnvironmentParamRows(report) {
+  return getEnvironmentInfoRows(report).map(([name, value]) => ({
+    category: '服务环境和版本',
+    group: '',
+    name,
+    value,
+  }));
+}
+
 function tableCell(value) {
   return valueOrSlash(value)
     .replace(/\|/g, '\\|')
@@ -641,7 +689,13 @@ export function buildSummaryReportText(report) {
     ['整体平均耗时', safeReport.overallAvgResponseText || formatMs(safeReport.overallAvgResponseMs)],
   ];
   const paramSections = paramGroups.length > 0
-    ? paramGroups.map((group) => [
+    ? [
+      [
+        '### 服务环境和版本',
+        '',
+        buildMarkdownTable(['参数', '值'], getEnvironmentInfoRows(safeReport)),
+      ].join('\n'),
+      ...paramGroups.map((group) => [
       `### ${group.category}`,
       '',
       group.subGroups?.length
@@ -651,7 +705,8 @@ export function buildSummaryReportText(report) {
           buildMarkdownTable(['参数', '值'], subGroup.items.map((item) => [item.name, item.value])),
         ].join('\n')).join('\n\n')
         : buildMarkdownTable(['参数', '值'], group.items.map((item) => [item.name, item.value])),
-    ].join('\n')).join('\n\n')
+      ].join('\n')),
+    ].join('\n\n')
     : buildMarkdownTable(['参数', '值'], []);
   const moduleRows = modules.map((item) => [
     item.module,
@@ -702,7 +757,7 @@ export function buildSummaryReportText(report) {
     '',
     buildMarkdownTable(['项目', '内容'], overviewRows),
     '',
-    '## 二、提测参数',
+    '## 二、环境信息',
     '',
     paramSections,
     '',
@@ -801,7 +856,12 @@ export function buildSummaryReportHtml(report) {
     ['整体平均耗时', safeReport.overallAvgResponseText || formatMs(safeReport.overallAvgResponseMs)],
   ];
   const paramHtml = paramGroups.length > 0
-    ? paramGroups.map((group) => [
+    ? [
+      [
+        '<h3 class="subsection-title">服务环境和版本</h3>',
+        `<div class="table-wrap">${buildHtmlTable(['参数', '值'], getEnvironmentInfoRows(safeReport))}</div>`,
+      ].join(''),
+      ...paramGroups.map((group) => [
       `<h3 class="subsection-title">${escapeHtml(group.category)}</h3>`,
       group.subGroups?.length
         ? group.subGroups.map((subGroup) => [
@@ -809,7 +869,8 @@ export function buildSummaryReportHtml(report) {
           `<div class="table-wrap">${buildHtmlTable(['参数', '值'], subGroup.items.map((item) => [item.name, item.value]))}</div>`,
         ].join('')).join('')
         : `<div class="table-wrap">${buildHtmlTable(['参数', '值'], group.items.map((item) => [item.name, item.value]))}</div>`,
-    ].join('')).join('')
+      ].join('')),
+    ].join('')
     : `<div class="table-wrap">${buildHtmlTable(['参数', '值'], [])}</div>`;
   const moduleRows = modules.map((item) => [
     item.module,
@@ -887,7 +948,7 @@ export function buildSummaryReportHtml(report) {
     <p class="meta">生成时间：${escapeHtml(safeReport.generatedAtText)}</p>
     <h2>一、报告概览</h2>
     <div class="table-wrap">${buildHtmlTable(['项目', '内容'], overviewRows)}</div>
-    <h2>二、提测参数</h2>
+    <h2>二、环境信息</h2>
     ${paramHtml}
     <h2>三、功能模块统计</h2>
     <div class="table-wrap">${buildHtmlTable(['功能模块', '用例数', 'Agent命中率', '平均耗时'], moduleRows)}</div>
@@ -1086,6 +1147,12 @@ export function exportSummaryReportExcel(report, filename) {
   ];
   const paramRows = [
     ['分类', '分组', '参数', '值'],
+    ...getEnvironmentParamRows(safeReport).map((item) => [
+      item.category,
+      valueOrSlash(item.group),
+      valueOrSlash(item.name),
+      valueOrSlash(item.value),
+    ]),
     ...categorizeSubmissionParams(params).flatMap((group) => (
       group.items.map((item) => [
         group.category,
@@ -1187,7 +1254,7 @@ export function exportSummaryReportExcel(report, filename) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, buildDashboardSheet(safeReport, modules, errorRows), '汇报看板');
   XLSX.utils.book_append_sheet(wb, sheetFromRows(overviewRows, [24, 90], { importantColumns: [1] }), '报告概览');
-  XLSX.utils.book_append_sheet(wb, sheetFromRows(paramRows, [20, 18, 28, 42], { importantColumns: [0, 1, 3] }), '提测参数');
+  XLSX.utils.book_append_sheet(wb, sheetFromRows(paramRows, [20, 18, 28, 42], { importantColumns: [0, 1, 3] }), '环境信息');
   XLSX.utils.book_append_sheet(wb, sheetFromRows(moduleRows, [30, 12, 18, 18], { importantColumns: [2, 3] }), '功能模块统计');
   XLSX.utils.book_append_sheet(wb, sheetFromRows(errorRows, [8, 22, 46, 12, 16, 90, 70], { importantColumns: [3, 5, 6] }), '错误信息');
   XLSX.utils.book_append_sheet(wb, sheetFromRows(keyRows, [8, 22, 64, 90, 24, 24, 16, 12, 16, 90], { importantColumns: [2, 3, 4, 5, 6, 7, 8, 9] }), '重点数据');
@@ -1358,6 +1425,7 @@ export function buildSummaryReportPayload({
     failedCases,
     passRate,
     submissionParams: buildSubmissionParams(safeRows),
+    ...buildEnvironmentInfo(safeRows),
     moduleStats,
     moduleAverages: moduleStats,
     overallAgentHitRate: formatPercent(matchedAgentCount, comparableAgentCount),

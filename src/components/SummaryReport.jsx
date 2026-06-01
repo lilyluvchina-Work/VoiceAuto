@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import {
   SUMMARY_REPORT_EVENT,
   SUMMARY_REPORT_STORAGE_KEY,
+  ENVIRONMENT_INFO_FIELDS,
   buildSummaryReportHtml,
   buildSummaryReportText,
   categorizeSubmissionParams,
@@ -119,7 +120,7 @@ function pushParamCandidate(list, name, value, extra = {}) {
 }
 
 function isParamCategory(value) {
-  return /^(模型配置|语音识别配置)$/i.test(String(value || '').trim());
+  return /^(服务环境和版本|模型配置|语音识别配置)$/i.test(String(value || '').trim());
 }
 
 function isVoiceParamGroup(value) {
@@ -183,6 +184,10 @@ function mergeSubmissionParams(currentParams, importedParams) {
   return normalizeSubmissionParams([...(currentParams || []), ...(importedParams || [])]);
 }
 
+function normalizeFieldName(value) {
+  return String(value || '').toLowerCase().replace(/[\s/:：=_\-—–|,，.。()（）[\]【】]+/g, '');
+}
+
 const reportTableColumns = [
   { label: '用例ID', key: 'caseId', className: 'w-[120px] text-gray-300 whitespace-nowrap' },
   { label: '目标文本（测试音频文本）', key: 'testAudioText', className: 'w-[220px] text-gray-200 leading-relaxed whitespace-pre-wrap' },
@@ -205,6 +210,29 @@ const reportTableColumns = [
   { label: 'LLMDuration', key: 'llmDuration', className: 'w-[110px] text-gray-300 whitespace-nowrap' },
   { label: 'FirstToken', key: 'firstTokenDuration', className: 'w-[110px] text-accent font-medium whitespace-nowrap' },
 ];
+
+function findEnvironmentInfoField(name) {
+  const normalizedName = normalizeFieldName(name);
+  return ENVIRONMENT_INFO_FIELDS.find((field) => normalizeFieldName(field.label) === normalizedName);
+}
+
+function splitImportedEnvironmentInfo(importedParams) {
+  const environmentPatch = {};
+  const submissionParamRows = [];
+
+  (importedParams || []).forEach((item) => {
+    if (String(item?.category || '').trim() === '服务环境和版本') {
+      const field = findEnvironmentInfoField(item.name);
+      if (field) {
+        environmentPatch[field.key] = item.value;
+        return;
+      }
+    }
+    submissionParamRows.push(item);
+  });
+
+  return { environmentPatch, submissionParamRows };
+}
 
 function renderReportCell(item, column) {
   if (column.key === 'agentMatched') {
@@ -269,17 +297,6 @@ export default function SummaryReport() {
     persistReport(nextReport);
   };
 
-  const updateArrayItem = (key, index, patch) => {
-    const sourceRows = key === 'moduleStats' ? moduleRows : report?.[key];
-    const rows = Array.isArray(sourceRows) ? [...sourceRows] : [];
-    rows[index] = { ...(rows[index] || {}), ...patch };
-    const patchPayload = { [key]: rows };
-    if (key === 'moduleStats') {
-      patchPayload.moduleAverages = rows;
-    }
-    updateReport(patchPayload);
-  };
-
   const updateSubmissionParamValue = (target, value) => {
     const nextParams = submissionParams.map((item) => (
       item.category === target.category && item.group === target.group && item.name === target.name
@@ -287,14 +304,6 @@ export default function SummaryReport() {
         : item
     ));
     updateReport({ submissionParams: nextParams });
-  };
-
-  const updateImportedPlans = (value) => {
-    const plans = value
-      .split(/[、,\n]/)
-      .map((item) => item.trim())
-      .filter(Boolean);
-    updateReport({ importedPlans: plans });
   };
 
   const regenerateReportText = () => {
@@ -320,6 +329,44 @@ export default function SummaryReport() {
     exportSummaryReportExcel(report, `${getExportBaseName()}.xlsx`);
   };
 
+  const handleClearReport = () => {
+    if (!window.confirm('确认清空当前总结报告内容吗？清空后需要重新生成报告。')) {
+      return;
+    }
+    try {
+      localStorage.removeItem(SUMMARY_REPORT_STORAGE_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    setReport(null);
+    window.dispatchEvent(new CustomEvent(SUMMARY_REPORT_EVENT, { detail: null }));
+  };
+
+  const handleExportEnvironmentTemplate = () => {
+    const environmentRows = ENVIRONMENT_INFO_FIELDS.map((field) => [
+      '服务环境和版本',
+      '',
+      field.label,
+      report?.[field.key] || '',
+    ]);
+    const submissionRows = submissionParams.map((item) => [
+      item.category || '',
+      item.group || '',
+      item.name || '',
+      item.value === '/' ? '' : (item.value || ''),
+    ]);
+    const rows = [
+      ['分类', '分组', '参数', '值'],
+      ...environmentRows,
+      ...submissionRows,
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    worksheet['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 30 }, { wch: 42 }];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '环境信息模板');
+    XLSX.writeFile(workbook, `${getExportBaseName()}_环境信息模板.xlsx`);
+  };
+
   const handleImportParamsClick = () => {
     paramFileInputRef.current?.click();
   };
@@ -332,16 +379,18 @@ export default function SummaryReport() {
     try {
       const importedParams = await parseParameterFile(file);
       if (!importedParams.length) {
-        alert('未识别到可导入的提测参数，请检查文件是否为“参数名-参数值”格式。');
+        alert('未识别到可导入的环境信息，请检查文件是否为“参数名-参数值”格式。');
         return;
       }
 
-      const nextParams = mergeSubmissionParams(submissionParams, importedParams);
-      updateReport({ submissionParams: nextParams });
-      alert(`已导入 ${importedParams.length} 条参数，当前提测参数共 ${nextParams.length} 条。`);
+      const { environmentPatch, submissionParamRows } = splitImportedEnvironmentInfo(importedParams);
+      const nextParams = mergeSubmissionParams(submissionParams, submissionParamRows);
+      const environmentCount = Object.keys(environmentPatch).length;
+      updateReport({ submissionParams: nextParams, ...environmentPatch });
+      alert(`已导入 ${submissionParamRows.length + environmentCount} 条环境信息。`);
     } catch (error) {
-      console.error('导入提测参数失败:', error);
-      alert(`导入提测参数失败：${error.message || '文件解析异常'}`);
+      console.error('导入环境信息失败:', error);
+      alert(`导入环境信息失败：${error.message || '文件解析异常'}`);
     }
   };
 
@@ -371,23 +420,17 @@ export default function SummaryReport() {
           </h2>
           <p className="text-xs text-gray-400 mt-2">生成时间：{report.generatedAtText || '-'}</p>
         </div>
-        <div className="px-3 py-1.5 rounded-md border border-emerald-700/60 bg-emerald-900/20 text-emerald-300 text-xs">
-          基础信息与功能统计区域为只读，其他内容可编辑并自动保存
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-gray-900/45 rounded-lg p-4 border border-gray-700">
-          <EditableField label="测试环境" value={report.testEnvironment || ''} onChange={(value) => updateReport({ testEnvironment: value })} />
-        </div>
-        <div className="bg-gray-900/45 rounded-lg p-4 border border-gray-700">
-          <EditableField label="用例总数" value={report.totalCases ?? ''} onChange={(value) => updateReport({ totalCases: value })} />
-        </div>
-        <div className="bg-gray-900/45 rounded-lg p-4 border border-gray-700">
-          <EditableField label="用例执行数量" value={report.executedCases ?? ''} onChange={(value) => updateReport({ executedCases: value })} />
-        </div>
-        <div className="bg-gray-900/45 rounded-lg p-4 border border-gray-700">
-          <EditableField label="用例执行率" value={report.executionRate || ''} onChange={(value) => updateReport({ executionRate: value })} />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="px-3 py-1.5 rounded-md border border-emerald-700/60 bg-emerald-900/20 text-emerald-300 text-xs">
+            基础信息与功能统计区域为只读，其他内容可编辑并自动保存
+          </div>
+          <button
+            type="button"
+            onClick={handleClearReport}
+            className="px-3 py-1.5 rounded-md border border-red-700/70 bg-red-950/35 text-red-200 hover:bg-red-900/45 text-xs transition-colors"
+          >
+            清空报告
+          </button>
         </div>
       </div>
 
@@ -409,10 +452,10 @@ export default function SummaryReport() {
       </Section>
 
       <Section
-        title="提测参数"
-        subtitle="缺失数据使用 / 补充，可按本次提测实际情况调整"
+        title="环境信息"
+        subtitle="缺失数据使用 / 补充，可按本次测试实际情况调整"
         action={(
-          <div>
+          <div className="flex flex-wrap gap-2">
             <input
               ref={paramFileInputRef}
               type="file"
@@ -422,18 +465,43 @@ export default function SummaryReport() {
             />
             <button
               type="button"
+              onClick={handleExportEnvironmentTemplate}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-md text-xs text-gray-100 transition-colors"
+            >
+              导出模板
+            </button>
+            <button
+              type="button"
               onClick={handleImportParamsClick}
               className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-md text-xs text-white transition-colors"
             >
-              导入参数
+              导入信息
             </button>
           </div>
         )}
       >
         {submissionParams.length === 0 ? (
-          <EmptyState>暂无提测参数</EmptyState>
+          <EmptyState>暂无环境信息</EmptyState>
         ) : (
           <div className="space-y-px bg-gray-800">
+            <div className="bg-gray-900/60">
+              <div className="px-4 py-2.5 bg-gray-950/45 border-b border-gray-800 flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-blue-100">服务环境和版本</h4>
+                <span className="text-xs text-gray-500">{ENVIRONMENT_INFO_FIELDS.length} 项</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-px bg-gray-800">
+                {ENVIRONMENT_INFO_FIELDS.map((field) => (
+                  <div key={field.key} className="px-4 py-3 bg-gray-900/65">
+                    <p className="text-xs text-gray-500 mb-1.5 truncate" title={field.label}>{field.label}</p>
+                    <input
+                      value={report[field.key] ?? ''}
+                      onChange={(event) => updateReport({ [field.key]: event.target.value })}
+                      className={compactInputClass}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
             {submissionParamGroups.map((group) => (
               <div key={group.category} className="bg-gray-900/60">
                 <div className="px-4 py-2.5 bg-gray-950/45 border-b border-gray-800 flex items-center justify-between">
@@ -518,6 +586,17 @@ export default function SummaryReport() {
       </Section>
 
       <Section title="报告表格" subtitle="以本次实际测试音频为主，未测试的导入用例不参与报告生成">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5 border-b border-gray-800 bg-gray-950/25">
+          <div className="bg-gray-900/45 rounded-lg p-4 border border-gray-700">
+            <EditableField label="用例总数" value={report.totalCases ?? ''} onChange={(value) => updateReport({ totalCases: value })} />
+          </div>
+          <div className="bg-gray-900/45 rounded-lg p-4 border border-gray-700">
+            <EditableField label="用例执行数量" value={report.executedCases ?? ''} onChange={(value) => updateReport({ executedCases: value })} />
+          </div>
+          <div className="bg-gray-900/45 rounded-lg p-4 border border-gray-700">
+            <EditableField label="用例执行率" value={report.executionRate || ''} onChange={(value) => updateReport({ executionRate: value })} />
+          </div>
+        </div>
         {reportRows.length === 0 ? (
           <EmptyState>暂无报告表格数据</EmptyState>
         ) : (

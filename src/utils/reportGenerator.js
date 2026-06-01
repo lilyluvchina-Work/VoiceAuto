@@ -78,6 +78,10 @@ export function generateReportJson(reportData) {
       text: tc?.text || '',
       success: Boolean(tc?.success),
       durationMs: Number(tc?.duration) || 0,
+      playStartTime: Number(tc?.playStartTime) || null,
+      playEndTime: Number(tc?.playEndTime) || null,
+      playStartTimeText: tc?.playStartTime ? toDateText(tc.playStartTime) : '-',
+      playEndTimeText: tc?.playEndTime ? toDateText(tc.playEndTime) : '-',
       round: Number(tc?.round) || 1,
       rawIndex: Number.isFinite(Number(tc?.index)) ? Number(tc.index) : i
     }))
@@ -91,7 +95,7 @@ export function generateReportJson(reportData) {
  */
 export function generateReportCsv(reportData) {
   const payload = generateReportJson(reportData);
-  const headers = ['index', 'success', 'round', 'durationMs', 'text'];
+  const headers = ['index', 'success', 'round', 'playStartTimeText', 'playEndTimeText', 'durationMs', 'text'];
   const lines = [headers.join(',')];
 
   payload.cases.forEach((item) => {
@@ -99,6 +103,8 @@ export function generateReportCsv(reportData) {
       item.index,
       item.success,
       item.round,
+      csvEscape(item.playStartTimeText),
+      csvEscape(item.playEndTimeText),
       item.durationMs,
       csvEscape(item.text)
     ].join(','));
@@ -163,7 +169,9 @@ export function generateReportText(reportData) {
     const displayText = tc.text.length > 40
       ? tc.text.substring(0, 40) + '...'
       : tc.text;
-    text += `${status} ${i + 1}. ${displayText}\n`;
+    const startText = tc.playStartTime ? formatDate(tc.playStartTime) : '-';
+    const endText = tc.playEndTime ? formatDate(tc.playEndTime) : '-';
+    text += `${status} ${i + 1}. [${startText} ~ ${endText}] ${displayText}\n`;
   });
 
   text += '\n═══════════════════════════════════════════════════════\n';

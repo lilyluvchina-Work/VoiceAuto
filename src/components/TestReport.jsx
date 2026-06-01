@@ -17,6 +17,20 @@ export default function TestReport() {
 
   const [showReport, setShowReport] = useState(false);
 
+  const formatCaseTime = (value) => {
+    const date = new Date(Number(value));
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleString('zh-CN', { hour12: false });
+  };
+
+  const formatCaseTimeRange = (testCase) => {
+    const startText = formatCaseTime(testCase?.playStartTime);
+    const endText = formatCaseTime(testCase?.playEndTime);
+    if (startText === '-' && endText === '-') return '-';
+    if (endText === '-') return startText;
+    return `${startText} ~ ${endText}`;
+  };
+
   const getReportData = () => ({
     startTime: report.startTime || Date.now(),
     endTime: report.endTime || Date.now(),
@@ -236,7 +250,10 @@ export default function TestReport() {
                 {tc.success ? '✓' : '✗'}
               </span>
               <span className="text-sm text-gray-400 w-8">{i + 1}.</span>
-              <span className="text-sm text-white truncate flex-1">{tc.text}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-white truncate">{tc.text}</p>
+                <p className="text-xs text-gray-500 mt-0.5">时间点：{formatCaseTimeRange(tc)}</p>
+              </div>
             </div>
           ))}
         </div>
