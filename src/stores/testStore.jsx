@@ -12,6 +12,17 @@ const shouldKeepImportedCaseAfterAudioDelete = (audio) => {
   return audio?.source === 'tapd' || Boolean(audio?.tapdCaseId || audio?.tapdTestPlanId);
 };
 
+function createProcessLogSignature(log) {
+  const {
+    id,
+    time,
+    raw,
+    sampleLines,
+    ...rest
+  } = log || {};
+  return JSON.stringify(rest);
+}
+
 // 初始状态
 const initialState = {
   // 唤醒词配置
@@ -42,7 +53,62 @@ const initialState = {
     debugSequence: false,
     autoFetchLangfuseLogs: true,
     selectedLangfuseEnv: 'UAT',
-    selectedTestModule: 'all'
+    selectedTestModule: 'all',
+    autonomousWake: {
+      enabled: false,
+      bridgeUrl: 'http://127.0.0.1:17321',
+      deviceId: '',
+      detectionTimeoutMs: 5000,
+      failureThreshold: 3,
+      recoveryTimeoutMs: 180000,
+      maxRebootsPerCase: 1,
+      maxRebootsPerRun: 3,
+      keywords: [
+        'WakeupSuccess',
+        'WAKEUP_SUCCESS',
+        'wakeup success',
+        'onCedarWakeup',
+        'GlobalControl: onCedarWakeup'
+      ].join('\n')
+    },
+    autonomousInput: {
+      enabled: false,
+      asrDetectionTimeoutMs: 8000,
+      asrSimilarityThreshold: 0.8,
+      asrStartKeywords: [
+        '/ASR_STATUS.*PARTIAL/i',
+        '/asr_status[^\\n]*(partial)/i',
+        '/"asr_status"\\s*:\\s*"partial"/i'
+      ].join('\n'),
+      asrEndKeywords: [
+        '/ASR_STATUS.*FINAL/i',
+        '/asr_status[^\\n]*(final)/i',
+        '/"asr_status"\\s*:\\s*"final"/i'
+      ].join('\n'),
+      asrFailureKeywords: [
+        '/ASR_STATUS.*UNIDENTIFIED/i',
+        '/asr_status[^\\n]*(unidentified)/i',
+        '/"asr_status"\\s*:\\s*"unidentified"/i'
+      ].join('\n'),
+      asrKeywords: [
+        'ASR result',
+        'asrText',
+        'recognizedText',
+        'finalResult'
+      ].join('\n'),
+      asrPatterns: [
+        "/(?:ASR result|asrText|recognizedText|finalResult)\\s*[:=]\\s*[\"']?([^\"',，。；;\\]\\}]+)/i"
+      ].join('\n')
+    },
+    autonomousResponse: {
+      enabled: false,
+      microphoneDeviceId: '',
+      responseWindowMs: 15000,
+      silenceMs: 1000,
+      minDurationMs: 500,
+      noiseThreshold: 0.035,
+      language: 'zh-CN'
+    }
   },
 
   // 当前播放状态
@@ -56,6 +122,9 @@ const initialState = {
     startTime: null,
     elapsedTime: 0
   },
+
+  // 自主监测过程日志
+  processLogs: [],
 
   // 测试报告
   report: {
@@ -90,12 +159,17 @@ const ActionTypes = {
   SET_AUTO_FETCH_LANGFUSE_LOGS: 'SET_AUTO_FETCH_LANGFUSE_LOGS',
   SET_SELECTED_LANGFUSE_ENV: 'SET_SELECTED_LANGFUSE_ENV',
   SET_SELECTED_TEST_MODULE: 'SET_SELECTED_TEST_MODULE',
+  SET_AUTONOMOUS_WAKE: 'SET_AUTONOMOUS_WAKE',
+  SET_AUTONOMOUS_INPUT: 'SET_AUTONOMOUS_INPUT',
+  SET_AUTONOMOUS_RESPONSE: 'SET_AUTONOMOUS_RESPONSE',
   SET_PLAYBACK_STATE: 'SET_PLAYBACK_STATE',
   START_PLAYBACK: 'START_PLAYBACK',
   PAUSE_PLAYBACK: 'PAUSE_PLAYBACK',
   STOP_PLAYBACK: 'STOP_PLAYBACK',
   UPDATE_ELAPSED_TIME: 'UPDATE_ELAPSED_TIME',
   SET_REPORT: 'SET_REPORT',
+  APPEND_PROCESS_LOG: 'APPEND_PROCESS_LOG',
+  CLEAR_PROCESS_LOGS: 'CLEAR_PROCESS_LOGS',
   ADD_REPORT_CASE: 'ADD_REPORT_CASE',
   COMPLETE_REPORT: 'COMPLETE_REPORT',
   RESET_TEST: 'RESET_TEST'
@@ -240,6 +314,42 @@ function testReducer(state, action) {
         }
       };
 
+    case ActionTypes.SET_AUTONOMOUS_WAKE:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          autonomousWake: {
+            ...state.testOptions.autonomousWake,
+            ...action.payload
+          }
+        }
+      };
+
+    case ActionTypes.SET_AUTONOMOUS_INPUT:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          autonomousInput: {
+            ...state.testOptions.autonomousInput,
+            ...action.payload
+          }
+        }
+      };
+
+    case ActionTypes.SET_AUTONOMOUS_RESPONSE:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          autonomousResponse: {
+            ...state.testOptions.autonomousResponse,
+            ...action.payload
+          }
+        }
+      };
+
     case ActionTypes.SET_PLAYBACK_STATE:
       return {
         ...state,
@@ -306,6 +416,28 @@ function testReducer(state, action) {
         report: { ...state.report, ...action.payload }
       };
 
+    case ActionTypes.APPEND_PROCESS_LOG: {
+      const nextLog = action.payload || {};
+      const nextSignature = createProcessLogSignature(nextLog);
+      const logs = state.processLogs || [];
+      const exists = logs.some((log) => createProcessLogSignature(log) === nextSignature);
+      if (exists) return state;
+
+      return {
+        ...state,
+        processLogs: [
+          ...logs,
+          nextLog
+        ].slice(-1000)
+      };
+    }
+
+    case ActionTypes.CLEAR_PROCESS_LOGS:
+      return {
+        ...state,
+        processLogs: []
+      };
+
     case ActionTypes.ADD_REPORT_CASE:
       return {
         ...state,
@@ -340,7 +472,8 @@ function testReducer(state, action) {
       return {
         ...state,
         playback: initialState.playback,
-        report: initialState.report
+        report: initialState.report,
+        processLogs: []
       };
 
     default:
@@ -381,7 +514,92 @@ export function TestProvider({ children }) {
             debugSequence: Boolean(parsed.testOptions?.debugSequence),
             autoFetchLangfuseLogs: parsed.testOptions?.autoFetchLangfuseLogs !== false,
             selectedLangfuseEnv: parsed.testOptions?.selectedLangfuseEnv || 'UAT',
-            selectedTestModule: parsed.testOptions?.selectedTestModule || 'all'
+            selectedTestModule: parsed.testOptions?.selectedTestModule || 'all',
+            autonomousWake: {
+              ...init.testOptions.autonomousWake,
+              ...(parsed.testOptions?.autonomousWake || {}),
+              detectionTimeoutMs: Math.max(
+                1000,
+                Number(parsed.testOptions?.autonomousWake?.detectionTimeoutMs)
+                || init.testOptions.autonomousWake.detectionTimeoutMs
+              ),
+              failureThreshold: Math.max(
+                1,
+                Number(parsed.testOptions?.autonomousWake?.failureThreshold)
+                || init.testOptions.autonomousWake.failureThreshold
+              ),
+              recoveryTimeoutMs: Math.max(
+                10000,
+                Number(parsed.testOptions?.autonomousWake?.recoveryTimeoutMs)
+                || init.testOptions.autonomousWake.recoveryTimeoutMs
+              ),
+              maxRebootsPerCase: Math.max(
+                0,
+                Number.isFinite(Number(parsed.testOptions?.autonomousWake?.maxRebootsPerCase))
+                  ? Number(parsed.testOptions.autonomousWake.maxRebootsPerCase)
+                  : init.testOptions.autonomousWake.maxRebootsPerCase
+              ),
+              maxRebootsPerRun: Math.max(
+                0,
+                Number.isFinite(Number(parsed.testOptions?.autonomousWake?.maxRebootsPerRun))
+                  ? Number(parsed.testOptions.autonomousWake.maxRebootsPerRun)
+                  : init.testOptions.autonomousWake.maxRebootsPerRun
+              ),
+              keywords: parsed.testOptions?.autonomousWake?.keywords
+                || init.testOptions.autonomousWake.keywords
+            },
+            autonomousInput: {
+              ...init.testOptions.autonomousInput,
+              ...(parsed.testOptions?.autonomousInput || {}),
+              asrDetectionTimeoutMs: Math.max(
+                1000,
+                Number(parsed.testOptions?.autonomousInput?.asrDetectionTimeoutMs)
+                || init.testOptions.autonomousInput.asrDetectionTimeoutMs
+              ),
+              asrSimilarityThreshold: Math.max(
+                0,
+                Math.min(
+                  1,
+                  Number(parsed.testOptions?.autonomousInput?.asrSimilarityThreshold)
+                  || init.testOptions.autonomousInput.asrSimilarityThreshold
+                )
+              ),
+              asrKeywords: parsed.testOptions?.autonomousInput?.asrKeywords
+                || init.testOptions.autonomousInput.asrKeywords,
+              asrStartKeywords: parsed.testOptions?.autonomousInput?.asrStartKeywords
+                || init.testOptions.autonomousInput.asrStartKeywords,
+              asrEndKeywords: parsed.testOptions?.autonomousInput?.asrEndKeywords
+                || parsed.testOptions?.autonomousInput?.asrKeywords
+                || init.testOptions.autonomousInput.asrEndKeywords,
+              asrFailureKeywords: parsed.testOptions?.autonomousInput?.asrFailureKeywords
+                || init.testOptions.autonomousInput.asrFailureKeywords,
+              asrPatterns: parsed.testOptions?.autonomousInput?.asrPatterns
+                || init.testOptions.autonomousInput.asrPatterns
+            },
+            autonomousResponse: {
+              ...init.testOptions.autonomousResponse,
+              ...(parsed.testOptions?.autonomousResponse || {}),
+              responseWindowMs: Math.max(
+                1000,
+                Number(parsed.testOptions?.autonomousResponse?.responseWindowMs)
+                || init.testOptions.autonomousResponse.responseWindowMs
+              ),
+              silenceMs: Math.max(
+                300,
+                Number(parsed.testOptions?.autonomousResponse?.silenceMs)
+                || init.testOptions.autonomousResponse.silenceMs
+              ),
+              minDurationMs: Math.max(
+                100,
+                Number(parsed.testOptions?.autonomousResponse?.minDurationMs)
+                || init.testOptions.autonomousResponse.minDurationMs
+              ),
+              noiseThreshold: Math.max(
+                0.001,
+                Number(parsed.testOptions?.autonomousResponse?.noiseThreshold)
+                || init.testOptions.autonomousResponse.noiseThreshold
+              )
+            }
           }
         };
       }
@@ -392,6 +610,18 @@ export function TestProvider({ children }) {
   });
 
   // 保存状态到 localStorage
+  useEffect(() => {
+    const handleProcessLog = (event) => {
+      dispatch({
+        type: ActionTypes.APPEND_PROCESS_LOG,
+        payload: event.detail
+      });
+    };
+
+    window.addEventListener('voiceauto-process-log', handleProcessLog);
+    return () => window.removeEventListener('voiceauto-process-log', handleProcessLog);
+  }, []);
+
   useEffect(() => {
     const serializedAudios = state.testAudios.map((audio) => {
       const {
@@ -515,6 +745,21 @@ export const actions = {
     payload: moduleName
   }),
 
+  setAutonomousWake: (configPatch) => ({
+    type: ActionTypes.SET_AUTONOMOUS_WAKE,
+    payload: configPatch
+  }),
+
+  setAutonomousInput: (configPatch) => ({
+    type: ActionTypes.SET_AUTONOMOUS_INPUT,
+    payload: configPatch
+  }),
+
+  setAutonomousResponse: (configPatch) => ({
+    type: ActionTypes.SET_AUTONOMOUS_RESPONSE,
+    payload: configPatch
+  }),
+
   setPlaybackState: (state) => ({
     type: ActionTypes.SET_PLAYBACK_STATE,
     payload: state
@@ -546,6 +791,15 @@ export const actions = {
   setReport: (reportPatch) => ({
     type: ActionTypes.SET_REPORT,
     payload: reportPatch
+  }),
+
+  appendProcessLog: (log) => ({
+    type: ActionTypes.APPEND_PROCESS_LOG,
+    payload: log
+  }),
+
+  clearProcessLogs: () => ({
+    type: ActionTypes.CLEAR_PROCESS_LOGS
   }),
 
   completeReport: () => ({

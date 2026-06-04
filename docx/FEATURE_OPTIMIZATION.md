@@ -41,6 +41,23 @@
 
 ## 优化记录
 
+### 2026-06-04
+
+1. 自主监测三阶段闭环落地。
+   - 第一阶段：通过 ADB `WakeupSuccess` 判断 Speaker 唤醒成功，连续失败后支持 ADB 重启和恢复等待。
+   - 第二阶段：通过 ADB `asr_status=partial/final/unidentified` 判断输入 ASR 生命周期，`actualAsrText` 与相似度仅作为诊断信息。
+   - 第三阶段：测试音频播放完成后立即启动响应窗口，通过麦克风确认 Speaker 是否实际发声，通过 ADB `vad_status=start/stop` 和 `tts_status` 获取 Speaker 实际播放回复文本。
+2. 播放节奏从固定等待升级为事件驱动。
+   - 开启自主唤醒后，检测到唤醒成功即播放测试音频，不再等待固定 `wakeAfterDelay`。
+   - 开启任一自主监测后，用例之间跳过固定 `wakeIntervalDelay`，直接进入下一次唤醒流程。
+3. 测试过程记录增强。
+   - 测试过程记录页合并测试用例、唤醒链路、输入 ASR 链路和响应链路日志。
+   - 明确区分“测试音频文本”“获取到的 ASR 文本”“麦克风转写响应文本”“Speaker 播放响应文本”。
+   - 过程日志写入时增加内容指纹去重，减少重复 interim 和重复事件刷屏。
+4. 报告字段扩展。
+   - 用例结果新增 `speakerResponseText`、`responseTtsStatus`、`responseVadStarted`、`responseVadEnded` 等响应链路字段。
+   - JSON/CSV/文本导出同步展示 Speaker 响应文本和响应链路状态。
+
 ### 2026-05-29
 
 1. 总结报告“功能模块统计”改为只读展示。
@@ -252,8 +269,14 @@
    - 测试音频列表支持上移/下移调整播放顺序。
    - 删除或调整顺序后，列表立即生效，测试执行按当前列表顺序播放。
 
+### 2026-06-01
+
+1. 运维部署文档精简化。
+   - 新增 `docx/DEPLOYMENT_OPS_SOP.md`，提供面向运维同学的最短上线路径。
+   - 文档覆盖上线前检查、标准上线、紧急回滚、故障排查、值班交接模板。
+   - 补充 `docx/README.md` 文档索引，确保运维 SOP 可快速检索。
+
 ## 归档来源
 
 - 已整合根目录 README 与 `.claude/PROJECT_MEMORY.md` 的对应优化项。
 - 已有明细保留单处记录，不重复抄录。
-

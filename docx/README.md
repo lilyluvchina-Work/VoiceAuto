@@ -27,7 +27,13 @@
 7. `SERVER_DEPLOYMENT_GUIDE.md`
   - 服务器部署指南。
   - 说明从本地构建到公网访问（IP/域名/HTTPS）的完整流程。
-8. `WEEKLY_REPORT.md`
+8. `DEPLOYMENT.md`
+  - 快速部署文档。
+  - 提供 Nginx 与 Docker 两种可直接执行的部署步骤。
+9. `DEPLOYMENT_OPS_SOP.md`
+  - 运维精简 SOP。
+  - 面向值班与发布同学，提供 10-15 分钟上线与紧急回滚步骤。
+10. `WEEKLY_REPORT.md`
   - 项目周报。
   - 按周汇总项目更新、Bug 修复、影响范围与风险建议。
 

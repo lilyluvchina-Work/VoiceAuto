@@ -82,6 +82,40 @@ export function generateReportJson(reportData) {
       playEndTime: Number(tc?.playEndTime) || null,
       playStartTimeText: tc?.playStartTime ? toDateText(tc.playStartTime) : '-',
       playEndTimeText: tc?.playEndTime ? toDateText(tc.playEndTime) : '-',
+      wakeAudioPlayStatus: tc?.wakeAudioPlayStatus || '',
+      speakerWakeStatus: tc?.speakerWakeStatus || '',
+      wakeEventTime: Number(tc?.wakeEventTime) || null,
+      wakeEventTimeText: tc?.wakeEventTime ? toDateText(tc.wakeEventTime) : '-',
+      wakeFailCount: Number(tc?.wakeFailCount) || 0,
+      adbRebootTriggered: Boolean(tc?.adbRebootTriggered),
+      humanAudioText: tc?.humanAudioText || tc?.text || '',
+      testAudioPlayStatus: tc?.testAudioPlayStatus || '',
+      testAudioActualDuration: Number(tc?.testAudioActualDuration) || 0,
+      testAudioExpectedDuration: Number(tc?.testAudioExpectedDuration) || 0,
+      actualAsrText: tc?.actualAsrText || '',
+      asrMatchResult: tc?.asrMatchResult || '',
+      asrSimilarity: Number.isFinite(Number(tc?.asrSimilarity)) ? Number(tc.asrSimilarity) : null,
+      asrFailReason: tc?.asrFailReason || '',
+      inputChainPassed: tc?.inputChainPassed == null ? null : Boolean(tc.inputChainPassed),
+      responseDetectStartTime: Number(tc?.responseDetectStartTime) || null,
+      responseDetectEndTime: Number(tc?.responseDetectEndTime) || null,
+      responseAudioDetected: Boolean(tc?.responseAudioDetected),
+      responseAudioFile: tc?.responseAudioFile || '',
+      responseAudioStartTime: Number(tc?.responseAudioStartTime) || null,
+      responseAudioEndTime: Number(tc?.responseAudioEndTime) || null,
+      responseAudioDuration: Number(tc?.responseAudioDuration) || 0,
+      responseAsrStatus: tc?.responseAsrStatus || '',
+      responseAsrText: tc?.responseAsrText || '',
+      speakerResponseText: tc?.speakerResponseText || '',
+      responseTtsStatus: tc?.responseTtsStatus || '',
+      responseVadStarted: Boolean(tc?.responseVadStarted),
+      responseVadEnded: Boolean(tc?.responseVadEnded),
+      speakerOutputStatus: tc?.speakerOutputStatus || '',
+      responseFailStage: tc?.responseFailStage || '',
+      responseFailReason: tc?.responseFailReason || '',
+      responseChainPassed: tc?.responseChainPassed == null ? null : Boolean(tc.responseChainPassed),
+      failStage: tc?.failStage || '',
+      failReason: tc?.failReason || '',
       round: Number(tc?.round) || 1,
       rawIndex: Number.isFinite(Number(tc?.index)) ? Number(tc.index) : i
     }))
@@ -95,7 +129,39 @@ export function generateReportJson(reportData) {
  */
 export function generateReportCsv(reportData) {
   const payload = generateReportJson(reportData);
-  const headers = ['index', 'success', 'round', 'playStartTimeText', 'playEndTimeText', 'durationMs', 'text'];
+  const headers = [
+    'index',
+    'success',
+    'round',
+    'wakeAudioPlayStatus',
+    'speakerWakeStatus',
+    'wakeEventTimeText',
+    'wakeFailCount',
+    'adbRebootTriggered',
+    'testAudioPlayStatus',
+    'actualAsrText',
+    'asrMatchResult',
+    'asrSimilarity',
+    'asrFailReason',
+    'inputChainPassed',
+    'speakerOutputStatus',
+    'responseAsrStatus',
+    'responseAsrText',
+    'speakerResponseText',
+    'responseTtsStatus',
+    'responseVadStarted',
+    'responseVadEnded',
+    'responseAudioDuration',
+    'responseFailStage',
+    'responseFailReason',
+    'responseChainPassed',
+    'failStage',
+    'failReason',
+    'playStartTimeText',
+    'playEndTimeText',
+    'durationMs',
+    'text'
+  ];
   const lines = [headers.join(',')];
 
   payload.cases.forEach((item) => {
@@ -103,6 +169,30 @@ export function generateReportCsv(reportData) {
       item.index,
       item.success,
       item.round,
+      csvEscape(item.wakeAudioPlayStatus),
+      csvEscape(item.speakerWakeStatus),
+      csvEscape(item.wakeEventTimeText),
+      item.wakeFailCount,
+      item.adbRebootTriggered,
+      csvEscape(item.testAudioPlayStatus),
+      csvEscape(item.actualAsrText),
+      csvEscape(item.asrMatchResult),
+      item.asrSimilarity == null ? '' : item.asrSimilarity,
+      csvEscape(item.asrFailReason),
+      item.inputChainPassed == null ? '' : item.inputChainPassed,
+      csvEscape(item.speakerOutputStatus),
+      csvEscape(item.responseAsrStatus),
+      csvEscape(item.responseAsrText),
+      csvEscape(item.speakerResponseText),
+      csvEscape(item.responseTtsStatus),
+      item.responseVadStarted,
+      item.responseVadEnded,
+      item.responseAudioDuration,
+      csvEscape(item.responseFailStage),
+      csvEscape(item.responseFailReason),
+      item.responseChainPassed == null ? '' : item.responseChainPassed,
+      csvEscape(item.failStage),
+      csvEscape(item.failReason),
       csvEscape(item.playStartTimeText),
       csvEscape(item.playEndTimeText),
       item.durationMs,
@@ -171,7 +261,13 @@ export function generateReportText(reportData) {
       : tc.text;
     const startText = tc.playStartTime ? formatDate(tc.playStartTime) : '-';
     const endText = tc.playEndTime ? formatDate(tc.playEndTime) : '-';
-    text += `${status} ${i + 1}. [${startText} ~ ${endText}] ${displayText}\n`;
+    const wakeStatus = tc.speakerWakeStatus ? ` 唤醒:${tc.speakerWakeStatus}` : '';
+    const asrStatus = tc.asrMatchResult ? ` ASR:${tc.asrMatchResult}` : '';
+    const asrText = tc.actualAsrText ? ` 识别:${tc.actualAsrText}` : '';
+    const responseStatus = tc.speakerOutputStatus ? ` 响应:${tc.speakerOutputStatus}` : '';
+    const responseText = tc.speakerResponseText ? ` Speaker响应:${tc.speakerResponseText}` : '';
+    const failReason = tc.failReason ? ` 原因:${tc.failReason}` : '';
+    text += `${status} ${i + 1}. [${startText} ~ ${endText}]${wakeStatus}${asrStatus}${asrText}${responseStatus}${responseText}${failReason} ${displayText}\n`;
   });
 
   text += '\n═══════════════════════════════════════════════════════\n';

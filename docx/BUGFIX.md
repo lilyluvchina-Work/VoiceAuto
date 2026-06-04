@@ -20,6 +20,25 @@
 
 ## 修复记录
 
+### 2026-06-04
+
+1. 修复自主监测过程日志中 ASR 文本与响应文本混淆问题。
+  - 现象：测试过程记录里“获取到的 ASR 文本”和“响应文本”显示相同内容，无法区分输入识别和 Speaker 回复。
+  - 根因：响应链路的麦克风转写 `responseAsrText` 被展示层复用为 ASR 文本。
+  - 修复：展示层拆分 `actualAsrText`、`responseAsrText`、`speakerResponseText`；其中 `speakerResponseText` 优先来自 ADB `tts_status` 日志。
+2. 修复 Speaker 响应文本来源不准确问题。
+  - 现象：第三阶段仅通过麦克风 ASR 转写响应音频，无法稳定代表 Speaker 实际播放内容。
+  - 根因：未接入 Speaker 端 `VAD_STATUS` / `TTS_STATUS` 日志。
+  - 修复：ADB Bridge 新增响应日志监听，使用 `vad_status=start/stop` 判断响应窗口，并从 `tts_status` 提取 Speaker 实际播放回复文本。
+3. 修复自主监测过程日志重复展示问题。
+  - 现象：响应 ASR interim 或重复派发的同内容日志可能在测试过程记录中刷屏。
+  - 根因：过程日志按事件直接追加，没有内容去重。
+  - 修复：日志入库时按内容指纹去重，忽略 `id/time/raw/sampleLines` 等易变字段。
+4. 修复开启自主监测后仍等待固定用例间隔问题。
+  - 现象：自主监测开启后，下一条用例仍等待固定 `wakeIntervalDelay`。
+  - 根因：用例间隔逻辑未感知自主监测状态。
+  - 修复：任一自主监测开启时跳过固定用例间隔，直接进入下一次唤醒流程。
+
 ### 2026-05-29
 
 1. 修复 Langfuse 日志拉取偶发 `read ECONNRESET` 后整轮失败问题。

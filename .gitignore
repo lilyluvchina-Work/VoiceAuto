@@ -1,5 +1,6 @@
 node_modules
 dist
+deploy-bundles
 .DS_Store
 *.log
 .env

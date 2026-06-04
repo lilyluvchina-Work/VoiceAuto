@@ -1,0 +1,246 @@
+const DEFAULT_BRIDGE_URL = 'http://127.0.0.1:17321';
+const WAKEUP_KEYWORDS = [
+  'WakeupSuccess',
+  'WAKEUP_SUCCESS',
+  'wakeup success',
+  'onCedarWakeup',
+  'GlobalControl: onCedarWakeup'
+];
+const ASR_KEYWORDS = ['ASR result', 'asrText', 'recognizedText', 'finalResult'];
+const ASR_START_KEYWORDS = [
+  '/ASR_STATUS.*PARTIAL/i',
+  '/asr_status[^\\n]*(partial)/i',
+  '/"asr_status"\\s*:\\s*"partial"/i'
+];
+const ASR_END_KEYWORDS = [
+  '/ASR_STATUS.*FINAL/i',
+  '/asr_status[^\\n]*(final)/i',
+  '/"asr_status"\\s*:\\s*"final"/i'
+];
+const ASR_FAILURE_KEYWORDS = [
+  '/ASR_STATUS.*UNIDENTIFIED/i',
+  '/asr_status[^\\n]*(unidentified)/i',
+  '/"asr_status"\\s*:\\s*"unidentified"/i'
+];
+
+function trimTrailingSlash(value) {
+  return String(value || '').replace(/\/+$/, '');
+}
+
+function normalizeBridgeUrl(url) {
+  const value = trimTrailingSlash(url || DEFAULT_BRIDGE_URL);
+  return value || DEFAULT_BRIDGE_URL;
+}
+
+function createTimeoutSignal(timeoutMs, externalSignal) {
+  const controller = new AbortController();
+  let timeoutId = null;
+
+  const abort = () => {
+    if (!controller.signal.aborted) {
+      controller.abort();
+    }
+  };
+
+  timeoutId = setTimeout(abort, Math.max(1000, timeoutMs || 5000) + 1000);
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      abort();
+    } else {
+      externalSignal.addEventListener('abort', abort, { once: true });
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timeoutId)
+  };
+}
+
+async function parseJsonResponse(response) {
+  const text = await response.text();
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`ADB bridge 返回非 JSON 数据: ${text.slice(0, 120)}`);
+  }
+}
+
+async function postJson(path, payload, options = {}) {
+  const { bridgeUrl, timeoutMs, signal } = options;
+  const timeout = createTimeoutSignal(timeoutMs, signal);
+
+  try {
+    const response = await fetch(`${normalizeBridgeUrl(bridgeUrl)}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload || {}),
+      signal: timeout.signal
+    });
+
+    const data = await parseJsonResponse(response);
+
+    if (!response.ok) {
+      throw new Error(data?.message || data?.error || `ADB bridge 请求失败: ${response.status}`);
+    }
+
+    return data;
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error('ADB bridge 请求超时');
+    }
+    throw err;
+  } finally {
+    timeout.cleanup();
+  }
+}
+
+export async function detectWakeup({
+  bridgeUrl,
+  deviceId,
+  timeoutMs = 5000,
+  keywords = WAKEUP_KEYWORDS,
+  signal
+}) {
+  const data = await postJson('/api/adb/wakeup/detect', {
+    deviceId: deviceId || '',
+    timeoutMs,
+    keywords
+  }, {
+    bridgeUrl,
+    timeoutMs: timeoutMs + 1500,
+    signal
+  });
+
+  return {
+    success: Boolean(data?.success || data?.detected),
+    eventTime: data?.eventTime || data?.wakeEventTime || (data?.success ? Date.now() : null),
+    matchedKeyword: data?.matchedKeyword || data?.keyword || '',
+    matchedLine: data?.matchedLine || data?.line || '',
+    sampleLines: Array.isArray(data?.sampleLines) ? data.sampleLines : [],
+    raw: data
+  };
+}
+
+export async function rebootSpeaker({
+  bridgeUrl,
+  deviceId,
+  recoveryTimeoutMs = 180000,
+  signal
+}) {
+  const data = await postJson('/api/adb/reboot-and-wait', {
+    deviceId: deviceId || '',
+    recoveryTimeoutMs
+  }, {
+    bridgeUrl,
+    timeoutMs: recoveryTimeoutMs + 5000,
+    signal
+  });
+
+  return {
+    success: data?.success !== false,
+    bootCompleted: data?.bootCompleted !== false,
+    message: data?.message || '',
+    raw: data
+  };
+}
+
+export async function detectAsr({
+  bridgeUrl,
+  deviceId,
+  timeoutMs = 8000,
+  keywords = ASR_KEYWORDS,
+  startKeywords = ASR_START_KEYWORDS,
+  endKeywords = ASR_END_KEYWORDS,
+  failureKeywords = ASR_FAILURE_KEYWORDS,
+  patterns = [],
+  signal
+}) {
+  const data = await postJson('/api/adb/asr/detect', {
+    deviceId: deviceId || '',
+    timeoutMs,
+    keywords,
+    startKeywords,
+    endKeywords,
+    failureKeywords,
+    patterns
+  }, {
+    bridgeUrl,
+    timeoutMs: timeoutMs + 1500,
+    signal
+  });
+
+  return {
+    success: Boolean(data?.success),
+    status: data?.status || '',
+    eventTime: data?.eventTime || (data?.success ? Date.now() : null),
+    matchedKeyword: data?.matchedKeyword || data?.keyword || '',
+    matchedLine: data?.matchedLine || data?.line || '',
+    startDetected: Boolean(data?.startDetected),
+    startMatchedKeyword: data?.startMatchedKeyword || '',
+    startMatchedLine: data?.startMatchedLine || '',
+    startEventTime: data?.startEventTime || null,
+    endMatchedKeyword: data?.endMatchedKeyword || '',
+    endMatchedLine: data?.endMatchedLine || '',
+    endEventTime: data?.endEventTime || null,
+    failureMatchedKeyword: data?.failureMatchedKeyword || '',
+    failureMatchedLine: data?.failureMatchedLine || '',
+    actualAsrText: data?.actualAsrText || data?.actual_asr_text || '',
+    message: data?.message || '',
+    sampleLines: Array.isArray(data?.sampleLines) ? data.sampleLines : [],
+    raw: data
+  };
+}
+
+export async function detectSpeakerResponseLog({
+  bridgeUrl,
+  deviceId,
+  timeoutMs = 15000,
+  signal
+}) {
+  const data = await postJson('/api/adb/response/detect', {
+    deviceId: deviceId || '',
+    timeoutMs
+  }, {
+    bridgeUrl,
+    timeoutMs: timeoutMs + 1500,
+    signal
+  });
+
+  return {
+    success: Boolean(data?.success),
+    status: data?.status || '',
+    eventTime: data?.eventTime || (data?.success ? Date.now() : null),
+    vadStarted: Boolean(data?.vadStarted),
+    vadEnded: Boolean(data?.vadEnded),
+    vadStartTime: data?.vadStartTime || null,
+    vadEndTime: data?.vadEndTime || null,
+    vadStartLine: data?.vadStartLine || '',
+    vadEndLine: data?.vadEndLine || '',
+    speakerResponseText: data?.speakerResponseText || data?.responseText || '',
+    ttsMatchedLine: data?.ttsMatchedLine || '',
+    message: data?.message || '',
+    sampleLines: Array.isArray(data?.sampleLines) ? data.sampleLines : [],
+    raw: data
+  };
+}
+
+export const adbWakeService = {
+  DEFAULT_BRIDGE_URL,
+  WAKEUP_KEYWORDS,
+  ASR_KEYWORDS,
+  ASR_START_KEYWORDS,
+  ASR_END_KEYWORDS,
+  ASR_FAILURE_KEYWORDS,
+  detectWakeup,
+  rebootSpeaker,
+  detectAsr,
+  detectSpeakerResponseLog
+};
+
+export default adbWakeService;

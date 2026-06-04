@@ -252,7 +252,13 @@ export default function TestReport() {
               <span className="text-sm text-gray-400 w-8">{i + 1}.</span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-white truncate">{tc.text}</p>
-                <p className="text-xs text-gray-500 mt-0.5">时间点：{formatCaseTimeRange(tc)}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  时间点：{formatCaseTimeRange(tc)}
+                  {tc.speakerWakeStatus ? ` · 唤醒：${tc.speakerWakeStatus}` : ''}
+                  {tc.asrMatchResult ? ` · ASR：${tc.asrMatchResult}` : ''}
+                  {tc.actualAsrText ? ` · 识别：${tc.actualAsrText}` : ''}
+                  {tc.failReason ? ` · ${tc.failReason}` : ''}
+                </p>
               </div>
             </div>
           ))}

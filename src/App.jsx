@@ -9,7 +9,7 @@ import VoiceConfig from './components/VoiceConfig';
 import AudioImporter from './components/AudioImporter';
 import AudioList from './components/AudioList';
 import PlaybackConsole from './components/PlaybackConsole';
-import TestReport from './components/TestReport';
+import AutonomousProcessLog from './components/AutonomousProcessLog';
 import LangfuseFetcher from './components/LangfuseFetcher';
 import TestCaseManager from './components/TestCaseManager';
 import SummaryReport from './components/SummaryReport';
@@ -107,8 +107,8 @@ function AppContent() {
         {activeMode === MODES.cases && <TestCaseManager />}
 
         {activeMode === MODES.report && (
-          <div className="max-w-3xl mx-auto space-y-4">
-            <TestReport />
+          <div className="max-w-5xl mx-auto space-y-4">
+            <AutonomousProcessLog />
             <p className="text-xs text-gray-500 text-center">
               {isTesting ? '测试进行中：测试过程记录会持续刷新。' : '当前为测试过程记录视图。'}
             </p>
@@ -117,7 +117,7 @@ function AppContent() {
 
         {activeMode === MODES.summary && <SummaryReport />}
 
-        {activeMode === MODES.voice && (
+        <div className={activeMode === MODES.voice ? 'block' : 'hidden'}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* 左侧：唤醒词 + 音频配置 */}
             <div className="space-y-6">
@@ -137,7 +137,7 @@ function AppContent() {
               <AudioList />
             </div>
           </div>
-        )}
+        </div>
       </div>
     );
   };
