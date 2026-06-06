@@ -4,9 +4,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/startDev.cjs",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "adb:bridge": "node scripts/adbBridge.cjs",
+    "adb:recover": "powershell -ExecutionPolicy Bypass -File scripts/adbRecover.ps1"
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",

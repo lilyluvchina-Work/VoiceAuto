@@ -38,8 +38,64 @@
 - docx/PRODUCT_ARCH.md
 - docx/SERVER_DEPLOYMENT_GUIDE.md
 - docx/README.md
+- scripts/startDev.cjs
+- scripts/adbBridge.cjs
+- src/services/adbWakeService.js
+- src/services/responseMonitorService.js
+- src/components/TestProcessRecord.jsx
+- src/utils/testStatus.js
 
 ## 优化记录
+
+### 2026-06-06
+
+1. 自主监测链路自检与恢复机制。
+   - `npm run dev` 接入启动自检脚本，启动前优先检查 ADB bridge、Speaker 设备、logcat 可读性和前端端口状态。
+   - 当 ADB bridge 未运行时自动拉起监听进程，并输出 `startup-check.log`。
+   - 当启动链路异常时，将错误原因和恢复指令写入 `startup-error.log`，便于下次快速定位。
+   - 播放控制台新增 Speaker 监听链路自检面板，支持重新自检和一键恢复。
+   - 自主监测能力按唤醒、ASR 输入、Speaker 响应三段闭环执行。
+   - 唤醒监测通过 ADB 日志识别 `WakeupSuccess`，连续失败后支持 ADB 重启和恢复等待。
+   - ASR 输入监测通过 ADB 日志识别 ASR 开始/结束/失败状态，并从 `GoogleLiveResponseBean` 的 `asr_status/input_text` 中提取实际 ASR 文本。
+   - Speaker 响应监测通过麦克风确认 Speaker 是否发声，通过 ADB `vad_status=start/stop` 判断播报生命周期，通过 `tts_status` 获取实际 TTS 文本。
+   - ADB 日志监听覆盖唤醒、ASR、VAD、TTS 文本提取，并在监听失败时支持 ADB/logcat 链路恢复。
+   - 流程从固定等待进一步升级为事件驱动：唤醒成功后播放测试音频，测试音频结束后采集响应，播报结束并冷却后进入下一次唤醒。
+2. Speaker TTS 录音能力升级。
+   - Speaker 响应录音由短窗口录制升级为连续 PCM 采样 + WAV 输出，减少 MediaRecorder 分段不稳定影响。
+   - 新增前置缓存、后置缓存、噪声底、动态阈值、峰值等诊断数据。
+   - 新增长文本播报保护：按文本长度估算时长，动态设置最短保护、长静音结束阈值和最大录制兜底。
+   - 支持录制 Speaker 播放的 TTS 音频，并在结果中同时保留 TTS 文本和音频文件。
+3. 测试过程记录与结果汇总增强。
+   - 每条测试记录支持点击展开详情，展示唤醒、测试音频、ASR、TTS 全链路过程。
+   - 顶部汇总展示唤醒成功/失败、ASR 成功/失败、TTS 成功/失败。
+   - 详情中展示 Speaker 播报录音播放器、下载入口、录音 ASR、文本相似度、VAD 时长、采样率、结束原因和疑似截断标记。
+4. 代码架构与性能优化。
+   - 抽取 `src/utils/testStatus.js`，统一过程记录和报告导出的状态判断口径。
+   - `useTestRunner` 抽取响应运行配置归一化，减少重复默认值和类型转换逻辑。
+   - `responseMonitorService` 将录音窗口、缓存时长、阈值和保护时长计算移出高频音频回调，降低录音过程重复计算。
+   - 关键链路补充简短注释，提升后续维护可读性。
+
+### 2026-06-04
+
+1. 响应监听顺序门控增强。
+   - 强化“测试音频播放结束即刻启动响应监听”，并在流程上保证下一次唤醒前必须等待 Speaker 回复播报结束。
+   - ADB 响应日志监听新增最大等待上限 `responseMaxWaitMs`（默认 60s）：若已检测到 `vad_status=start`，会持续等待 `vad_status=stop` 后再结束本轮响应监听，减少回复未播完就进入下一次唤醒的问题。
+   - 用例通过门槛同步收敛为“响应音频有效 + ADB 侧检测到 VAD start/stop + 提取到 TTS 文本”。
+
+1. 自主监测三阶段闭环落地。
+   - 第一阶段：通过 ADB `WakeupSuccess` 判断 Speaker 唤醒成功，连续失败后支持 ADB 重启和恢复等待。
+   - 第二阶段：通过 ADB `asr_status=partial/final/unidentified` 判断输入 ASR 生命周期，`actualAsrText` 与相似度仅作为诊断信息。
+   - 第三阶段：测试音频播放完成后立即启动响应窗口，通过麦克风确认 Speaker 是否实际发声，通过 ADB `vad_status=start/stop` 和 `tts_status` 获取 Speaker 实际播放回复文本。
+2. 播放节奏从固定等待升级为事件驱动。
+   - 开启自主唤醒后，检测到唤醒成功即播放测试音频，不再等待固定 `wakeAfterDelay`。
+   - 开启任一自主监测后，用例之间跳过固定 `wakeIntervalDelay`，直接进入下一次唤醒流程。
+3. 测试过程记录增强。
+   - 测试过程记录页合并测试用例、唤醒链路、输入 ASR 链路和响应链路日志。
+   - 明确区分“测试音频文本”“获取到的 ASR 文本”“麦克风转写响应文本”“Speaker 播放响应文本”。
+   - 过程日志写入时增加内容指纹去重，减少重复 interim 和重复事件刷屏。
+4. 报告字段扩展。
+   - 用例结果新增 `speakerResponseText`、`responseTtsStatus`、`responseVadStarted`、`responseVadEnded` 等响应链路字段。
+   - JSON/CSV/文本导出同步展示 Speaker 响应文本和响应链路状态。
 
 ### 2026-05-29
 
@@ -252,8 +308,14 @@
    - 测试音频列表支持上移/下移调整播放顺序。
    - 删除或调整顺序后，列表立即生效，测试执行按当前列表顺序播放。
 
+### 2026-06-01
+
+1. 运维部署文档精简化。
+   - 新增 `docx/DEPLOYMENT_OPS_SOP.md`，提供面向运维同学的最短上线路径。
+   - 文档覆盖上线前检查、标准上线、紧急回滚、故障排查、值班交接模板。
+   - 补充 `docx/README.md` 文档索引，确保运维 SOP 可快速检索。
+
 ## 归档来源
 
 - 已整合根目录 README 与 `.claude/PROJECT_MEMORY.md` 的对应优化项。
 - 已有明细保留单处记录，不重复抄录。
-

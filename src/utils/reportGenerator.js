@@ -2,6 +2,7 @@
  * 测试报告生成
  */
 import { formatTime } from './formatters';
+import { countByStatus, getAsrStatus, getTtsStatus, getWakeStatus } from './testStatus';
 
 function toDateText(value) {
   const d = new Date(value);
@@ -52,6 +53,10 @@ export function generateReportJson(reportData) {
   const avgDurationMs = safeTotal > 0
     ? Number((safeDuration / safeTotal).toFixed(0))
     : 0;
+  const safeTestCases = Array.isArray(testCases) ? testCases : [];
+  const wakeStats = countByStatus(safeTestCases, getWakeStatus);
+  const asrStats = countByStatus(safeTestCases, getAsrStatus);
+  const ttsStats = countByStatus(safeTestCases, getTtsStatus);
 
   return {
     schemaVersion: '1.0.0',
@@ -66,17 +71,42 @@ export function generateReportJson(reportData) {
       failCount: safeFail,
       successRate,
       totalDurationMs: safeDuration,
-      avgDurationMs
+      avgDurationMs,
+      wakeSuccessCount: wakeStats.success,
+      wakeFailCount: wakeStats.failed,
+      asrSuccessCount: asrStats.success,
+      asrFailCount: asrStats.failed,
+      ttsSuccessCount: ttsStats.success,
+      ttsFailCount: ttsStats.failed
     },
     config: {
       wakeWord: wakeWord || '',
       wakeAfterDelayMs: Number(wakeAfterDelay) || 0,
       wakeIntervalDelayMs: Number(wakeIntervalDelay) || 0
     },
-    cases: (Array.isArray(testCases) ? testCases : []).map((tc, i) => ({
+    cases: safeTestCases.map((tc, i) => ({
       index: i + 1,
       text: tc?.text || '',
       success: Boolean(tc?.success),
+      wakeStatus: getWakeStatus(tc),
+      asrStatus: getAsrStatus(tc),
+      ttsStatus: getTtsStatus(tc),
+      actualAsrText: tc?.actualAsrText || '',
+      responseTtsText: tc?.responseTtsText || tc?.speakerResponseText || '',
+      responseTtsAudioFile: tc?.responseTtsAudioFile || tc?.responseAudioFile || '',
+      responseAudioAsrText: tc?.responseAsrText || '',
+      responseTextSimilarity: Number.isFinite(Number(tc?.responseTextSimilarity)) ? Number(tc.responseTextSimilarity) : null,
+      responseAudioDurationMs: Number(tc?.responseAudioDuration) || 0,
+      responseAudioSegmentDurationMs: Number(tc?.responseAudioSegmentDuration) || 0,
+      responseSpeakerState: tc?.responseSpeakerState || '',
+      responseFinishReason: tc?.responseFinishReason || '',
+      responseTtsTextLength: Number(tc?.responseTtsTextLength) || 0,
+      responseEstimatedTtsDurationMs: Number(tc?.responseEstimatedTtsDurationMs) || 0,
+      responseMinProtectMs: Number(tc?.responseMinProtectMs) || 0,
+      responseMaxRecordMs: Number(tc?.responseMaxRecordMs) || 0,
+      responseSilenceEndMs: Number(tc?.responseSilenceEndMs) || 0,
+      responseFinalSilenceMs: Number(tc?.responseFinalSilenceMs) || 0,
+      responseSuspectedTruncated: Boolean(tc?.responseSuspectedTruncated),
       durationMs: Number(tc?.duration) || 0,
       playStartTime: Number(tc?.playStartTime) || null,
       playEndTime: Number(tc?.playEndTime) || null,
@@ -95,18 +125,37 @@ export function generateReportJson(reportData) {
  */
 export function generateReportCsv(reportData) {
   const payload = generateReportJson(reportData);
-  const headers = ['index', 'success', 'round', 'playStartTimeText', 'playEndTimeText', 'durationMs', 'text'];
+  const headers = ['index', 'success', 'wakeStatus', 'asrStatus', 'ttsStatus', 'round', 'playStartTimeText', 'playEndTimeText', 'durationMs', 'text', 'actualAsrText', 'responseTtsText', 'responseTtsAudioFile', 'responseAudioAsrText', 'responseTextSimilarity', 'responseAudioDurationMs', 'responseAudioSegmentDurationMs', 'responseSpeakerState', 'responseFinishReason', 'responseTtsTextLength', 'responseEstimatedTtsDurationMs', 'responseMinProtectMs', 'responseMaxRecordMs', 'responseSilenceEndMs', 'responseFinalSilenceMs', 'responseSuspectedTruncated'];
   const lines = [headers.join(',')];
 
   payload.cases.forEach((item) => {
     lines.push([
       item.index,
       item.success,
+      item.wakeStatus,
+      item.asrStatus,
+      item.ttsStatus,
       item.round,
       csvEscape(item.playStartTimeText),
       csvEscape(item.playEndTimeText),
       item.durationMs,
-      csvEscape(item.text)
+      csvEscape(item.text),
+      csvEscape(item.actualAsrText),
+      csvEscape(item.responseTtsText),
+      csvEscape(item.responseTtsAudioFile),
+      csvEscape(item.responseAudioAsrText),
+      item.responseTextSimilarity ?? '',
+      item.responseAudioDurationMs,
+      item.responseAudioSegmentDurationMs,
+      csvEscape(item.responseSpeakerState),
+      csvEscape(item.responseFinishReason),
+      item.responseTtsTextLength,
+      item.responseEstimatedTtsDurationMs,
+      item.responseMinProtectMs,
+      item.responseMaxRecordMs,
+      item.responseSilenceEndMs,
+      item.responseFinalSilenceMs,
+      item.responseSuspectedTruncated
     ].join(','));
   });
 
@@ -139,6 +188,10 @@ export function generateReportText(reportData) {
   const avgTime = totalCases > 0
     ? (totalDuration / totalCases).toFixed(1)
     : 0;
+  const safeTestCases = Array.isArray(testCases) ? testCases : [];
+  const wakeStats = countByStatus(safeTestCases, getWakeStatus);
+  const asrStats = countByStatus(safeTestCases, getAsrStatus);
+  const ttsStats = countByStatus(safeTestCases, getTtsStatus);
 
   const formatDate = (date) => toDateText(date);
 
@@ -158,13 +211,16 @@ export function generateReportText(reportData) {
   text += `成功播放: ${successCount}\n`;
   text += `失败播放: ${failCount}\n`;
   text += `成功率: ${successRate}%\n\n`;
+  text += `唤醒成功: ${wakeStats.success}，唤醒失败: ${wakeStats.failed}\n`;
+  text += `ASR成功: ${asrStats.success}，ASR失败: ${asrStats.failed}\n`;
+  text += `TTS成功: ${ttsStats.success}，TTS失败: ${ttsStats.failed}\n\n`;
 
   text += '⏱️ 时间统计 ───────────────────────────────────────\n';
   text += `总耗时: ${formatTime(totalDuration / 1000)}\n`;
   text += `平均每条: ${avgTime}秒\n\n`;
 
   text += '📝 测试详情 ───────────────────────────────────────\n';
-  testCases.forEach((tc, i) => {
+  safeTestCases.forEach((tc, i) => {
     const status = tc.success ? '✓' : '✗';
     const displayText = tc.text.length > 40
       ? tc.text.substring(0, 40) + '...'
@@ -172,6 +228,8 @@ export function generateReportText(reportData) {
     const startText = tc.playStartTime ? formatDate(tc.playStartTime) : '-';
     const endText = tc.playEndTime ? formatDate(tc.playEndTime) : '-';
     text += `${status} ${i + 1}. [${startText} ~ ${endText}] ${displayText}\n`;
+    text += `   唤醒: ${getWakeStatus(tc)} | ASR: ${getAsrStatus(tc)} | TTS: ${getTtsStatus(tc)} | TTS文本: ${tc.responseTtsText || tc.speakerResponseText || '-'} | TTS音频: ${tc.responseTtsAudioFile || tc.responseAudioFile || '-'} | 录音ASR: ${tc.responseAsrText || '-'} | 相似度: ${Number.isFinite(Number(tc.responseTextSimilarity)) ? `${(Number(tc.responseTextSimilarity) * 100).toFixed(1)}%` : '-'}\n`;
+    text += `   录制诊断: 状态=${tc.responseSpeakerState || '-'} | 结束原因=${tc.responseFinishReason || '-'} | 预计=${tc.responseEstimatedTtsDurationMs || 0}ms | 实际=${tc.responseAudioDuration || 0}ms | 保护=${tc.responseMinProtectMs || 0}ms | 连续静音=${tc.responseFinalSilenceMs || 0}ms | 疑似截断=${tc.responseSuspectedTruncated ? '是' : '否'}\n`;
   });
 
   text += '\n═══════════════════════════════════════════════════════\n';

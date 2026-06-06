@@ -4,6 +4,12 @@
  */
 
 const DEFAULT_DOUBAO_URL = 'https://openspeech.bytedance.com/api/v1/tts';
+const WEB_SPEECH_START_TIMEOUT_MS = 2500;
+const WEB_SPEECH_QUEUE_RESET_MS = 80;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 class TTSService {
   constructor() {
@@ -12,6 +18,7 @@ class TTSService {
     this.voicesLoaded = false;
     this.voicesPromise = null;
     this.currentAudio = null;
+    this.currentUtterance = null;
 
     this.provider = (import.meta.env.VITE_TTS_PROVIDER || 'webspeech').toLowerCase();
     this.doubaoConfig = {
@@ -112,7 +119,7 @@ class TTSService {
     return new Blob([bytes], { type: mimeType });
   }
 
-  async playBlob(blob) {
+  async playBlob(blob, config = {}) {
     this.stopAudio();
 
     const audioUrl = URL.createObjectURL(blob);
@@ -131,6 +138,10 @@ class TTSService {
         URL.revokeObjectURL(audioUrl);
         this.currentAudio = null;
         reject(e);
+      };
+
+      audioEl.onplaying = () => {
+        config.onStart?.();
       };
 
       audioEl.play().catch((err) => {
@@ -195,7 +206,7 @@ class TTSService {
     }
 
     const blob = this.base64ToBlob(audioBase64, 'audio/mpeg');
-    await this.playBlob(blob);
+    await this.playBlob(blob, config);
   }
 
   async getVoice(config) {
@@ -248,8 +259,31 @@ class TTSService {
     return candidates[0];
   }
 
-  async speakWithWebSpeech(text, config = {}) {
-    const { voiceName, lang = 'zh-CN', volume = 100, rate = 1.0 } = config;
+  createWebSpeechUtterance(text, config, selectedVoice) {
+    const { lang = 'zh-CN', volume = 100, rate = 1.0 } = config;
+    const utterance = new SpeechSynthesisUtterance(text);
+
+    if (lang === '粤语') {
+      utterance.lang = 'zh-HK';
+    } else if (lang === '东北话' || lang === '陕西话' || lang === '四川话') {
+      utterance.lang = 'zh-CN';
+    } else {
+      utterance.lang = lang;
+    }
+
+    utterance.volume = Math.min(1.0, volume / 100);
+    utterance.rate = Math.max(0.1, Math.min(10, rate));
+    utterance.pitch = 1.0;
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+
+    return utterance;
+  }
+
+  async speakWebSpeechOnce(text, config = {}, selectedVoice = null) {
+    const utterance = this.createWebSpeechUtterance(text, config, selectedVoice);
 
     return new Promise((resolve, reject) => {
       if (!this.synth) {
@@ -257,35 +291,81 @@ class TTSService {
         return;
       }
 
+      let settled = false;
+      let started = false;
+
+      const startTimer = setTimeout(() => {
+        if (settled || started) return;
+        settled = true;
+        this.synth.cancel();
+        this.currentUtterance = null;
+        reject(new Error('浏览器语音合成未开始播放，已自动重试'));
+      }, WEB_SPEECH_START_TIMEOUT_MS);
+
+      const cleanup = () => {
+        clearTimeout(startTimer);
+        if (this.currentUtterance === utterance) {
+          this.currentUtterance = null;
+        }
+      };
+
+      utterance.onstart = () => {
+        started = true;
+        config.onStart?.();
+      };
+
+      utterance.onend = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (!started) {
+          reject(new Error('浏览器语音合成未实际开始播放'));
+          return;
+        }
+        resolve();
+      };
+
+      utterance.onerror = (e) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error(e?.error || e?.message || '浏览器语音合成播放失败'));
+      };
+
+      this.currentUtterance = utterance;
+      this.synth.speak(utterance);
+    });
+  }
+
+  async speakWithWebSpeech(text, config = {}) {
+    if (!this.synth) {
+      throw new Error('浏览器不支持语音合成');
+    }
+
+    const { voiceName, lang = 'zh-CN' } = config;
+    const selectedVoice = await this.getVoice({ voiceName, lang });
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
       this.stopAudio();
+      await delay(WEB_SPEECH_QUEUE_RESET_MS);
 
-      const utterance = new SpeechSynthesisUtterance(text);
-
-      if (lang === '粤语') {
-        utterance.lang = 'zh-HK';
-      } else if (lang === '东北话' || lang === '陕西话' || lang === '四川话') {
-        utterance.lang = 'zh-CN';
-      } else {
-        utterance.lang = lang;
+      if (this.synth.paused) {
+        this.synth.resume();
       }
 
-      utterance.volume = Math.min(1.0, volume / 100);
-      utterance.rate = Math.max(0.1, Math.min(10, rate));
-      utterance.pitch = 1.0;
+      try {
+        await this.speakWebSpeechOnce(text, config, selectedVoice);
+        return;
+      } catch (err) {
+        lastError = err;
+        console.warn(`[TTS] Web Speech attempt ${attempt} failed:`, err);
+        this.stopAudio();
+        await delay(WEB_SPEECH_QUEUE_RESET_MS * attempt);
+      }
+    }
 
-      this.getVoice({ voiceName, lang })
-        .then((selectedVoice) => {
-          if (selectedVoice) {
-            utterance.voice = selectedVoice;
-          }
-
-          utterance.onend = () => resolve();
-          utterance.onerror = (e) => reject(e.error || e);
-
-          this.synth.speak(utterance);
-        })
-        .catch(reject);
-    });
+    throw lastError || new Error('浏览器语音合成播放失败');
   }
 
   async speak(text, config = {}) {
@@ -313,6 +393,8 @@ class TTSService {
       this.currentAudio.currentTime = 0;
       this.currentAudio = null;
     }
+
+    this.currentUtterance = null;
 
     if (this.synth) {
       this.synth.cancel();

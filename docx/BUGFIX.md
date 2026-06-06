@@ -17,8 +17,78 @@
 - vite.config.js
 - src/modules/langfuse/utils/excelExporter.js
 - src/index.css
+- scripts/startDev.cjs
+- scripts/adbBridge.cjs
+- src/hooks/useTestRunner.js
+- src/services/responseMonitorService.js
+- src/services/adbWakeService.js
+- src/components/TestProcessRecord.jsx
+- src/utils/testStatus.js
 
 ## 修复记录
+
+### 2026-06-06
+
+1. 修复项目次日启动后 Speaker 监听链路不稳定问题。
+  - 现象：前一晚运行正常，次日启动后无法稳定监听 Speaker 唤醒或响应日志。
+  - 根因：项目启动依赖 ADB、设备在线状态、logcat 可读性和监听进程，但启动阶段缺少统一自检与恢复机制。
+  - 修复：
+    - 新增启动自检脚本 `scripts/startDev.cjs`，启动前检查 ADB bridge、设备状态和 logcat 可读性；
+    - `scripts/adbBridge.cjs` 新增 `/api/adb/devices`、`/api/adb/health`、`/api/adb/recover`；
+    - 异常信息和解决方案写入 `logs/startup-error.log`，自检结果写入 `logs/startup-check.log`。
+2. 修复 ASR 文本无法从云端日志稳定提取问题。
+  - 现象：页面无法稳定获取 `onHandlerCloudMsg==>GoogleLiveResponseBean(...messageType=asr_status/input_text...)` 中的 ASR 文本。
+  - 根因：旧 ASR 关键字和正则未覆盖 GoogleLiveResponseBean 日志结构。
+  - 修复：新增 `asr_status/input_text` 云端日志关键字和 `Message(content=..., messageType=...)` 文本提取正则，并在本地存储恢复时自动合并默认规则。
+3. 修复唤醒成功后测试音频偶发未正常播放问题。
+  - 现象：Speaker 已唤醒，但测试音频没有按预期开始播放。
+  - 根因：唤醒 TTS 队列和测试音频播放衔接过紧，存在音频播放状态未完全释放的窗口。
+  - 修复：唤醒成功后先停止残留 TTS 队列并短暂等待，再播放测试音频；同时增加测试音频开始播放超时保护。
+4. 修复 Speaker 播放 TTS 音频录制偶发为空或被截断问题。
+  - 现象：有时能录到 Speaker 播报内容，有时录音为空或只录到部分内容，长回复更明显。
+  - 根因：旧录制逻辑对长文本回复缺少动态保护时长，静音判断过早，PCM 缓存窗口也可能不足。
+  - 修复：
+    - 响应录音改为连续 PCM 采样并编码 WAV；
+    - 根据 TTS 文本长度估算播报时长，增加最短录制保护；
+    - 长文本使用更长静音结束阈值，并设置最大录制兜底；
+    - 下一轮唤醒延后到 Speaker 播报结束并冷却后再执行；
+    - 结果中记录结束原因、预计时长、实际录制时长、连续静音和疑似截断标记。
+5. 修复测试结果统计口径重复实现导致维护风险问题。
+  - 现象：过程记录和报告导出分别维护唤醒/ASR/TTS 状态判定，后续容易出现统计口径不一致。
+  - 根因：状态判断逻辑分散在多个文件。
+  - 修复：新增 `src/utils/testStatus.js` 统一管理状态判断和统计方法，过程记录与报告导出共用同一套逻辑。
+
+### 2026-06-04
+
+1. 修复 Speaker 播报未结束即开始下一次唤醒的问题。
+  - 现象：响应检测结束后立即进入下一次唤醒，偶发与 Speaker 尾音重叠。
+  - 根因：流程虽已监听到 `vad_status=stop`，但未在播报结束后增加唤醒保护时间。
+  - 修复：在 `useTestRunner` 增加“响应结束到下一次唤醒”门控，监听到 Speaker 播报结束后强制等待 1s，再进入下一轮唤醒。
+
+1. 修复自动监听 Speaker 播报误判失败与监听器累积问题。
+  - 现象：即使检测到 Speaker 发声与 ADB 响应日志，仍可能被判定为失败；长时间运行时响应监听存在回调累积风险。
+  - 根因：响应链路将浏览器 ASR 结果作为硬性通过条件，并且响应轮询 `wait` 未及时释放 `abort` 监听器；同时通过条件对 `vadEnded` 依赖过强。
+  - 修复：
+    - `responseMonitorService` 中响应 ASR 降级为诊断信息，不再作为主成功条件；
+    - `wait` 增加统一清理逻辑，超时/取消/完成都会移除 `abort` 监听器；
+    - `useTestRunner` 放宽响应链路判定为“响应音频成功 + ADB 侧存在 TTS 文本证据（success/vadStarted/ttsMatchedLine 任一）”。
+
+1. 修复自主监测过程日志中 ASR 文本与响应文本混淆问题。
+  - 现象：测试过程记录里“获取到的 ASR 文本”和“响应文本”显示相同内容，无法区分输入识别和 Speaker 回复。
+  - 根因：响应链路的麦克风转写 `responseAsrText` 被展示层复用为 ASR 文本。
+  - 修复：展示层拆分 `actualAsrText`、`responseAsrText`、`speakerResponseText`；其中 `speakerResponseText` 优先来自 ADB `tts_status` 日志。
+2. 修复 Speaker 响应文本来源不准确问题。
+  - 现象：第三阶段仅通过麦克风 ASR 转写响应音频，无法稳定代表 Speaker 实际播放内容。
+  - 根因：未接入 Speaker 端 `VAD_STATUS` / `TTS_STATUS` 日志。
+  - 修复：ADB Bridge 新增响应日志监听，使用 `vad_status=start/stop` 判断响应窗口，并从 `tts_status` 提取 Speaker 实际播放回复文本。
+3. 修复自主监测过程日志重复展示问题。
+  - 现象：响应 ASR interim 或重复派发的同内容日志可能在测试过程记录中刷屏。
+  - 根因：过程日志按事件直接追加，没有内容去重。
+  - 修复：日志入库时按内容指纹去重，忽略 `id/time/raw/sampleLines` 等易变字段。
+4. 修复开启自主监测后仍等待固定用例间隔问题。
+  - 现象：自主监测开启后，下一条用例仍等待固定 `wakeIntervalDelay`。
+  - 根因：用例间隔逻辑未感知自主监测状态。
+  - 修复：任一自主监测开启时跳过固定用例间隔，直接进入下一次唤醒流程。
 
 ### 2026-05-29
 

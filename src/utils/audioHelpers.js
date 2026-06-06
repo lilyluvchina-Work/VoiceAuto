@@ -69,23 +69,37 @@ export function getSourceInfo(source) {
  * 播放音频（支持文件源和 TTS 源）
  * @param {object} audio - 音频对象 { source, audioUrl, text, config }
  * @param {object} ttsService - TTS 服务实例
+ * @param {object} fallbackConfig - 默认 TTS 配置
+ * @param {object} options - 播放过程回调
  * @returns {Promise<void>}
  */
-export function playAudioItem(audio, ttsService) {
+export function playAudioItem(audio, ttsService, fallbackConfig = {}, options = {}) {
+  const config = {
+    ...fallbackConfig,
+    ...(audio.config || {})
+  };
+
   if (audio.source === 'file' && audio.audioUrl) {
     return new Promise((resolve, reject) => {
       const audioEl = new Audio(audio.audioUrl);
-      audioEl.volume = (audio.config?.volume || 100) / 100;
-      audioEl.playbackRate = audio.config?.rate || 1.0;
+      audioEl.volume = (config.volume || 100) / 100;
+      audioEl.playbackRate = config.rate || 1.0;
+      audioEl.onplaying = () => options.onStart?.();
       audioEl.onended = resolve;
       audioEl.onerror = reject;
       audioEl.play().catch(reject);
     });
   }
+
+  if (!String(audio.text || '').trim()) {
+    return Promise.reject(new Error('测试音频文本为空，无法播报'));
+  }
+
   return ttsService.speak(audio.text, {
-    voiceName: audio.config?.voiceName,
-    lang: audio.config?.lang,
-    volume: audio.config?.volume,
-    rate: audio.config?.rate
+    voiceName: config.voiceName,
+    lang: config.lang,
+    volume: config.volume,
+    rate: config.rate,
+    onStart: options.onStart
   });
 }
