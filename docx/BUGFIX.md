@@ -27,6 +27,37 @@
 
 ## 修复记录
 
+### 2026-06-11
+
+1. 汇总现有错误日志到统一文件。
+  - 现象：错误信息分散在 `startup-error.log`、`startup-check.log`、`adb-bridge.log`、`adb-bridge.out.log` 等文件中，排查时需要来回检索。
+  - 处理：新增 `scripts/collectErrorLogs.cjs` 和 `npm run logs:errors`，将包含 `STARTUP_ERROR / ERROR / Error / error / failed / fail / 异常 / 失败 / 错误` 的日志行汇总到 `logs/error-summary.log`。
+  - 本次结果：共汇总 6302 行错误/异常相关日志。
+2. 日志汇总发现：开发服务启动与端口占用异常。
+  - 现象：`startup-error.log` 中记录 `npm run dev 启动 Vite 时失败：Port 3000 is already in use`。
+  - 影响：重复启动或端口被占用时，前端开发服务无法按固定端口启动。
+  - 当前状态：已有启动脚本自检和端口复用提示，后续仍需在运行前确认 3000 端口是否已有 VoiceAuto 实例。
+3. 日志汇总发现：子进程启动权限异常。
+  - 现象：`startup-error.log`、`adb-bridge.log` 中出现 `spawn EINVAL`、`spawn EPERM`。
+  - 影响：可能导致 Vite、ADB 命令、ADB 重启或设备列表读取失败。
+  - 当前状态：在受限运行环境中需要提升权限执行构建/ADB 操作；相关错误已进入统一汇总日志，便于定位发生时间和调用链。
+4. 日志汇总发现：ADB / Speaker 设备恢复超时。
+  - 现象：`adb-bridge.log` 中出现 `Speaker ADB device recovery timeout`、`reboot.device.recovery.failed`。
+  - 影响：连续唤醒失败后触发 ADB 重启恢复时，设备可能未在超时时间内重新上线，导致本轮测试中断。
+  - 当前状态：已有 Speaker 监听链路自检和一键恢复入口；后续可继续优化恢复等待时长、设备选择和失败提示。
+5. 日志汇总发现：唤醒监听未命中 WakeupSuccess。
+  - 现象：`wakeup.detect.finish` 中存在 `success:false`、`matchedKeyword:""`、`检测超时，未发现 WakeupSuccess 日志` 等记录。
+  - 影响：Speaker 实际可能未唤醒，或日志关键词未覆盖当前设备日志格式，导致测试无法进入后续链路。
+  - 当前状态：唤醒结果已在测试过程记录中显示最后一次有效结果；高级关键词配置已隐藏但默认规则仍保留在底层配置中。
+6. 日志汇总发现：ASR 监听与文本提取规则存在噪声命中风险。
+  - 现象：`asr.detect.start` 多次记录 ASR 开始/结束/失败关键词和文本提取正则；错误汇总中也包含部分设备侧失败、网络异常和日志噪声。
+  - 影响：当设备日志噪声过多或日志格式变化时，ASR 结果可能出现未命中、误判或文本提取为空。
+  - 当前状态：已支持 GoogleLiveResponseBean 的 `asr_status/input_text` 提取规则；后续需结合真实失败样本继续收敛关键词和过滤噪声。
+7. 日志汇总发现：设备侧系统与网络噪声较多。
+  - 现象：`adb-bridge.log` 中大量出现 `WifiVendorHal failed`、`Network is unreachable`、`HTTP error code 401`、`RESOURCE_EXHAUSTED`、`MQTT onFailure` 等设备侧日志。
+  - 影响：这些日志多数不是 VoiceAuto 代码异常，但会污染错误检索结果，也可能间接影响 Speaker 在线状态、云端 ASR 或响应链路稳定性。
+  - 当前状态：已汇总到 `logs/error-summary.log`；后续可在汇总脚本中增加白名单/黑名单分类，区分“平台错误”和“设备环境噪声”。
+
 ### 2026-06-06
 
 1. 修复项目次日启动后 Speaker 监听链路不稳定问题。

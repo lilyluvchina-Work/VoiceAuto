@@ -8,9 +8,11 @@ import { useTest, actions } from '../stores/testStore';
 import { ENVIRONMENTS } from '../modules/langfuse/services/langfuseService';
 import responseMonitorService from '../services/responseMonitorService';
 import adbWakeService from '../services/adbWakeService';
+import ttsService from '../services/ttsService.jsx';
 
 export default function PlaybackConsole({ onTestComplete }) {
   const { state, dispatch } = useTest();
+  const { wakeWord, defaultVoiceConfig } = state;
   const loopCount = state.testOptions?.loopCount || 1;
   const debugSequence = Boolean(state.testOptions?.debugSequence);
   const autoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
@@ -28,6 +30,7 @@ export default function PlaybackConsole({ onTestComplete }) {
   const [listenerHealth, setListenerHealth] = useState(null);
   const [listenerHealthStatus, setListenerHealthStatus] = useState('');
   const [listenerRecovering, setListenerRecovering] = useState(false);
+  const [wakePreviewPlaying, setWakePreviewPlaying] = useState(false);
 
   const moduleOptions = React.useMemo(() => {
     const modules = Array.from(new Set((state.testAudios || []).map((audio) => audio.module || '未分类')));
@@ -80,6 +83,46 @@ export default function PlaybackConsole({ onTestComplete }) {
 
   const handleAutonomousResponseChange = (patch) => {
     dispatch(actions.setAutonomousResponse(patch));
+  };
+
+  const handleWakeTextChange = (e) => {
+    dispatch(actions.setWakeWord(e.target.value));
+  };
+
+  const handleWakeAfterDelayChange = (e) => {
+    dispatch(actions.setWakeDelay(parseInt(e.target.value, 10) || 0));
+  };
+
+  const handleWakeIntervalDelayChange = (e) => {
+    dispatch(actions.setWakeIntervalDelay(parseInt(e.target.value, 10) || 0));
+  };
+
+  const handleWakePreview = async () => {
+    if (!wakeWord.text.trim()) {
+      alert('请输入唤醒词');
+      return;
+    }
+
+    if (wakePreviewPlaying) {
+      ttsService.stopAudio();
+      setWakePreviewPlaying(false);
+      return;
+    }
+
+    setWakePreviewPlaying(true);
+    try {
+      await ttsService.speak(wakeWord.text, {
+        voiceName: defaultVoiceConfig.voiceName,
+        lang: defaultVoiceConfig.lang,
+        volume: 200,
+        rate: defaultVoiceConfig.rate
+      });
+    } catch (error) {
+      console.error('Wake word preview failed:', error);
+      alert('播放失败：' + error.message);
+    } finally {
+      setWakePreviewPlaying(false);
+    }
   };
 
   const refreshMicrophones = async () => {
@@ -184,6 +227,32 @@ export default function PlaybackConsole({ onTestComplete }) {
   const selectedAdbDeviceId = autonomousWake.deviceId || (adbDevices.length === 1 ? adbDevices[0].id : '');
   const listenerChecks = listenerHealth?.checks || {};
   const listenerOk = Boolean(listenerHealth?.success);
+  const stageLabel = playback.currentType === 'wake-failed' ? '唤醒失败'
+    : playback.currentType === 'wake' ? '播放唤醒音频'
+    : playback.currentType === 'wake-detect' ? '监听唤醒结果'
+    : playback.currentType === 'reboot' ? 'ADB 重启'
+    : playback.currentType === 'reboot-wait' ? '重启后等待'
+    : playback.currentType === 'asr-detect' ? '监听 ASR 输入'
+    : playback.currentType === 'response-detect' ? 'Speaker 播报音频收录'
+    : playback.currentType === 'response-end-wait' ? '播报结束冷却'
+    : playback.currentType === 'test-ready' ? '准备播放测试音频'
+    : playback.currentType === 'test-failed' ? '测试音频播放失败'
+    : playback.currentType === 'test' ? '播放测试音频'
+    : playback.currentType === 'delay' ? '唤醒后延迟'
+    : playback.currentType === 'interval' ? '轮次间隔'
+    : '等待开始';
+  const runStatusLabel = playback.status === 'failed' ? '执行失败'
+    : isPausedRef.current ? '已暂停'
+    : isPlayingRef.current ? '测试中'
+    : playback.status === 'completed' ? '已完成'
+    : '等待开始';
+  const processToneClass = playback.status === 'failed'
+    ? 'border-red-500/40 bg-red-500/10'
+    : isPlayingRef.current
+    ? 'border-accent/40 bg-accent/10'
+    : playback.status === 'completed'
+    ? 'border-primary/40 bg-primary/10'
+    : 'border-gray-700 bg-gray-800/45';
 
   // 键盘快捷键
   useEffect(() => {
@@ -233,11 +302,121 @@ export default function PlaybackConsole({ onTestComplete }) {
     <div className="bg-dark rounded-xl p-6 border border-gray-700">
       <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
         <span className="text-2xl">🎛️</span>
-        播放控制台
+        播放控制台 / 唤醒词配置
         <span className="ml-2 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
           Web Speech API
         </span>
       </h2>
+
+      <section className={`mb-6 rounded-xl border p-5 ${processToneClass}`}>
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className={`h-3 w-3 rounded-full ${
+                playback.status === 'failed' ? 'bg-red-400' :
+                isPausedRef.current ? 'bg-amber-400' :
+                isPlayingRef.current ? 'bg-accent animate-pulse' :
+                playback.status === 'completed' ? 'bg-primary' : 'bg-gray-500'
+              }`} />
+              <p className="text-sm font-medium text-gray-300">测试过程</p>
+              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-sm font-semibold text-white">
+                {runStatusLabel}
+              </span>
+              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-sm text-gray-100">
+                {stageLabel}
+              </span>
+            </div>
+
+            <p className={`mt-4 min-h-[56px] whitespace-pre-wrap break-words text-lg font-semibold leading-relaxed [overflow-wrap:anywhere] ${
+              playback.status === 'failed' ? 'text-red-100' : 'text-white'
+            }`}>
+              {currentAudioText || `唤醒词：${wakeWord.text || '-'}`}
+            </p>
+
+            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="rounded-lg bg-black/20 p-3">
+                <p className="text-xs text-gray-400">进度</p>
+                <p className="mt-1 font-mono text-base text-white">
+                  {isPlayingRef.current || isPausedRef.current ? `${playback.currentIndex + 1} / ${totalCases}` : `0 / ${totalCases}`}
+                </p>
+              </div>
+              <div className="rounded-lg bg-black/20 p-3">
+                <p className="text-xs text-gray-400">完成率</p>
+                <p className="mt-1 font-mono text-base text-white">{progressPercent.toFixed(0)}%</p>
+              </div>
+              <div className="rounded-lg bg-black/20 p-3">
+                <p className="text-xs text-gray-400">已用时间</p>
+                <p className="mt-1 font-mono text-base text-white">{formatTime(playback.elapsedTime / 1000)}</p>
+              </div>
+              <div className="rounded-lg bg-black/20 p-3">
+                <p className="text-xs text-gray-400">预计剩余</p>
+                <p className="mt-1 font-mono text-base text-white">
+                  {isPlayingRef.current ? formatTime(estimateRemainingTime() / 1000) : '-'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <div className="mb-2 flex justify-between text-xs text-gray-400">
+                <span>执行进度</span>
+                <span>{progressPercent.toFixed(0)}%</span>
+              </div>
+              <div className="h-3 overflow-hidden rounded-full bg-black/30">
+                <div
+                  className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-300"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-3">
+              {!isPlayingRef.current && !isPausedRef.current ? (
+                <button
+                  onClick={handleStart}
+                  disabled={testAudios.length === 0}
+                  className="flex items-center gap-2 rounded-lg bg-accent px-6 py-3 font-medium text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-600"
+                >
+                  <span>▶</span>
+                  开始测试
+                </button>
+              ) : isPausedRef.current ? (
+                <button
+                  onClick={handleResume}
+                  className="flex items-center gap-2 rounded-lg bg-accent px-6 py-3 font-medium text-white transition-colors hover:bg-emerald-600"
+                >
+                  <span>▶</span>
+                  继续
+                </button>
+              ) : (
+                <button
+                  onClick={handlePause}
+                  className="flex items-center gap-2 rounded-lg bg-amber-500 px-6 py-3 font-medium text-white transition-colors hover:bg-amber-600"
+                >
+                  <span>⏸</span>
+                  暂停
+                </button>
+              )}
+
+              <button
+                onClick={handleStop}
+                disabled={!isPlayingRef.current && !isPausedRef.current}
+                className="flex items-center gap-2 rounded-lg bg-red-500 px-6 py-3 font-medium text-white transition-colors hover:bg-red-600 disabled:bg-gray-600"
+              >
+                <span>⏹</span>
+                停止
+              </button>
+
+              <button
+                onClick={handleReset}
+                className="flex items-center gap-2 rounded-lg bg-gray-600 px-6 py-3 font-medium text-white transition-colors hover:bg-gray-500"
+              >
+                <span>🔄</span>
+                重置
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className={`mb-6 rounded-lg border p-4 ${
         listenerOk
@@ -291,6 +470,74 @@ export default function PlaybackConsole({ onTestComplete }) {
               {listenerRecovering ? '恢复中...' : '一键恢复'}
             </button>
           </div>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-lg border border-primary/30 bg-primary/10 p-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-blue-100">唤醒词配置</h3>
+          <button
+            type="button"
+            onClick={handleWakePreview}
+            disabled={isLocked || !wakeWord.text.trim()}
+            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-600 disabled:opacity-60"
+          >
+            {wakePreviewPlaying ? '停止试听' : '试听唤醒词'}
+          </button>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_150px_150px]">
+          <label className="text-xs text-gray-400">
+            唤醒词文本
+            <input
+              type="text"
+              value={wakeWord.text}
+              onChange={handleWakeTextChange}
+              disabled={isLocked}
+              placeholder="输入唤醒词，如：Hey, Cedar"
+              className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-primary disabled:opacity-50"
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            唤醒后延迟
+            <select
+              value={wakeWord.wakeAfterDelay}
+              onChange={handleWakeAfterDelayChange}
+              disabled={isLocked}
+              className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm font-mono text-primary focus:border-primary disabled:opacity-50"
+            >
+              <option value="300">300ms</option>
+              <option value="500">500ms</option>
+              <option value="1000">1000ms</option>
+              <option value="1500">1500ms</option>
+            </select>
+          </label>
+          <label className="text-xs text-gray-400">
+            唤醒间延迟
+            <select
+              value={wakeWord.wakeIntervalDelay}
+              onChange={handleWakeIntervalDelayChange}
+              disabled={isLocked}
+              className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm font-mono text-primary focus:border-primary disabled:opacity-50"
+            >
+              <option value="3000">3000ms</option>
+              <option value="5000">5000ms</option>
+              <option value="10000">10000ms</option>
+              <option value="20000">20000ms</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+          <span className="shrink-0 rounded bg-primary/20 px-3 py-2 text-primary">唤醒词</span>
+          <span className="text-gray-500">→</span>
+          <span className="shrink-0 rounded bg-blue-500/20 px-3 py-2 text-blue-300">等待 {wakeWord.wakeAfterDelay}ms</span>
+          <span className="text-gray-500">→</span>
+          <span className="shrink-0 rounded bg-accent/20 px-3 py-2 text-accent">测试音频</span>
+          <span className="text-gray-500">→</span>
+          <span className="shrink-0 rounded bg-blue-500/20 px-3 py-2 text-blue-300">等待 {wakeWord.wakeIntervalDelay}ms</span>
+          <span className="text-gray-500">→</span>
+          <span className="shrink-0 rounded bg-primary/20 px-3 py-2 text-primary">下一轮唤醒</span>
         </div>
       </div>
 
@@ -512,17 +759,6 @@ export default function PlaybackConsole({ onTestComplete }) {
                   <option value={5}>连续 5 次</option>
                 </select>
               </label>
-              <label className="text-xs text-gray-400 md:col-span-2">
-                唤醒成功日志关键词
-                <textarea
-                  value={autonomousWake.keywords || ''}
-                  onChange={(e) => handleAutonomousWakeChange({ keywords: e.target.value })}
-                  disabled={isLocked}
-                  rows={4}
-                  placeholder={'WakeupSuccess\nonCedarWakeup\n/your wake regex/i'}
-                  className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
-                />
-              </label>
             </div>
           )}
         </div>
@@ -573,50 +809,6 @@ export default function PlaybackConsole({ onTestComplete }) {
                   value={autonomousInput.asrSimilarityThreshold ?? 0.8}
                   onChange={(e) => handleAutonomousInputChange({ asrSimilarityThreshold: Number(e.target.value) })}
                   disabled={isLocked}
-                  className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
-                />
-              </label>
-              <label className="text-xs text-gray-400">
-                ASR 开始标识
-                <textarea
-                  value={autonomousInput.asrStartKeywords || ''}
-                  onChange={(e) => handleAutonomousInputChange({ asrStartKeywords: e.target.value })}
-                  disabled={isLocked}
-                  rows={4}
-                  placeholder={'/asr_status[^\\n]*(partial)/i'}
-                  className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
-                />
-              </label>
-              <label className="text-xs text-gray-400">
-                ASR 结束标识
-                <textarea
-                  value={autonomousInput.asrEndKeywords || autonomousInput.asrKeywords || ''}
-                  onChange={(e) => handleAutonomousInputChange({ asrEndKeywords: e.target.value })}
-                  disabled={isLocked}
-                  rows={4}
-                  placeholder={'/asr_status[^\\n]*(final)/i'}
-                  className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
-                />
-              </label>
-              <label className="text-xs text-gray-400 md:col-span-2">
-                ASR 失败标识
-                <textarea
-                  value={autonomousInput.asrFailureKeywords || ''}
-                  onChange={(e) => handleAutonomousInputChange({ asrFailureKeywords: e.target.value })}
-                  disabled={isLocked}
-                  rows={3}
-                  placeholder={'/asr_status[^\\n]*(unidentified)/i'}
-                  className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
-                />
-              </label>
-              <label className="text-xs text-gray-400 md:col-span-2">
-                ASR 文本提取正则
-                <textarea
-                  value={autonomousInput.asrPatterns || ''}
-                  onChange={(e) => handleAutonomousInputChange({ asrPatterns: e.target.value })}
-                  disabled={isLocked}
-                  rows={3}
-                  placeholder={'/(?:asrText|recognizedText)\\s*[:=]\\s*"([^"]+)"/i'}
                   className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
                 />
               </label>
@@ -833,159 +1025,6 @@ export default function PlaybackConsole({ onTestComplete }) {
             </div>
           )}
         </div>
-      </div>
-
-      {/* 状态显示 */}
-      <div className="mb-6 p-4 bg-gray-800/50 rounded-lg">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <p className="text-xs text-gray-400 mb-1">当前状态</p>
-            <p className={`font-medium ${
-              playback.status === 'failed' ? 'text-red-400' :
-              isPlayingRef.current && !isPausedRef.current ? 'text-accent' :
-              isPausedRef.current ? 'text-amber-400' :
-              playback.status === 'completed' ? 'text-primary' : 'text-gray-400'
-            }`}>
-              {playback.status === 'failed' && playback.currentType === 'test-failed' ? '测试音频失败' :
-               playback.status === 'failed' ? '唤醒失败' :
-               !isPlayingRef.current && !isPausedRef.current ? '等待中' :
-               isPlayingRef.current && !isPausedRef.current ? '测试中' :
-               isPausedRef.current ? '已暂停' :
-               playback.status === 'completed' ? '已完成' : '等待中'}
-            </p>
-          </div>
-
-          <div>
-            <p className="text-xs text-gray-400 mb-1">当前进度</p>
-            <p className="font-medium text-white">
-              {!isPlayingRef.current && !isPausedRef.current ? '-' :
-               `${playback.currentIndex + 1} / ${totalCases}`}
-            </p>
-          </div>
-
-          <div>
-            <p className="text-xs text-gray-400 mb-1">已用时间</p>
-            <p className="font-medium text-white font-mono">
-              {formatTime(playback.elapsedTime / 1000)}
-            </p>
-          </div>
-
-          <div>
-            <p className="text-xs text-gray-400 mb-1">预计剩余</p>
-            <p className="font-medium text-gray-400 font-mono">
-              {!isPlayingRef.current ? '-' :
-               formatTime(estimateRemainingTime() / 1000)}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* 当前播放内容 */}
-      {(isPlayingRef.current || isPausedRef.current || playback.status === 'failed') && (
-        <div className={`mb-6 p-4 rounded-lg ${
-          playback.status === 'failed'
-            ? 'bg-red-500/10 border border-red-500/30'
-            : 'bg-primary/10 border border-primary/30'
-        }`}>
-          <div className="flex items-center gap-3 mb-2">
-            <span className={`w-3 h-3 rounded-full ${
-              playback.currentType === 'wake-failed' ? 'bg-red-400' :
-              playback.currentType === 'wake' ? 'bg-primary' :
-              playback.currentType === 'wake-detect' ? 'bg-amber-400' :
-              playback.currentType === 'reboot' ? 'bg-red-400' :
-              playback.currentType === 'reboot-wait' ? 'bg-orange-400' :
-              playback.currentType === 'asr-detect' ? 'bg-cyan-400' :
-              playback.currentType === 'response-detect' ? 'bg-emerald-400' :
-              playback.currentType === 'response-end-wait' ? 'bg-emerald-300' :
-              playback.currentType === 'test-ready' ? 'bg-accent' :
-              playback.currentType === 'test-failed' ? 'bg-red-400' :
-              playback.currentType === 'test' ? 'bg-accent' :
-              playback.currentType === 'delay' ? 'bg-blue-400' :
-              playback.currentType === 'interval' ? 'bg-amber-400' : 'bg-gray-400'
-            }`}></span>
-            <span className="text-sm text-gray-400">
-              {playback.currentType === 'wake-failed' ? '唤醒失败' :
-               playback.currentType === 'wake' ? '🔔 唤醒词' :
-               playback.currentType === 'wake-detect' ? '🔎 唤醒检测' :
-               playback.currentType === 'reboot' ? '♻ ADB 重启' :
-               playback.currentType === 'reboot-wait' ? '⏳ 重启后等待' :
-               playback.currentType === 'asr-detect' ? '📝 ASR 检测' :
-               playback.currentType === 'response-detect' ? '🎙️ 响应检测' :
-               playback.currentType === 'response-end-wait' ? '响应播报结束等待' :
-               playback.currentType === 'test-ready' ? '准备播放测试音频' :
-               playback.currentType === 'test-failed' ? '测试音频播放失败' :
-               playback.currentType === 'test' ? '🎵 测试音频' :
-               playback.currentType === 'delay' ? '⏳ 唤醒后延迟' :
-               playback.currentType === 'interval' ? '⏳ 唤醒间延迟' : ''}
-            </span>
-          </div>
-          <p className={`${playback.status === 'failed' ? 'text-red-100' : 'text-white'} truncate`}>
-            {currentAudioText}
-          </p>
-        </div>
-      )}
-
-      {/* 进度条 */}
-      <div className="mb-6">
-        <div className="flex justify-between text-xs text-gray-400 mb-2">
-          <span>进度</span>
-          <span>{progressPercent.toFixed(0)}%</span>
-        </div>
-        <div className="h-3 bg-gray-700 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-300"
-            style={{ width: `${progressPercent}%` }}
-          ></div>
-        </div>
-      </div>
-
-      {/* 控制按钮 */}
-      <div className="flex flex-wrap gap-3">
-        {!isPlayingRef.current && !isPausedRef.current ? (
-          <button
-            onClick={handleStart}
-            disabled={testAudios.length === 0}
-            className="px-6 py-3 bg-accent hover:bg-emerald-600 disabled:bg-gray-600
-                     rounded-lg font-medium transition-colors flex items-center gap-2"
-          >
-            <span>▶</span>
-            开始测试
-          </button>
-        ) : isPausedRef.current ? (
-          <button
-            onClick={handleResume}
-            className="px-6 py-3 bg-accent hover:bg-emerald-600 rounded-lg font-medium transition-colors flex items-center gap-2"
-          >
-            <span>▶</span>
-            继续
-          </button>
-        ) : (
-          <button
-            onClick={handlePause}
-            className="px-6 py-3 bg-amber-500 hover:bg-amber-600 rounded-lg font-medium transition-colors flex items-center gap-2"
-          >
-            <span>⏸</span>
-            暂停
-          </button>
-        )}
-
-        <button
-          onClick={handleStop}
-          disabled={!isPlayingRef.current && !isPausedRef.current}
-          className="px-6 py-3 bg-red-500 hover:bg-red-600 disabled:bg-gray-600
-                   rounded-lg font-medium transition-colors flex items-center gap-2"
-        >
-          <span>⏹</span>
-          停止
-        </button>
-
-        <button
-          onClick={handleReset}
-          className="px-6 py-3 bg-gray-600 hover:bg-gray-500 rounded-lg font-medium transition-colors flex items-center gap-2"
-        >
-          <span>🔄</span>
-          重置
-        </button>
       </div>
 
       {/* 快捷键提示 */}

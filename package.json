@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "adb:bridge": "node scripts/adbBridge.cjs",
-    "adb:recover": "powershell -ExecutionPolicy Bypass -File scripts/adbRecover.ps1"
+    "adb:recover": "powershell -ExecutionPolicy Bypass -File scripts/adbRecover.ps1",
+    "logs:errors": "node scripts/collectErrorLogs.cjs"
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",

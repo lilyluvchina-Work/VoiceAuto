@@ -342,6 +342,10 @@ export default function SummaryReport() {
     window.dispatchEvent(new CustomEvent(SUMMARY_REPORT_EVENT, { detail: null }));
   };
 
+  const handleRefreshReport = () => {
+    setReport(loadSummaryReport());
+  };
+
   const handleExportEnvironmentTemplate = () => {
     const environmentRows = ENVIRONMENT_INFO_FIELDS.map((field) => [
       '服务环境和版本',
@@ -397,10 +401,28 @@ export default function SummaryReport() {
   if (!report) {
     return (
       <div className="bg-dark rounded-xl p-6 border border-gray-700">
-        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-          <span className="text-2xl">🧾</span>
-          总结报告
-        </h2>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <span className="text-2xl">🧾</span>
+            总结报告
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleRefreshReport}
+              className="px-3 py-1.5 rounded-md bg-gray-700 text-gray-100 hover:bg-gray-600 text-xs transition-colors"
+            >
+              刷新
+            </button>
+            <button
+              type="button"
+              onClick={handleClearReport}
+              className="px-3 py-1.5 rounded-md border border-red-700/70 bg-red-950/35 text-red-200 hover:bg-red-900/45 text-xs transition-colors"
+            >
+              清空
+            </button>
+          </div>
+        </div>
         <div className="text-center py-12 text-gray-500">
           <p className="text-4xl mb-4">📭</p>
           <p>暂无总结报告</p>
@@ -424,6 +446,13 @@ export default function SummaryReport() {
           <div className="px-3 py-1.5 rounded-md border border-emerald-700/60 bg-emerald-900/20 text-emerald-300 text-xs">
             基础信息与功能统计区域为只读，其他内容可编辑并自动保存
           </div>
+          <button
+            type="button"
+            onClick={handleRefreshReport}
+            className="px-3 py-1.5 rounded-md bg-gray-700 text-gray-100 hover:bg-gray-600 text-xs transition-colors"
+          >
+            刷新报告
+          </button>
           <button
             type="button"
             onClick={handleClearReport}

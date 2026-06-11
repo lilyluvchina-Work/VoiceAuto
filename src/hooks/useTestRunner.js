@@ -932,28 +932,18 @@ export default function useTestRunner({ onTestComplete } = {}) {
             }
           }
 
+          const responseAudioPassed = Boolean(responseResult?.success);
           const speakerResponseText = responseLogResult?.speakerResponseText || '';
           responseTextSimilarity = responseResult?.responseAsrText && speakerResponseText
             ? textSimilarity(responseResult.responseAsrText, speakerResponseText)
             : null;
-          const responseAudioPassed = Boolean(responseResult?.success);
-          const responseLogPassed = Boolean(
-            responseLogResult?.vadStarted
-            && responseLogResult?.vadEnded
-            && speakerResponseText
-          );
-          responseChainPassed = Boolean(
-            responseAudioPassed
-            && responseLogPassed
-          );
+          responseChainPassed = responseAudioPassed;
           if (!responseChainPassed) {
             success = false;
             failStage = failStage || responseResult?.responseFailStage || 'SPEAKER_OUTPUT';
             failReason = failReason
-              || (responseAudioPassed ? '' : responseResult?.responseFailReason)
-              || responseLogResult?.message
               || responseResult?.responseFailReason
-              || '未等待到 Speaker 回复播放结束（缺少 VAD stop 或 TTS 文本）';
+              || 'Speaker 播报音频收录失败';
           }
         } else {
           responseChainPassed = autonomousResponseEnabled ? false : null;
@@ -972,6 +962,23 @@ export default function useTestRunner({ onTestComplete } = {}) {
         lastTestAudioTimeRef.current = playEndTime;
         dispatch(actions.setReport({ lastTestAudioTime: lastTestAudioTimeRef.current }));
 
+        const wakeAudioPassed = wakeResult?.wake_audio_play_status === 'completed';
+        const wakeDetectPassed = !autonomousWakeEnabled || wakeResult?.speaker_wake_status === 'success';
+        const testAudioPassed = Boolean(playEndTime) && failStage !== 'TEST_AUDIO_PLAY';
+        const asrPassed = !autonomousInputEnabled || inputChainPassed === true;
+        const speakerAudioPassed = !autonomousResponseEnabled || responseChainPassed === true;
+        const finalSuccess = Boolean(
+          wakeAudioPassed
+          && wakeDetectPassed
+          && testAudioPassed
+          && asrPassed
+          && speakerAudioPassed
+        );
+        if (!finalSuccess && success) {
+          success = false;
+          failReason = failReason || '播放唤醒音频、监听唤醒结果、播放测试音频、监听 ASR 输入或 Speaker 播报音频收录未全部成功';
+        }
+
         // 记录结果
         dispatch(actions.addReportCase({
           index: cursor,
@@ -989,7 +996,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           humanIndex: item.audio.humanIndex || '',
           playStartTime,
           playEndTime,
-          success,
+          success: finalSuccess,
           duration: item.audio.duration || 0,
           failStage,
           failReason,

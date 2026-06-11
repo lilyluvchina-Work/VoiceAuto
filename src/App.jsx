@@ -4,7 +4,6 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { TestProvider, useTest, actions } from './stores/testStore';
-import WakeWordConfig from './components/WakeWordConfig';
 import VoiceConfig from './components/VoiceConfig';
 import AudioImporter from './components/AudioImporter';
 import AudioList from './components/AudioList';
@@ -99,45 +98,52 @@ function AppContent() {
   const renderMainContent = () => {
     return (
       <div className="space-y-6">
-        {/* 保持挂载：切换顶部菜单时不卸载 Langfuse 页面，避免日志被重置 */}
+        {/* 保持挂载：切换顶部菜单时只隐藏页面，避免已展示数据或编辑内容被重置 */}
         <div className={activeMode === MODES.langfuse ? 'block' : 'hidden'}>
           <LangfuseFetcher />
         </div>
 
-        {activeMode === MODES.cases && <TestCaseManager />}
+        <div className={activeMode === MODES.cases ? 'block' : 'hidden'}>
+          <TestCaseManager />
+        </div>
 
-        {activeMode === MODES.report && (
+        <div className={activeMode === MODES.report ? 'block' : 'hidden'}>
           <div className="max-w-6xl mx-auto space-y-4">
             <TestProcessRecord />
             <p className="text-xs text-gray-500 text-center">
               {isTesting ? '测试进行中：测试过程记录会持续刷新。' : '当前为测试过程记录视图。'}
             </p>
           </div>
-        )}
+        </div>
 
-        {activeMode === MODES.summary && <SummaryReport />}
+        <div className={activeMode === MODES.summary ? 'block' : 'hidden'}>
+          <SummaryReport />
+        </div>
 
-        {activeMode === MODES.voice && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* 左侧：唤醒词 + 音频配置 */}
-            <div className="space-y-6">
-              <WakeWordConfig />
+        <div className={activeMode === MODES.voice ? 'block' : 'hidden'}>
+          <div className="space-y-6">
+            {pendingLangfuseJump && (
+              <div className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-blue-100">
+                测试已完成，将在当前页面停留 2 分钟后跳转到 Langfuse 日志，并拉取所选环境日志。
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_minmax(560px,1fr)]">
+              <section className="min-w-0">
+                <PlaybackConsole onTestComplete={handleTestComplete} />
+              </section>
+
+              <section className="min-w-0 space-y-6">
+                <AudioImporter />
+                <AudioList />
+              </section>
+            </div>
+
+            <section className="grid grid-cols-1 gap-6">
               <VoiceConfig />
-              {pendingLangfuseJump && (
-                <div className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-blue-100">
-                  测试已完成，将在当前页面停留 2 分钟后跳转到 Langfuse 日志，并拉取所选环境日志。
-                </div>
-              )}
-              <PlaybackConsole onTestComplete={handleTestComplete} />
-            </div>
-
-            {/* 右侧：测试音频列表 */}
-            <div className="space-y-6">
-              <AudioImporter />
-              <AudioList />
-            </div>
+            </section>
           </div>
-        )}
+        </div>
       </div>
     );
   };

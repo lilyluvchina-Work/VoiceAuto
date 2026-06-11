@@ -12,7 +12,7 @@ export function getAsrStatus(testCase) {
 
 export function getTtsStatus(testCase) {
   if (testCase?.responseChainPassed === true) return 'success';
-  if (testCase?.responseChainPassed === false || testCase?.responseTtsStatus || testCase?.responseFailReason) return 'failed';
+  if (testCase?.responseChainPassed === false || testCase?.responseFailReason) return 'failed';
   return 'unknown';
 }
 

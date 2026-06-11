@@ -143,7 +143,7 @@ export default function AudioList() {
       ) : (
         <>
           {/* 列表头部 */}
-          <div className="flex items-center gap-3 px-3 py-2 mb-1 border-b border-gray-700 text-xs text-gray-500">
+          <div className="grid grid-cols-[auto_24px_32px_80px_minmax(0,1fr)_32px] items-center gap-3 px-3 py-2 mb-1 border-b border-gray-700 text-xs text-gray-500 max-sm:grid-cols-[auto_24px_32px_minmax(0,1fr)_32px]">
             <input
               type="checkbox"
               checked={allPageSelected}
@@ -153,10 +153,8 @@ export default function AudioList() {
             />
             <span className="w-6 text-center">#</span>
             <span className="w-8"></span>
-            <span className="w-20 text-center">顺序</span>
-            <span className="w-24 text-center hidden md:block">功能模块</span>
+            <span className="w-20 text-center max-sm:hidden">顺序</span>
             <span className="flex-1">文本内容</span>
-            <span className="w-20 text-center hidden sm:block">来源 / 时长</span>
             <span className="w-8 text-center">操作</span>
           </div>
 
@@ -174,7 +172,7 @@ export default function AudioList() {
                   return (
                     <div
                       key={audio.id}
-                      className={`flex items-center gap-3 px-3 py-2.5 transition-colors border-t border-gray-800 ${
+                      className={`grid grid-cols-[auto_24px_32px_80px_minmax(0,1fr)_32px] items-start gap-3 px-3 py-3 transition-colors border-t border-gray-800 max-sm:grid-cols-[auto_24px_32px_minmax(0,1fr)_32px] ${
                         isRunnerPlaying
                           ? 'bg-accent/20 ring-1 ring-inset ring-accent/40'
                           : selectedIds.has(audio.id)
@@ -187,11 +185,11 @@ export default function AudioList() {
                     type="checkbox"
                     checked={selectedIds.has(audio.id)}
                     onChange={() => toggle(audio.id)}
-                    className="w-4 h-4 rounded cursor-pointer flex-shrink-0"
+                    className="mt-2 w-4 h-4 rounded cursor-pointer"
                   />
 
                   {/* 序号 */}
-                  <span className="text-gray-500 text-sm w-6 text-center flex-shrink-0">
+                  <span className="mt-1.5 text-gray-500 text-sm w-6 text-center">
                     {globalIndex}
                   </span>
 
@@ -199,7 +197,7 @@ export default function AudioList() {
                   <button
                     onClick={() => play(audio)}
                     className={`w-8 h-8 rounded-full flex items-center justify-center
-                               transition-colors flex-shrink-0 ${
+                               transition-colors ${
                       isPlaying
                         ? 'bg-primary text-white animate-pulse'
                         : 'bg-gray-600 hover:bg-primary/80 text-white'
@@ -209,7 +207,7 @@ export default function AudioList() {
                     {isPlaying ? '⏹' : '▶'}
                   </button>
 
-                  <div className="w-20 flex items-center justify-center gap-1 flex-shrink-0">
+                  <div className="w-20 flex items-center justify-center gap-1 max-sm:hidden">
                     <button
                       type="button"
                       onClick={() => moveAudio(audio.id, -1)}
@@ -230,45 +228,37 @@ export default function AudioList() {
                     </button>
                   </div>
 
-                  <div className="hidden md:flex w-24 justify-center flex-shrink-0">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      isRunnerPlaying
-                        ? 'bg-accent/25 text-accent'
-                        : 'bg-gray-700 text-gray-300'
-                    } max-w-[88px] truncate`} title={audioDirectory}>
-                      {audioDirectory}
-                    </span>
-                  </div>
-
                   {/* 文本内容 */}
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm truncate ${isRunnerPlaying ? 'text-accent font-medium' : 'text-white'}`}>{audio.text}</p>
-                    <p className="text-xs text-gray-500 mt-0.5 sm:hidden">
-                      {getSourceInfo(audio.source).label} · {formatDuration(audio.duration || 0)}
-                    </p>
-                  </div>
-
-                  {/* 来源 / 时长 */}
-                  <div className="hidden sm:flex flex-col items-center w-20 flex-shrink-0">
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                      audio.source === 'tts'
-                        ? 'bg-blue-500/20 text-blue-400'
-                        : audio.source === 'tapd'
-                        ? 'bg-indigo-500/20 text-indigo-300'
-                        : 'bg-green-500/20 text-green-400'
-                    }`}>
-                      {getSourceInfo(audio.source).label}
-                    </span>
-                    <span className="text-xs text-gray-500 mt-0.5">
-                      {formatDuration(audio.duration || 0)}
-                    </span>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className={`max-w-full rounded-full px-2 py-0.5 text-xs break-words [overflow-wrap:anywhere] ${
+                        isRunnerPlaying
+                          ? 'bg-accent/25 text-accent'
+                          : 'bg-gray-700 text-gray-300'
+                      }`} title={audioDirectory}>
+                        {audioDirectory}
+                      </span>
+                      <span className={`rounded-full px-1.5 py-0.5 text-xs ${
+                        audio.source === 'tts'
+                          ? 'bg-blue-500/20 text-blue-400'
+                          : audio.source === 'tapd'
+                          ? 'bg-indigo-500/20 text-indigo-300'
+                          : 'bg-green-500/20 text-green-400'
+                      }`}>
+                        {getSourceInfo(audio.source).label}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {formatDuration(audio.duration || 0)}
+                      </span>
+                    </div>
+                    <p className={`whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere] ${isRunnerPlaying ? 'text-accent font-medium' : 'text-white'}`}>{audio.text}</p>
                   </div>
 
                   {/* 删除按钮 */}
                   <button
                     onClick={() => handleDelete(audio.id)}
                     className="w-7 h-7 flex items-center justify-center rounded
-                               text-red-400 hover:bg-red-500/20 transition-colors text-sm flex-shrink-0"
+                               text-red-400 hover:bg-red-500/20 transition-colors text-sm"
                     title="删除测试音频，保留导入用例"
                   >
                     ✕
