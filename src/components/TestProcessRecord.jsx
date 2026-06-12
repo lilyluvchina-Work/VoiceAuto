@@ -55,6 +55,21 @@ const STEP_DEFS = [
   },
 ];
 
+const WAKE_ATTEMPT_STAGES = new Set([
+  'attempt.success',
+  'attempt.failed.no_match',
+  'detect.error',
+  'detect.skip.audio_error',
+]);
+
+const REBOOT_STAGES = new Set([
+  'reboot.start',
+  'reboot.failed',
+  'reboot.recovered',
+  'reboot.wait_before_retry.start',
+  'reboot.wait_before_retry.end',
+]);
+
 const STATUS_META = {
   success: {
     label: '成功',
@@ -163,6 +178,75 @@ function matchStageLogs(logs, stages) {
     .sort((a, b) => getLogTimeMs(a) - getLogTimeMs(b));
 }
 
+function formatWakeAttemptMessage(log) {
+  const stage = String(log?.stage || '');
+  const parts = [];
+  if (stage === 'detect.result') {
+    parts.push(log?.success ? '唤醒检测结果：成功' : '唤醒检测结果：失败');
+  } else if (stage === 'attempt.success') {
+    parts.push('本次唤醒成功');
+  } else if (stage === 'attempt.failed.no_match') {
+    parts.push('本次唤醒失败：未命中 WakeupSuccess');
+  } else if (stage === 'detect.error') {
+    parts.push('本次唤醒检测异常');
+  } else if (stage === 'detect.skip.audio_error') {
+    parts.push('跳过唤醒检测：唤醒音频播放失败');
+  }
+
+  if (Number.isFinite(Number(log?.wakeFailCount))) parts.push(`连续失败：${log.wakeFailCount}`);
+  if (log?.matchedKeyword) parts.push(`命中关键词：${log.matchedKeyword}`);
+  if (log?.matchedLine) parts.push(`命中日志：${log.matchedLine}`);
+  if (log?.message) parts.push(log.message);
+  if (log?.failReason) parts.push(log.failReason);
+  if (Array.isArray(log?.sampleLines) && log.sampleLines.length) {
+    parts.push(`采样日志：${log.sampleLines.slice(-3).join(' | ')}`);
+  }
+
+  return parts.filter(Boolean).join('；') || '已记录本次唤醒结果';
+}
+
+function formatRebootMessage(log) {
+  const stage = String(log?.stage || '');
+  const parts = [];
+  if (stage === 'reboot.start') parts.push('开始 ADB 重启 Speaker');
+  if (stage === 'reboot.failed') parts.push('ADB 重启失败');
+  if (stage === 'reboot.recovered') parts.push('Speaker 重启恢复');
+  if (stage === 'reboot.wait_before_retry.start') parts.push('重启恢复后开始等待再次唤醒');
+  if (stage === 'reboot.wait_before_retry.end') parts.push('重启后等待结束，准备重新唤醒');
+
+  if (Number.isFinite(Number(log?.wakeFailCount))) parts.push(`触发时连续失败：${log.wakeFailCount}`);
+  if (Number.isFinite(Number(log?.caseRebootCount))) parts.push(`本用例重启次数：${Number(log.caseRebootCount) + (stage === 'reboot.start' ? 1 : 0)}`);
+  if (Number.isFinite(Number(log?.runRebootCount))) parts.push(`本轮重启次数：${Number(log.runRebootCount) + (stage === 'reboot.start' ? 1 : 0)}`);
+  if (Number.isFinite(Number(log?.delayMs))) parts.push(`等待：${toDuration(log.delayMs)}`);
+  if (Number.isFinite(Number(log?.nextWakeRetryDelayMs))) parts.push(`重试等待：${toDuration(log.nextWakeRetryDelayMs)}`);
+  if (log?.message) parts.push(log.message);
+  if (log?.rebootResult?.message) parts.push(log.rebootResult.message);
+
+  return parts.filter(Boolean).join('；') || '已记录重启过程';
+}
+
+function buildWakeDetailSteps(logs) {
+  const detailLogs = (logs || [])
+    .filter((log) => WAKE_ATTEMPT_STAGES.has(log?.stage) || REBOOT_STAGES.has(log?.stage))
+    .sort((a, b) => getLogTimeMs(a) - getLogTimeMs(b));
+
+  return detailLogs.map((log, index) => {
+    const isReboot = REBOOT_STAGES.has(log?.stage);
+    const failed = isFailureLog(log);
+    const succeeded = isSuccessLog(log);
+    return {
+      key: `${isReboot ? 'REBOOT_DETAIL' : 'WAKE_ATTEMPT_DETAIL'}_${index}`,
+      title: isReboot ? '重启记录' : '唤醒结果',
+      status: failed ? 'failed' : (succeeded ? 'success' : 'running'),
+      startTime: log.time,
+      endTime: log.time,
+      durationMs: 0,
+      message: isReboot ? formatRebootMessage(log) : formatWakeAttemptMessage(log),
+      logs: [log],
+    };
+  });
+}
+
 function getLastWakeOutcomeLog(logs) {
   const outcomeStages = new Set([
     'attempt.success',
@@ -229,6 +313,13 @@ function createCaseRecord(testCase, logs) {
   const timeline = STEP_DEFS
     .map((step) => summarizeStep(step, matchStageLogs(logs, step.stages), testCase))
     .filter(Boolean);
+
+  const wakeDetectIndex = timeline.findIndex((step) => step.key === 'WAKE_DETECT');
+  const wakeDetailSteps = buildWakeDetailSteps(logs);
+  if (wakeDetailSteps.length) {
+    const insertIndex = wakeDetectIndex >= 0 ? wakeDetectIndex + 1 : timeline.length;
+    timeline.splice(insertIndex, 0, ...wakeDetailSteps);
+  }
 
   timeline.push({
     key: 'FINAL_RESULT',
@@ -741,13 +832,11 @@ export default function TestProcessRecord() {
         )}
       </div>
 
-      {expandedAll && (
-        <div className="space-y-4">
-          {records.map((record, index) => (
-            <RecordCard key={`${record.id}_${record.index ?? index}`} record={record} defaultExpanded={expandedAll} />
-          ))}
-        </div>
-      )}
+      <div className="space-y-4">
+        {records.map((record, index) => (
+          <RecordCard key={`${record.id}_${record.index ?? index}`} record={record} defaultExpanded={expandedAll} />
+        ))}
+      </div>
     </div>
   );
 }
