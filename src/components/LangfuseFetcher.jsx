@@ -479,6 +479,7 @@ const ENV_STYLES = {
   UAT_LOCAL: { badge: 'bg-cyan-900/50 border-cyan-600 text-cyan-300', dot: 'bg-cyan-400', active: 'ring-cyan-500' },
   TEST: { badge: 'bg-yellow-900/50 border-yellow-600 text-yellow-300', dot: 'bg-yellow-400', active: 'ring-yellow-500' },
   PROD: { badge: 'bg-red-900/50  border-red-600  text-red-300',    dot: 'bg-red-400',    active: 'ring-red-500'    },
+  PROD_LOCAL: { badge: 'bg-rose-900/50 border-rose-600 text-rose-300', dot: 'bg-rose-400', active: 'ring-rose-500' },
 };
 
 const TIME_PRESETS = [

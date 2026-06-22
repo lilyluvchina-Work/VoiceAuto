@@ -7,6 +7,7 @@ const LANGFUSE_HOSTS = {
   'uat-local': 'https://monitor-live-test-cedar.sdmc.tv',
   test: 'https://monitor-live-test-cedar.sdmc.tv',
   prod: 'https://monitor-live-test-cedar.sdmc.tv',
+  'prod-local': 'https://monitor-live-test-cedar.sdmc.tv',
 };
 
 function langfuseProxy(envSuffix) {
@@ -31,6 +32,7 @@ export default defineConfig({
       '/langfuse-api-uat-local': langfuseProxy('uat-local'),
       '/langfuse-api-uat':  langfuseProxy('uat'),
       '/langfuse-api-test': langfuseProxy('test'),
+      '/langfuse-api-prod-local': langfuseProxy('prod-local'),
       '/langfuse-api-prod': langfuseProxy('prod'),
       // TAPD API 代理（避免跨域限制）
       '/tapd-api': {

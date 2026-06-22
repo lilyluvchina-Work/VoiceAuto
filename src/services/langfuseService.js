@@ -7,26 +7,32 @@ export const ENVIRONMENTS = {
   UAT: {
     label: 'UAT',
     proxyBase: '/langfuse-api-uat',
-    publicKey: 'pk-lf-e2e66182-6508-4abf-914f-d227a678c048',
-    secretKey: 'sk-lf-6ea10ab6-2ab5-4ae8-8167-d514e2377538',
+    publicKey: 'pk-lf-824d3dc4-e23b-4981-8359-9395acc8aad0',
+    secretKey: 'sk-lf-beb47fb2-1c8d-446e-8f33-edfe22ad3a06',
   },
   UAT_LOCAL: {
     label: 'UAT-Local',
     proxyBase: '/langfuse-api-uat-local',
-    publicKey: 'pk-lf-9cd5f164-a78c-4c49-8593-74f2298c97f3',
-    secretKey: 'sk-lf-69f34a45-47a0-4cb8-a238-2cdffa3f5a97',
+    publicKey: 'pk-lf-91d665c6-bb8c-4645-99e0-76f3edd1b3a3',
+    secretKey: 'sk-lf-87f5dfc2-9fd6-4721-9720-d1819b2d158c',
   },
   TEST: {
     label: 'TEST',
     proxyBase: '/langfuse-api-test',
-    publicKey: 'pk-lf-9ee9be4a-744d-4d4f-a15e-e2118061f297',
-    secretKey: 'sk-lf-2403e91a-11ed-45d3-b76a-550a8090477f',
+    publicKey: 'pk-lf-420f17d1-b097-46c6-bb69-6f1625e66d3f',
+    secretKey: 'sk-lf-5d37c9b6-60f3-4058-9ffd-47090d1ae706',
   },
   PROD: {
     label: 'PROD',
     proxyBase: '/langfuse-api-prod',
-    publicKey: 'pk-lf-452ce6be-7eee-4543-a2ad-0f611357c279',
-    secretKey: 'sk-lf-b71813e3-75df-4624-87bc-011aa4a7bcdc',
+    publicKey: 'pk-lf-c9b5bc74-2b57-4a79-95d8-353b47c96857',
+    secretKey: 'sk-lf-db191bf7-c073-4300-8a7c-cb775630e4e4',
+  },
+  PROD_LOCAL: {
+    label: 'Prod-Local',
+    proxyBase: '/langfuse-api-prod',
+    publicKey: 'pk-lf-03ec8378-b8ec-4bd2-8777-e0735bbf4011',
+    secretKey: 'sk-lf-edac15c0-589b-4236-928f-1f4344875259',
   },
 };
 
@@ -137,7 +143,7 @@ export class FetchController {
 
 /**
  * 分页拉取所有数据（支持控制器）
- * @param {string} envKey  - 环境 key: 'UAT' | 'TEST' | 'PROD'
+ * @param {string} envKey  - 环境 key: 'UAT' | 'UAT_LOCAL' | 'TEST' | 'PROD' | 'PROD_LOCAL'
  */
 async function fetchAllPages(envKey, endpoint, params, onProgress, controller) {
   const env = ENVIRONMENTS[envKey];
