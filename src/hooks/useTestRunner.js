@@ -6,6 +6,7 @@ import { useTest, actions } from '../stores/testStore';
 import ttsService from '../services/ttsService.jsx';
 import adbWakeService from '../services/adbWakeService';
 import responseMonitorService from '../services/responseMonitorService';
+import { notifyDingTalk } from '../services/dingTalkService';
 import { playAudioItem } from '../utils/audioHelpers';
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -267,6 +268,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
       autonomousResponse: testOptions.autonomousResponse || {},
       queueLength: queue.length
     });
+    notifyDingTalk('TEST_STARTED', {
+      state,
+      runId: reportRunId,
+      details: [
+        `本轮计划执行 ${queue.length} 条测试音频`,
+        `测试模块：${testOptions.selectedTestModule || 'all'}`,
+        `循环次数：${testOptions.loopCount || 1}`,
+      ],
+    });
 
     const ensureSpeakerWakeup = async (item, cursor) => {
       const config = testOptions.autonomousWake || {};
@@ -470,6 +480,16 @@ export default function useTestRunner({ onTestComplete } = {}) {
             runRebootCount: rebootCountRef.current,
             failReason
           });
+          notifyDingTalk('WAKE_CONSECUTIVE_FAILED', {
+            state,
+            runId: reportRunIdRef.current,
+            includeVoiceInfo: true,
+            details: [
+              `用例ID：${resolveAudioCaseId(item.audio, item.listIndex)}`,
+              `目标文本：${item.audio.text || '/'}`,
+              wakeFailureMessage,
+            ],
+          });
           const error = new Error(wakeFailureMessage);
           error.stage = 'WAKE_FAILED';
           throw error;
@@ -477,6 +497,17 @@ export default function useTestRunner({ onTestComplete } = {}) {
 
         dispatch(actions.setPlaybackState({ currentType: 'reboot' }));
         setCurrentAudioText(`唤醒失败 ${wakeFailCountRef.current}/${failureThreshold}，正在重启 Speaker`);
+        notifyDingTalk('WAKE_CONSECUTIVE_FAILED', {
+          state,
+          runId: reportRunIdRef.current,
+          includeVoiceInfo: true,
+          details: [
+            `用例ID：${resolveAudioCaseId(item.audio, item.listIndex)}`,
+            `目标文本：${item.audio.text || '/'}`,
+            `连续唤醒失败 ${wakeFailCountRef.current}/${failureThreshold}，即将尝试重启 Speaker`,
+            `失败原因：${failReason || '/'}`,
+          ],
+        });
         logWake('reboot.start', {
           cursor,
           wakeFailCount: wakeFailCountRef.current,
@@ -506,6 +537,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
             cursor,
             message: rebootFailReason
           });
+          notifyDingTalk('SPEAKER_REBOOT_FAILED', {
+            state,
+            runId: reportRunIdRef.current,
+            details: [
+              `用例ID：${resolveAudioCaseId(item.audio, item.listIndex)}`,
+              `目标文本：${item.audio.text || '/'}`,
+              rebootFailReason,
+            ],
+          });
           const error = new Error(rebootFailReason);
           error.stage = 'WAKE_FAILED';
           throw error;
@@ -528,6 +568,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
             cursor,
             rebootResult
           });
+          notifyDingTalk('SPEAKER_REBOOT_FAILED', {
+            state,
+            runId: reportRunIdRef.current,
+            details: [
+              `用例ID：${resolveAudioCaseId(item.audio, item.listIndex)}`,
+              `目标文本：${item.audio.text || '/'}`,
+              rebootFailReason,
+            ],
+          });
           const error = new Error(rebootFailReason);
           error.stage = 'WAKE_FAILED';
           throw error;
@@ -538,6 +587,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
           cursor,
           rebootResult,
           nextWakeRetryDelayMs: POST_REBOOT_WAKE_RETRY_DELAY_MS
+        });
+        notifyDingTalk('SPEAKER_REBOOT_SUCCESS', {
+          state,
+          runId: reportRunIdRef.current,
+          details: [
+            `用例ID：${resolveAudioCaseId(item.audio, item.listIndex)}`,
+            `目标文本：${item.audio.text || '/'}`,
+            lastRebootResult,
+          ],
         });
         dispatch(actions.setPlaybackState({ currentType: 'reboot-wait' }));
         setCurrentAudioText('Speaker 已重启恢复，等待 2 分钟后重新唤醒当前用例');
@@ -561,6 +619,9 @@ export default function useTestRunner({ onTestComplete } = {}) {
     startTimeRef.current = Date.now();
     firstTestAudioTimeRef.current = null;
     lastTestAudioTimeRef.current = null;
+    let completedCases = 0;
+    let passedCases = 0;
+    let failedCases = 0;
 
     try {
       for (let cursor = 0; cursor < queue.length; cursor++) {
@@ -729,6 +790,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
             targetText: item.audio.text,
             message: failReason,
             testAudioStarted
+          });
+          notifyDingTalk('TEST_AUDIO_PLAY_FAILED', {
+            state,
+            runId: reportRunIdRef.current,
+            details: [
+              `用例ID：${caseId}`,
+              `目标文本：${item.audio.text || '/'}`,
+              `失败原因：${failReason}`,
+            ],
           });
           ttsService.stopAudio();
           throw createStageError('TEST_AUDIO_FAILED', failReason);
@@ -944,6 +1014,17 @@ export default function useTestRunner({ onTestComplete } = {}) {
             failReason = failReason
               || responseResult?.responseFailReason
               || 'Speaker 播报音频收录失败';
+            notifyDingTalk('SPEAKER_RESPONSE_NOT_DETECTED', {
+              state,
+              runId: reportRunIdRef.current,
+              includeVoiceInfo: true,
+              details: [
+                `用例ID：${caseId}`,
+                `目标文本：${item.audio.text || '/'}`,
+                `失败阶段：${failStage}`,
+                `失败原因：${failReason}`,
+              ],
+            });
           }
         } else {
           responseChainPassed = autonomousResponseEnabled ? false : null;
@@ -977,6 +1058,26 @@ export default function useTestRunner({ onTestComplete } = {}) {
         if (!finalSuccess && success) {
           success = false;
           failReason = failReason || '播放唤醒音频、监听唤醒结果、播放测试音频、监听 ASR 输入或 Speaker 播报音频收录未全部成功';
+        }
+        if (!finalSuccess && autonomousInputEnabled && inputChainPassed !== true) {
+          notifyDingTalk('STT_FAILED', {
+            state,
+            runId: reportRunIdRef.current,
+            includeVoiceInfo: true,
+            details: [
+              `用例ID：${caseId}`,
+              `目标文本：${item.audio.text || '/'}`,
+              `ASR状态：${asrResult?.status || asrMatchResult || '/'}`,
+              `识别文本：${asrResult?.actualAsrText || '/'}`,
+              `失败原因：${failReason || asrResult?.message || '识别结果为空或未通过校验'}`,
+            ],
+          });
+        }
+        completedCases += 1;
+        if (finalSuccess) {
+          passedCases += 1;
+        } else {
+          failedCases += 1;
         }
 
         // 记录结果
@@ -1146,6 +1247,16 @@ export default function useTestRunner({ onTestComplete } = {}) {
       if (testOptions.debugSequence) {
         console.log(`[VoiceAuto][SEQ] complete | total=${queue.length}`);
       }
+      await notifyDingTalk('TEST_COMPLETED', {
+        state,
+        runId: reportRunIdRef.current,
+        details: [
+          `执行总数：${queue.length}`,
+          `完成数量：${completedCases}`,
+          `通过数量：${passedCases}`,
+          `失败数量：${failedCases}`,
+        ],
+      });
 
       onTestComplete?.();
     } catch (error) {
@@ -1153,6 +1264,14 @@ export default function useTestRunner({ onTestComplete } = {}) {
       isPlayingRef.current = false;
       isPausedRef.current = false;
       if (error?.stage === 'WAKE_FAILED') {
+        notifyDingTalk('TEST_INTERRUPTED', {
+          state,
+          runId: reportRunIdRef.current,
+          details: [
+            `中断阶段：音响唤醒`,
+            `错误信息：${error?.message || '测试异常中断'}`,
+          ],
+        });
         dispatch(actions.setPlaybackState({
           isPlaying: false,
           isPaused: false,
@@ -1160,6 +1279,14 @@ export default function useTestRunner({ onTestComplete } = {}) {
           currentType: 'wake-failed'
         }));
       } else if (error?.stage === 'TEST_AUDIO_FAILED') {
+        notifyDingTalk('TEST_INTERRUPTED', {
+          state,
+          runId: reportRunIdRef.current,
+          details: [
+            `中断阶段：测试音频播放`,
+            `错误信息：${error?.message || '测试异常中断'}`,
+          ],
+        });
         dispatch(actions.setPlaybackState({
           isPlaying: false,
           isPaused: false,
@@ -1167,6 +1294,14 @@ export default function useTestRunner({ onTestComplete } = {}) {
           currentType: 'test-failed'
         }));
       } else {
+        notifyDingTalk('TEST_INTERRUPTED', {
+          state,
+          runId: reportRunIdRef.current,
+          details: [
+            `中断阶段：测试任务执行`,
+            `错误信息：${error?.message || '测试异常中断'}`,
+          ],
+        });
         alert(error?.message || '测试异常中断');
         dispatch(actions.stopPlayback());
       }
@@ -1200,7 +1335,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
     isPausedRef.current = true;
     ttsService.stopAudio();
     dispatch(actions.pausePlayback());
-  }, [dispatch]);
+    notifyDingTalk('TEST_PAUSED', {
+      state,
+      runId: reportRunIdRef.current,
+      details: [
+        `当前进度：${playback.currentIndex + 1}/${totalCases}`,
+        `当前音频：${currentAudioText || '/'}`,
+      ],
+    });
+  }, [currentAudioText, dispatch, playback.currentIndex, state, totalCases]);
 
   const resume = useCallback(() => {
     isPausedRef.current = false;
@@ -1218,7 +1361,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
     ttsService.stopAudio();
     dispatch(actions.stopPlayback());
     setCurrentAudioText('');
-  }, [dispatch]);
+    notifyDingTalk('TEST_INTERRUPTED', {
+      state,
+      runId: reportRunIdRef.current,
+      details: [
+        '用户手动停止测试流程',
+        `最后进度：${playback.currentIndex + 1}/${totalCases}`,
+      ],
+    });
+  }, [dispatch, playback.currentIndex, state, totalCases]);
 
   const reset = useCallback(() => {
     runIdRef.current += 1;
@@ -1229,7 +1380,12 @@ export default function useTestRunner({ onTestComplete } = {}) {
     lastTestAudioTimeRef.current = null;
     dispatch(actions.resetTest());
     setCurrentAudioText('');
-  }, [dispatch]);
+    notifyDingTalk('TEST_RESET', {
+      state,
+      runId: reportRunIdRef.current,
+      details: ['用户重置测试流程，当前执行状态已清空'],
+    });
+  }, [dispatch, state]);
 
   const progressPercent = playableAudios.length > 0
     ? ((playback.currentIndex + 1) / Math.max(1, totalCases)) * 100

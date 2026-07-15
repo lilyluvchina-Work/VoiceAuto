@@ -9,6 +9,7 @@ import { ENVIRONMENTS } from '../modules/langfuse/services/langfuseService';
 import responseMonitorService from '../services/responseMonitorService';
 import adbWakeService from '../services/adbWakeService';
 import ttsService from '../services/ttsService.jsx';
+import { notifyDingTalk } from '../services/dingTalkService';
 
 export default function PlaybackConsole({ onTestComplete }) {
   const { state, dispatch } = useTest();
@@ -196,9 +197,33 @@ export default function PlaybackConsole({ onTestComplete }) {
       if (result.selectedDeviceId && result.selectedDeviceId !== autonomousWake.deviceId) {
         handleAutonomousWakeChange({ deviceId: result.selectedDeviceId });
       }
+      const checks = result.checks || {};
+      notifyDingTalk(result.success ? 'SPEAKER_LISTENER_HEALTH_CHECK' : 'SPEAKER_LISTENER_HEALTH_FAILED', {
+        state,
+        details: [
+          `自检结果：${result.success ? '正常' : '异常'}`,
+          `ADB：${checks.adbConnected ? '正常' : '异常/未检查'}`,
+          `Speaker：${checks.speakerOnline ? '在线' : '离线/未检查'}`,
+          `logcat：${checks.logcatReadable ? '可读' : '不可读/未检查'}`,
+          `boot_completed：${checks.bootCompleted ? '1' : '/'}`,
+          `当前设备：${result.selectedDeviceId || autonomousWake.deviceId || '/'}`,
+          `ADB Bridge：${autonomousWake.bridgeUrl || '/'}`,
+          `检查时间：${result.checkedAtText || '/'}`,
+          `结果说明：${result.message || (result.success ? '监听链路正常' : '监听链路异常')}`,
+        ],
+      });
     } catch (err) {
       setListenerHealth(null);
       setListenerHealthStatus(err?.message || 'Speaker 监听链路自检失败');
+      notifyDingTalk('SPEAKER_LISTENER_HEALTH_FAILED', {
+        state,
+        details: [
+          '自检结果：异常',
+          `ADB Bridge：${autonomousWake.bridgeUrl || '/'}`,
+          `当前设备：${autonomousWake.deviceId || '/'}`,
+          `失败原因：${err?.message || 'Speaker 监听链路自检失败'}`,
+        ],
+      });
     }
   };
 

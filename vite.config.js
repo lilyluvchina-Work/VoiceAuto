@@ -41,6 +41,12 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/tapd-api/, ''),
         secure: false,
       },
+      '/dingtalk-robot': {
+        target: 'https://oapi.dingtalk.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/dingtalk-robot/, '/robot/send'),
+        secure: false,
+      },
     }
   }
 })

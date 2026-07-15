@@ -7,6 +7,7 @@ import { fetchTraces, fetchObservations, FetchController, ENVIRONMENTS } from '.
 import { exportToExcel, exportSessionExcel, buildSessionRows, downloadJSON } from '../modules/langfuse/utils/excelExporter';
 import { createTapdBug } from '../modules/tapd/services/tapdService';
 import { useTest, actions } from '../stores/testStore';
+import { notifyDingTalk } from '../services/dingTalkService';
 import {
   SUMMARY_REPORT_EVENT,
   SUMMARY_REPORT_STORAGE_KEY,
@@ -788,6 +789,19 @@ export default function LangfuseFetcher() {
         setError('检测到错误信息，但未提交 TAPD Bug：请先在 TAPD 导入向导中完成 API 配置并选择项目。');
       }
 
+      await notifyDingTalk('LANGFUSE_FETCH_SUCCEEDED', {
+        state,
+        envKey: fetchEnvKey,
+        runId: state.report?.runId,
+        details: [
+          `日志环境：${ENVIRONMENTS[fetchEnvKey]?.label || fetchEnvKey}`,
+          `时间范围：${range.fromDate} ${range.fromTime} -> ${range.toDate} ${range.toTime}`,
+          `Traces：${result.traces.length}`,
+          `Observations：${result.observations.length}`,
+          `匹配 Session：${result.sessionIds.length}`,
+        ],
+      });
+
       if (autoExportSession) {
         exportSessionExcel(
           result.traces,
@@ -797,10 +811,21 @@ export default function LangfuseFetcher() {
       }
     } catch (err) {
       if (controller.current?.aborted) return;
-      setError(err.message || '获取失败，请检查网络或时间范围');
+      const message = err.message || '获取失败，请检查网络或时间范围';
+      setError(message);
       setStatus('error');
+      notifyDingTalk('LANGFUSE_FETCH_FAILED', {
+        state,
+        envKey: fetchEnvKey,
+        runId: state.report?.runId,
+        details: [
+          `日志环境：${ENVIRONMENTS[fetchEnvKey]?.label || fetchEnvKey}`,
+          `时间范围：${range.fromDate} ${range.fromTime} -> ${range.toDate} ${range.toTime}`,
+          `失败原因：${message}`,
+        ],
+      });
     }
-  }, [envKey, fromDate, fromTime, toDate, toTime, state.testAudios]);
+  }, [envKey, fromDate, fromTime, toDate, toTime, state]);
 
   useEffect(() => {
     const {
