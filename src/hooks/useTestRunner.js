@@ -8,6 +8,10 @@ import adbWakeService from '../services/adbWakeService';
 import responseMonitorService from '../services/responseMonitorService';
 import { notifyDingTalk } from '../services/dingTalkService';
 import { playAudioItem } from '../utils/audioHelpers';
+import {
+  resolveTestCaseDirectory,
+  sortTestCasesByDirectoryOrder,
+} from '../utils/testCaseOrdering';
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const POST_REBOOT_WAKE_RETRY_DELAY_MS = 120000;
@@ -218,13 +222,13 @@ export default function useTestRunner({ onTestComplete } = {}) {
   const { state, dispatch } = useTest();
   const { wakeWord, testAudios, playback, defaultVoiceConfig, testOptions } = state;
 
-  const playableAudios = testAudios.filter((audio) => {
+  const playableAudios = sortTestCasesByDirectoryOrder(testAudios.filter((audio) => {
     const generated = audio.audioStatus ? audio.audioStatus === 'generated' : true;
     const moduleMatched = (testOptions.selectedTestModule || 'all') === 'all'
       ? true
-      : (audio.module || '未分类') === testOptions.selectedTestModule;
+      : resolveTestCaseDirectory(audio) === testOptions.selectedTestModule;
     return generated && moduleMatched;
-  });
+  }));
 
   const totalCases = playableAudios.length * (testOptions.loopCount || 1);
 
@@ -1316,6 +1320,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
     onTestComplete,
     testOptions.loopCount,
     testOptions.debugSequence,
+    testOptions.dingTalkEnabled,
     testOptions.selectedTestModule,
     testOptions.autonomousWake,
     testOptions.autonomousInput,

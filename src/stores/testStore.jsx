@@ -72,6 +72,7 @@ const initialState = {
   testOptions: {
     loopCount: 1,
     debugSequence: false,
+    dingTalkEnabled: false,
     autoFetchLangfuseLogs: true,
     selectedLangfuseEnv: 'UAT',
     selectedTestModule: 'all',
@@ -193,6 +194,7 @@ const ActionTypes = {
   REORDER_TEST_AUDIOS: 'REORDER_TEST_AUDIOS',
   SET_LOOP_COUNT: 'SET_LOOP_COUNT',
   SET_DEBUG_SEQUENCE: 'SET_DEBUG_SEQUENCE',
+  SET_DINGTALK_ENABLED: 'SET_DINGTALK_ENABLED',
   SET_AUTO_FETCH_LANGFUSE_LOGS: 'SET_AUTO_FETCH_LANGFUSE_LOGS',
   SET_SELECTED_LANGFUSE_ENV: 'SET_SELECTED_LANGFUSE_ENV',
   SET_SELECTED_TEST_MODULE: 'SET_SELECTED_TEST_MODULE',
@@ -321,6 +323,15 @@ function testReducer(state, action) {
         testOptions: {
           ...state.testOptions,
           debugSequence: Boolean(action.payload)
+        }
+      };
+
+    case ActionTypes.SET_DINGTALK_ENABLED:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          dingTalkEnabled: Boolean(action.payload)
         }
       };
 
@@ -549,6 +560,7 @@ export function TestProvider({ children }) {
             ...init.testOptions,
             loopCount: Math.max(1, Math.min(99, parsed.testOptions?.loopCount || init.testOptions.loopCount)),
             debugSequence: Boolean(parsed.testOptions?.debugSequence),
+            dingTalkEnabled: Boolean(parsed.testOptions?.dingTalkEnabled),
             autoFetchLangfuseLogs: parsed.testOptions?.autoFetchLangfuseLogs !== false,
             selectedLangfuseEnv: parsed.testOptions?.selectedLangfuseEnv || 'UAT',
             selectedTestModule: parsed.testOptions?.selectedTestModule || 'all',
@@ -834,6 +846,11 @@ export const actions = {
 
   setDebugSequence: (enabled) => ({
     type: ActionTypes.SET_DEBUG_SEQUENCE,
+    payload: enabled
+  }),
+
+  setDingTalkEnabled: (enabled) => ({
+    type: ActionTypes.SET_DINGTALK_ENABLED,
     payload: enabled
   }),
 

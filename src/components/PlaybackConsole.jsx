@@ -10,12 +10,14 @@ import responseMonitorService from '../services/responseMonitorService';
 import adbWakeService from '../services/adbWakeService';
 import ttsService from '../services/ttsService.jsx';
 import { notifyDingTalk } from '../services/dingTalkService';
+import { resolveTestCaseDirectory } from '../utils/testCaseOrdering';
 
 export default function PlaybackConsole({ onTestComplete }) {
   const { state, dispatch } = useTest();
   const { wakeWord, defaultVoiceConfig } = state;
   const loopCount = state.testOptions?.loopCount || 1;
   const debugSequence = Boolean(state.testOptions?.debugSequence);
+  const dingTalkEnabled = Boolean(state.testOptions?.dingTalkEnabled);
   const autoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
   const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || 'UAT';
   const selectedTestModule = state.testOptions?.selectedTestModule || 'all';
@@ -34,7 +36,7 @@ export default function PlaybackConsole({ onTestComplete }) {
   const [wakePreviewPlaying, setWakePreviewPlaying] = useState(false);
 
   const moduleOptions = React.useMemo(() => {
-    const modules = Array.from(new Set((state.testAudios || []).map((audio) => audio.module || '未分类')));
+    const modules = Array.from(new Set((state.testAudios || []).map((audio) => resolveTestCaseDirectory(audio))));
     return ['all', ...modules];
   }, [state.testAudios]);
 
@@ -60,6 +62,10 @@ export default function PlaybackConsole({ onTestComplete }) {
 
   const handleDebugSequenceChange = (e) => {
     dispatch(actions.setDebugSequence(e.target.checked));
+  };
+
+  const handleDingTalkEnabledChange = (e) => {
+    dispatch(actions.setDingTalkEnabled(e.target.checked));
   };
 
   const handleAutoFetchLangfuseLogsChange = (e) => {
@@ -632,6 +638,27 @@ export default function PlaybackConsole({ onTestComplete }) {
           />
           输出播放序列调试日志（控制台）
         </label>
+        <div className="mt-3 p-3 rounded-lg border border-indigo-500/30 bg-indigo-500/10">
+          <div className="flex items-center justify-between gap-3">
+            <label className="inline-flex items-center gap-2 text-sm text-gray-200 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={dingTalkEnabled}
+                onChange={handleDingTalkEnabledChange}
+                disabled={isLocked}
+                className="w-4 h-4 rounded bg-gray-800 border-gray-600 disabled:opacity-50"
+              />
+              发送钉钉群消息
+            </label>
+            <span className={`text-xs px-2 py-1 rounded-full ${
+              dingTalkEnabled
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                : 'bg-gray-700 text-gray-300 border border-gray-600'
+            }`}>
+              {dingTalkEnabled ? '已开启：测试节点发送通知' : '已关闭：不发送群消息'}
+            </span>
+          </div>
+        </div>
         <div className="mt-3 p-3 rounded-lg border border-primary/40 bg-primary/10">
           <div className="flex items-center justify-between gap-3">
             <label className="inline-flex items-center gap-2 text-sm text-gray-200 cursor-pointer select-none">

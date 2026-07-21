@@ -8,6 +8,19 @@ const BASE = '/tapd-api';
 const BATCH_SIZE = 50; // 每批查询用例数
 const TARGET_AGENT_ALIASES = ['目标Agent', '目标agent', '预期Agent', '期望Agent', '目标智能体', 'Agent', 'target_agent', 'TargetAgent', 'Target Agent'];
 const TARGET_TEXT_ALIASES = ['目标文本', '目标语句', '测试文本', '输入文本', 'target_text', 'TargetText', 'Target Text'];
+const SORT_FIELD_CANDIDATES = [
+  'sort',
+  'order',
+  'position',
+  'sequence',
+  'seq',
+  'rank',
+  'display_order',
+  'case_order',
+  'testcase_order',
+  'tcase_order',
+  'tcase_sort',
+];
 
 function normalizeInput(value) {
   return String(value ?? '').trim();
@@ -250,6 +263,28 @@ function pickReadableText(value) {
       if (text) return text;
     }
   }
+  return '';
+}
+
+function pickSortValue(source) {
+  if (!source || typeof source !== 'object') return '';
+
+  for (const key of SORT_FIELD_CANDIDATES) {
+    const directValue = source[key];
+    if (directValue !== undefined && directValue !== null && String(directValue).trim() !== '') {
+      return String(directValue).trim();
+    }
+  }
+
+  for (const [key, value] of Object.entries(source)) {
+    if (/(^|_)(sort|order|position|sequence|seq|rank)(_|$)/i.test(key)
+      && value !== undefined
+      && value !== null
+      && String(value).trim() !== '') {
+      return String(value).trim();
+    }
+  }
+
   return '';
 }
 
@@ -590,6 +625,7 @@ export async function fetchPlanCases(workspaceId, testPlanId, apiUser, apiPasswo
       if (!existing) {
         caseMap.set(caseId, {
           caseId,
+          caseSort: pickSortValue(rel) || pickSortValue(item),
           planDirectoryTitle: '',
           diagnostics: buildPlanDirectoryDiagnostics(item, rel),
         });
@@ -675,6 +711,7 @@ export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPasswor
     'category_id',
     'category_name',
     'module_name',
+    ...SORT_FIELD_CANDIDATES,
     ...extraFields,
   ])).join(',');
 
@@ -734,6 +771,7 @@ export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPasswor
         tapdPlanDirectory: caseDirectoryName || '',
         categoryName: caseDirectoryName || '',
         categoryPath: caseDirectoryPath || '',
+        caseSort: pickSortValue(c) || pickSortValue(item),
       });
     }
   }

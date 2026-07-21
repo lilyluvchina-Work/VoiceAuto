@@ -383,6 +383,8 @@ async function buildSendUrl(config) {
 
 export async function sendDingTalkNotification(type, context = {}) {
   const config = getRobotConfig();
+  const optionEnabled = Boolean(context?.state?.testOptions?.dingTalkEnabled || context?.dingTalkEnabled);
+  if (!optionEnabled) return { skipped: true, reason: 'option-disabled' };
   if (!config.enabled) return { skipped: true, reason: 'disabled' };
   if (!config.webhook && !config.accessToken) return { skipped: true, reason: 'missing-config' };
 

@@ -110,6 +110,8 @@ export function tapdCaseToTestAudios(tapdCase, meta, defaultVoiceConfig, generat
     caseDirectory
   );
   const targetAgent = stripHtml(tapdCase.targetAgent) || parsedTargetAgent;
+  const caseSort = String(meta?.planCase?.caseSort || tapdCase.caseSort || '').trim();
+  const importIndex = Number.isFinite(Number(meta?.importIndex)) ? Number(meta.importIndex) : null;
   const targetAgentSource = tapdCase.targetAgent
     ? (tapdCase.targetAgentField || 'TAPD自定义字段')
     : (targetAgent ? '步骤/预期结果解析' : '');
@@ -139,6 +141,10 @@ export function tapdCaseToTestAudios(tapdCase, meta, defaultVoiceConfig, generat
         tapdCategoryId: categoryId,
         tapdCategoryName: categoryName,
         tapdCategoryPath: categoryPath,
+        caseSort,
+        tapdCaseSort: caseSort,
+        importIndex: importIndex === null ? undefined : importIndex,
+        tapdImportIndex: importIndex === null ? undefined : importIndex,
         // TAPD 元数据
         tapdCaseId: tapdCase.id,
         tapdTestPlanId: meta.testPlanId,

@@ -372,6 +372,7 @@ export default function TapdImportWizard({ onClose }) {
       setImportProgress('正在获取用例清单...');
       const planCases = await fetchPlanCases(project.workspaceId, plan.testPlanId, cfg.apiUser, cfg.apiPassword);
       const caseIds = planCases.map((item) => item.caseId);
+      const planCaseById = new Map(planCases.map((item, index) => [String(item.caseId), { ...item, importIndex: index }]));
 
       if (cfg?.debugDirectoryMapping) {
         console.group('[TAPD Directory Debug] relation payload diagnostics');
@@ -405,8 +406,13 @@ export default function TapdImportWizard({ onClose }) {
       currentStage = '解析并导入';
       setImportStage(currentStage);
       setImportProgress('正在解析并导入...');
-      for (const tapdCase of cases) {
-        const rows = tapdCaseToTestAudios(tapdCase, meta, state.defaultVoiceConfig, generateId);
+      for (const [caseIndex, tapdCase] of cases.entries()) {
+        const planCase = planCaseById.get(String(tapdCase.id));
+        const rows = tapdCaseToTestAudios(tapdCase, {
+          ...meta,
+          planCase,
+          importIndex: planCase?.importIndex ?? caseIndex,
+        }, state.defaultVoiceConfig, generateId);
         for (const row of rows) {
           if (row.skipped) {
             result.skipped++;

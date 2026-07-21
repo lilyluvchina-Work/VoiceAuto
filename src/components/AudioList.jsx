@@ -8,47 +8,30 @@ import { PAGE_SIZE } from '../constants';
 import useAudioPlayer from '../hooks/useAudioPlayer';
 import usePagination from '../hooks/usePagination';
 import useSelection from '../hooks/useSelection';
+import {
+  resolveTestCaseDirectory,
+  sortTestCasesByDirectoryOrder,
+} from '../utils/testCaseOrdering';
 
 export default function AudioList() {
   const { state, dispatch } = useTest();
   const { testAudios, playback } = state;
   const [selectedModule, setSelectedModule] = React.useState('all');
 
-  const getDirectoryLabel = React.useCallback((audio) => {
-    const rawPlanDirectory = String(audio?.tapdPlanDirectory || '').trim();
-    const planDirectoryLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawPlanDirectory);
-    const planDirectory = planDirectoryLooksLikeId ? '' : rawPlanDirectory;
-
-    const rawName = String(audio?.tapdCategoryName || '').trim();
-    const nameLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawName);
-    const name = nameLooksLikeId ? '' : rawName;
-    const rawCaseDirectory = String(audio?.caseDirectory || '').trim();
-    const caseDirectoryLooksLikeFallbackId = /^目录-\d+$/.test(rawCaseDirectory);
-    const caseDirectory = caseDirectoryLooksLikeFallbackId ? '' : rawCaseDirectory;
-
-    const rawModuleName = String(audio?.module || '').trim();
-    const moduleLooksLikeFallbackId = /^目录-\d+$/.test(rawModuleName);
-    const moduleName = moduleLooksLikeFallbackId ? '' : rawModuleName;
-    const rawPath = String(audio?.tapdCategoryPath || '').trim();
-
-    const pathLooksLikeId = /^[\d\s,|\-_/]+$/.test(rawPath);
-    const readablePath = rawPath && !pathLooksLikeId ? rawPath : '';
-
-    return planDirectory || name || caseDirectory || readablePath || moduleName || '未分类目录';
-  }, []);
-
   const generatedAudios = React.useMemo(() => {
-    return testAudios.filter((audio) => (audio.audioStatus ? audio.audioStatus === 'generated' : true));
+    return sortTestCasesByDirectoryOrder(
+      testAudios.filter((audio) => (audio.audioStatus ? audio.audioStatus === 'generated' : true))
+    );
   }, [testAudios]);
 
   const moduleOptions = React.useMemo(() => {
-    return ['all', ...Array.from(new Set(generatedAudios.map((audio) => getDirectoryLabel(audio))))];
-  }, [generatedAudios, getDirectoryLabel]);
+    return ['all', ...Array.from(new Set(generatedAudios.map((audio) => resolveTestCaseDirectory(audio))))];
+  }, [generatedAudios]);
 
   const filteredAudios = React.useMemo(() => {
     if (selectedModule === 'all') return generatedAudios;
-    return generatedAudios.filter((audio) => getDirectoryLabel(audio) === selectedModule);
-  }, [generatedAudios, selectedModule, getDirectoryLabel]);
+    return sortTestCasesByDirectoryOrder(generatedAudios, { directory: selectedModule });
+  }, [generatedAudios, selectedModule]);
 
   const currentPlayingTestId = playback.currentType === 'test' ? playback.currentAudioId : null;
 
@@ -79,7 +62,19 @@ export default function AudioList() {
     }
 
     const targetId = filteredAudios[targetVisibleIndex].id;
-    const nextAudios = [...testAudios];
+    const nextFilteredAudios = [...filteredAudios];
+    const [movedVisible] = nextFilteredAudios.splice(visibleIndex, 1);
+    nextFilteredAudios.splice(targetVisibleIndex, 0, movedVisible);
+    const orderById = new Map(nextFilteredAudios.map((audio, index) => [audio.id, index]));
+    const nextAudios = testAudios.map((audio) => (
+      orderById.has(audio.id)
+        ? {
+            ...audio,
+            importIndex: orderById.get(audio.id),
+            tapdImportIndex: orderById.get(audio.id),
+          }
+        : audio
+    ));
     const sourceIndex = nextAudios.findIndex((audio) => audio.id === id);
     const targetIndex = nextAudios.findIndex((audio) => audio.id === targetId);
     if (sourceIndex < 0 || targetIndex < 0) {
@@ -165,7 +160,7 @@ export default function AudioList() {
                   const filteredIndex = pageStart + idx;
                   const isPlaying = playingId === audio.id;
                   const isRunnerPlaying = currentPlayingTestId === audio.id;
-                  const audioDirectory = getDirectoryLabel(audio);
+                  const audioDirectory = resolveTestCaseDirectory(audio);
                   const canMoveUp = filteredIndex > 0;
                   const canMoveDown = filteredIndex < filteredAudios.length - 1;
 
