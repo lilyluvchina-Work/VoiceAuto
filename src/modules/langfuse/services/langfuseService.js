@@ -2,42 +2,53 @@
  * Langfuse API 服务
  * 通过 Vite 代理 /langfuse-api-{env} → 对应环境的 Langfuse 服务器
  */
+import { getLangfuseEnvironmentMap } from '../../config/secureConfigStore.js';
 
-export const ENVIRONMENTS = {
-  UAT: {
-    label: 'UAT',
-    proxyBase: '/langfuse-api-uat',
-    publicKey: 'pk-lf-824d3dc4-e23b-4981-8359-9395acc8aad0',
-    secretKey: 'sk-lf-beb47fb2-1c8d-446e-8f33-edfe22ad3a06',
-  },
-  UAT_LOCAL: {
-    label: 'UAT-Local',
-    proxyBase: '/langfuse-api-uat-local',
-    publicKey: 'pk-lf-91d665c6-bb8c-4645-99e0-76f3edd1b3a3',
-    secretKey: 'sk-lf-87f5dfc2-9fd6-4721-9720-d1819b2d158c',
-  },
-  TEST: {
-    label: 'TEST',
-    proxyBase: '/langfuse-api-test',
-    publicKey: 'pk-lf-420f17d1-b097-46c6-bb69-6f1625e66d3f',
-    secretKey: 'sk-lf-5d37c9b6-60f3-4058-9ffd-47090d1ae706',
-  },
-  PROD: {
-    label: 'PROD',
-    proxyBase: '/langfuse-api-prod',
-    publicKey: 'pk-lf-c9b5bc74-2b57-4a79-95d8-353b47c96857',
-    secretKey: 'sk-lf-db191bf7-c073-4300-8a7c-cb775630e4e4',
-  },
-  PROD_LOCAL: {
-    label: 'Prod-Local',
-    proxyBase: '/langfuse-api-prod',
-    publicKey: 'pk-lf-03ec8378-b8ec-4bd2-8777-e0735bbf4011',
-    secretKey: 'sk-lf-edac15c0-589b-4236-928f-1f4344875259',
-  },
-};
+export const LANGFUSE_ENVIRONMENTS_UPDATED_EVENT = 'voiceauto:langfuse-environments-updated';
+export const ENVIRONMENTS = {};
+
+function replaceEnvironmentMap(nextMap) {
+  Object.keys(ENVIRONMENTS).forEach((key) => {
+    delete ENVIRONMENTS[key];
+  });
+  Object.assign(ENVIRONMENTS, nextMap);
+  return ENVIRONMENTS;
+}
+
+export function refreshLangfuseEnvironments({ notify = true } = {}) {
+  const refreshed = replaceEnvironmentMap(getLangfuseEnvironmentMap());
+  if (notify && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(LANGFUSE_ENVIRONMENTS_UPDATED_EVENT, {
+      detail: { environments: refreshed },
+    }));
+  }
+  return refreshed;
+}
+
+refreshLangfuseEnvironments({ notify: false });
+
+export function getLangfuseEnvironmentEntries() {
+  return Object.entries(ENVIRONMENTS).filter(([, environment]) => environment?.enabled !== false);
+}
+
+export function getDefaultLangfuseEnvironmentKey() {
+  return getLangfuseEnvironmentEntries()[0]?.[0] || 'UAT';
+}
+
+function resolveEnvironment(envKey, { includeSecrets = false } = {}) {
+  const envMap = getLangfuseEnvironmentMap({ includeSecrets });
+  const env = envMap[envKey];
+  if (!env) {
+    throw new Error(`Langfuse 环境不存在：${envKey}`);
+  }
+  return env;
+}
 
 function makeAuthHeader(envKey) {
-  const env = ENVIRONMENTS[envKey];
+  const env = resolveEnvironment(envKey, { includeSecrets: true });
+  if (!env.publicKey || !env.secretKey) {
+    throw new Error(`Langfuse 环境 ${envKey} 未完成 Public Key / Secret Key 配置`);
+  }
   return 'Basic ' + btoa(`${env.publicKey}:${env.secretKey}`);
 }
 
@@ -146,7 +157,7 @@ export class FetchController {
  * @param {string} envKey  - 环境 key: 'UAT' | 'UAT_LOCAL' | 'TEST' | 'PROD' | 'PROD_LOCAL'
  */
 async function fetchAllPages(envKey, endpoint, params, onProgress, controller) {
-  const env = ENVIRONMENTS[envKey];
+  const env = resolveEnvironment(envKey, { includeSecrets: true });
   const authHeader = makeAuthHeader(envKey);
   const results = [];
   let page = 1;

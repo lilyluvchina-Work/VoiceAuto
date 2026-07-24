@@ -7,5 +7,12 @@ services:
     image: voiceauto-web:latest
     container_name: voiceauto-web
     restart: unless-stopped
+    env_file:
+      - /root/voiceauto_backend.env
+    environment:
+      PORT: 3000
+      DB_POOL_SIZE: 10
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "8080:80"
+      - "8080:3000"

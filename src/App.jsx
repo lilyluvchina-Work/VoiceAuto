@@ -4,7 +4,6 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { TestProvider, useTest, actions } from './stores/testStore';
-import VoiceConfig from './components/VoiceConfig';
 import AudioImporter from './components/AudioImporter';
 import AudioList from './components/AudioList';
 import PlaybackConsole from './components/PlaybackConsole';
@@ -12,6 +11,9 @@ import TestProcessRecord from './components/TestProcessRecord';
 import LangfuseFetcher from './components/LangfuseFetcher';
 import TestCaseManager from './components/TestCaseManager';
 import SummaryReport from './components/SummaryReport';
+import ConfigCenter from './components/ConfigCenter';
+import { AuthGate, useAuth } from './components/AuthGate';
+import { getDefaultLangfuseEnvironmentKey } from './modules/langfuse/services/langfuseService';
 
 // Logo SVG
 const Logo = () => (
@@ -34,6 +36,7 @@ const MODES = {
   report: 'report',
   summary: 'summary',
   langfuse: 'langfuse',
+  config: 'config',
 };
 
 const TAB_ITEMS = [
@@ -42,16 +45,18 @@ const TAB_ITEMS = [
   { key: MODES.report, icon: '📊', label: '测试过程记录' },
   { key: MODES.langfuse, icon: '🗂️', label: 'Langfuse 日志' },
   { key: MODES.summary, icon: '🧾', label: '总结报告' },
+  { key: MODES.config, icon: '⚙️', label: '配置中心' },
 ];
 
 function AppContent() {
   const { state, dispatch } = useTest();
+  const auth = useAuth();
   const [activeMode, setActiveMode] = useState(MODES.cases);
   const [pendingLangfuseJump, setPendingLangfuseJump] = useState(false);
   const autoJumpTimerRef = useRef(null);
   const isTesting = state.playback.isPlaying || state.playback.isPaused;
   const shouldAutoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
-  const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || 'UAT';
+  const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || getDefaultLangfuseEnvironmentKey();
 
   useEffect(() => () => {
     if (autoJumpTimerRef.current) {
@@ -120,6 +125,10 @@ function AppContent() {
           <SummaryReport />
         </div>
 
+        <div className={activeMode === MODES.config ? 'block' : 'hidden'}>
+          <ConfigCenter />
+        </div>
+
         <div className={activeMode === MODES.voice ? 'block' : 'hidden'}>
           <div className="space-y-6">
             {pendingLangfuseJump && (
@@ -138,10 +147,6 @@ function AppContent() {
                 <AudioList />
               </section>
             </div>
-
-            <section className="grid grid-cols-1 gap-6">
-              <VoiceConfig />
-            </section>
           </div>
         </div>
       </div>
@@ -168,6 +173,10 @@ function AppContent() {
 
     if (activeMode === MODES.cases) {
       return <span>🗃️ 测试用例管理模式</span>;
+    }
+
+    if (activeMode === MODES.config) {
+      return <span>⚙️ 配置中心模式</span>;
     }
 
     return <span>🗂️ Langfuse 日志模式</span>;
@@ -218,6 +227,16 @@ function AppContent() {
                     : '未添加音频'}
                 </span>
               </div>
+
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 rounded-full">
+                <span className="text-xs text-gray-300">{auth?.currentUser?.username}</span>
+                <button
+                  onClick={auth?.logout}
+                  className="text-xs text-gray-500 hover:text-gray-200 transition-colors"
+                >
+                  退出
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -247,9 +266,11 @@ function AppContent() {
 
 function App() {
   return (
-    <TestProvider>
-      <AppContent />
-    </TestProvider>
+    <AuthGate>
+      <TestProvider>
+        <AppContent />
+      </TestProvider>
+    </AuthGate>
   );
 }
 

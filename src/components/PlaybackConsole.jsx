@@ -5,7 +5,12 @@ import React, { useEffect, useState } from 'react';
 import useTestRunner from '../hooks/useTestRunner';
 import { formatTime } from '../utils/formatters';
 import { useTest, actions } from '../stores/testStore';
-import { ENVIRONMENTS } from '../modules/langfuse/services/langfuseService';
+import {
+  ENVIRONMENTS,
+  LANGFUSE_ENVIRONMENTS_UPDATED_EVENT,
+  getDefaultLangfuseEnvironmentKey,
+  getLangfuseEnvironmentEntries,
+} from '../modules/langfuse/services/langfuseService';
 import responseMonitorService from '../services/responseMonitorService';
 import adbWakeService from '../services/adbWakeService';
 import ttsService from '../services/ttsService.jsx';
@@ -19,7 +24,7 @@ export default function PlaybackConsole({ onTestComplete }) {
   const debugSequence = Boolean(state.testOptions?.debugSequence);
   const dingTalkEnabled = Boolean(state.testOptions?.dingTalkEnabled);
   const autoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
-  const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || 'UAT';
+  const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || getDefaultLangfuseEnvironmentKey();
   const selectedTestModule = state.testOptions?.selectedTestModule || 'all';
   const autonomousWake = state.testOptions?.autonomousWake || {};
   const autonomousInput = state.testOptions?.autonomousInput || {};
@@ -34,11 +39,16 @@ export default function PlaybackConsole({ onTestComplete }) {
   const [listenerHealthStatus, setListenerHealthStatus] = useState('');
   const [listenerRecovering, setListenerRecovering] = useState(false);
   const [wakePreviewPlaying, setWakePreviewPlaying] = useState(false);
+  const [langfuseEnvVersion, setLangfuseEnvVersion] = useState(0);
 
   const moduleOptions = React.useMemo(() => {
     const modules = Array.from(new Set((state.testAudios || []).map((audio) => resolveTestCaseDirectory(audio))));
     return ['all', ...modules];
   }, [state.testAudios]);
+  const langfuseEnvironmentEntries = React.useMemo(
+    () => getLangfuseEnvironmentEntries(),
+    [langfuseEnvVersion]
+  );
 
   const {
     currentAudioText,
@@ -119,7 +129,10 @@ export default function PlaybackConsole({ onTestComplete }) {
     setWakePreviewPlaying(true);
     try {
       await ttsService.speak(wakeWord.text, {
+        voice: defaultVoiceConfig.voice,
+        voiceType: defaultVoiceConfig.voiceType,
         voiceName: defaultVoiceConfig.voiceName,
+        provider: defaultVoiceConfig.provider,
         lang: defaultVoiceConfig.lang,
         volume: 200,
         rate: defaultVoiceConfig.rate
@@ -307,6 +320,21 @@ export default function PlaybackConsole({ onTestComplete }) {
     if (isLocked) return;
     refreshListenerHealth();
   }, [autonomousWake.bridgeUrl, autonomousWake.deviceId]);
+
+  useEffect(() => {
+    const handleLangfuseEnvironmentUpdate = () => {
+      setLangfuseEnvVersion((value) => value + 1);
+    };
+    window.addEventListener(LANGFUSE_ENVIRONMENTS_UPDATED_EVENT, handleLangfuseEnvironmentUpdate);
+    return () => window.removeEventListener(LANGFUSE_ENVIRONMENTS_UPDATED_EVENT, handleLangfuseEnvironmentUpdate);
+  }, []);
+
+  useEffect(() => {
+    const keys = langfuseEnvironmentEntries.map(([key]) => key);
+    if (keys.length > 0 && !keys.includes(selectedLangfuseEnv)) {
+      dispatch(actions.setSelectedLangfuseEnv(keys[0]));
+    }
+  }, [dispatch, langfuseEnvironmentEntries, selectedLangfuseEnv]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -620,7 +648,7 @@ export default function PlaybackConsole({ onTestComplete }) {
             disabled={isLocked}
             className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
           >
-            {Object.entries(ENVIRONMENTS).map(([key, env]) => (
+            {langfuseEnvironmentEntries.map(([key, env]) => (
               <option key={key} value={key}>{env.label}</option>
             ))}
           </select>

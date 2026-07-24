@@ -1,5 +1,21 @@
 # 语音自助交互工具平台化与敏感配置安全治理方案
 
+## 当前落地状态（2026-07-24 补充）
+
+昨天已完成第一阶段落地开发，当前实现与本文早期设计稿存在以下差异：
+
+| 模块 | 当前实现 |
+|---|---|
+| 数据库 | 使用 PostgreSQL，不再按早期设计优先 MySQL |
+| 登录认证 | 已新增 `/api/auth/login`、`/api/auth/profile`、`/api/auth/logout` |
+| 用户管理 | 已新增 `/api/users`，支持创建系统登录账号 |
+| 配置中心 | 已新增 `/api/configs`、`/api/configs/:type`，配置保存到数据库 |
+| 配置表 | 使用 `app_config` 表，访问配置接口时自动创建 |
+| 默认配置 | 由 `src/config/sensitiveDefaults.js` 维护，通过 `scripts/seedDefaultConfigs.js` 写入数据库 |
+| 立即生效 | 页面保存配置后会刷新前端运行时缓存，TAPD 导入、Langfuse 日志环境、钉钉通知立即读取最新配置 |
+
+因此，本文后续关于 MySQL、`system_config` 等内容保留为早期完整规划参考；当前部署和联调应以 PostgreSQL、`app_config` 和后端配置接口为准。
+
 ## 一、方案背景
 
 当前语音自助交互工具已经完成用例导入、测试音频生成、自动唤醒、自动播放测试音频、日志下载与报告生成等主流程能力，并已经部署到服务器参与日常测试。

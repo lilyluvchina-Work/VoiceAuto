@@ -14,19 +14,13 @@ import {
   fetchCaseDetails,
 } from '../modules/tapd/services/tapdService';
 import { tapdCaseToTestAudios } from '../modules/tapd/utils/tapdParser';
-
-const CONFIG_KEY = 'voiceauto_tapd_config_v1';
+import {
+  CONFIG_TYPES,
+  readConfig as readSecureConfig,
+} from '../modules/config/secureConfigStore';
 
 function loadConfig() {
-  try {
-    return JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-
-function saveConfig(cfg) {
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+  return readSecureConfig(CONFIG_TYPES.TAPD, { includeSecrets: true });
 }
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
@@ -64,9 +58,10 @@ function StepBar({ step }) {
 // ─── Step 1: API Config ───────────────────────────────────────────────────────
 function Step1Config({ onNext }) {
   const saved = loadConfig();
-  const [apiUser, setApiUser] = useState(saved.apiUser || '');
-  const [apiPassword, setApiPassword] = useState(saved.apiPassword || '');
-  const [companyId, setCompanyId] = useState(saved.companyId || '');
+  const apiUser = String(saved.apiUser || '');
+  const apiPassword = String(saved.apiPassword || '');
+  const companyId = String(saved.companyId || '');
+  const workspaceId = String(saved.workspaceId || '');
   const [debugDirectoryMapping, setDebugDirectoryMapping] = useState(Boolean(saved.debugDirectoryMapping));
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState('');
@@ -98,39 +93,40 @@ function Step1Config({ onNext }) {
     const normalizedApiUser = apiUser.trim();
     const normalizedApiPassword = apiPassword.trim();
     const normalizedCompanyId = companyId.trim();
+    const normalizedWorkspaceId = workspaceId.trim();
 
-    if (!normalizedApiUser || !normalizedApiPassword || !normalizedCompanyId) {
-      setMsgType('error'); setMsg('请填写全部字段'); return;
+    if (!normalizedApiUser || !normalizedApiPassword || !normalizedCompanyId || !normalizedWorkspaceId) {
+      setMsgType('error'); setMsg('TAPD 参数不完整，请先在配置中心补齐。'); return;
     }
-
-    if (normalizedApiUser !== apiUser) setApiUser(normalizedApiUser);
-    if (normalizedApiPassword !== apiPassword) setApiPassword(normalizedApiPassword);
-    if (normalizedCompanyId !== companyId) setCompanyId(normalizedCompanyId);
 
     const cfg = {
       apiUser: normalizedApiUser,
       apiPassword: normalizedApiPassword,
+      workspaceId: normalizedWorkspaceId,
       companyId: normalizedCompanyId,
       debugDirectoryMapping,
     };
-    saveConfig(cfg);
     onNext(cfg);
   };
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-400">填写 TAPD API 凭据（在 TAPD 个人设置 → API 管理中获取，需使用 api_user / api_password，不是登录密码）。</p>
+      <p className="text-sm text-gray-400">TAPD 导入参数从配置中心读取；如需修改，请到配置中心保存后重新打开导入窗口。</p>
       <div>
         <label className="block text-xs text-gray-400 mb-1">API User</label>
-        <input className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-gray-500" value={apiUser} onChange={e => setApiUser(e.target.value)} placeholder="api_user" />
+        <input className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 disabled:text-gray-300" value={apiUser} disabled />
       </div>
       <div>
         <label className="block text-xs text-gray-400 mb-1">API Password</label>
-        <input className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-gray-500" type="password" value={apiPassword} onChange={e => setApiPassword(e.target.value)} placeholder="api_password" />
+        <input className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 disabled:text-gray-300" type="password" value={apiPassword} disabled />
       </div>
       <div>
         <label className="block text-xs text-gray-400 mb-1">Company ID（企业 ID）</label>
-        <input className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-gray-500" value={companyId} onChange={e => setCompanyId(e.target.value)} placeholder="如 20003261" />
+        <input className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 disabled:text-gray-300" value={companyId} disabled />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">项目ID（workspace_id）</label>
+        <input className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 disabled:text-gray-300" value={workspaceId} disabled />
       </div>
       <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
         <input
@@ -158,16 +154,30 @@ function Step1Config({ onNext }) {
 function Step2Project({ cfg, onNext, onBack }) {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [projectIdInput, setProjectIdInput] = useState('');
+  const configuredWorkspaceId = String(cfg.workspaceId || '').trim();
+  const [selected, setSelected] = useState(
+    configuredWorkspaceId
+      ? {
+          workspaceId: configuredWorkspaceId,
+          workspaceName: `配置项目 ${configuredWorkspaceId}`,
+          status: 'normal',
+          category: 'project',
+        }
+      : null
+  );
+  const [projectIdInput, setProjectIdInput] = useState(configuredWorkspaceId);
   const [error, setError] = useState('');
 
   useEffect(() => {
     fetchProjects(cfg.companyId, cfg.apiUser, cfg.apiPassword)
-      .then(setProjects)
+      .then((items) => {
+        setProjects(items);
+        const matched = items.find((p) => String(p.workspaceId) === configuredWorkspaceId);
+        if (matched) setSelected(matched);
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
-  }, [cfg]);
+  }, [cfg, configuredWorkspaceId]);
 
   const handlePickById = () => {
     const workspaceId = projectIdInput.trim();
@@ -191,14 +201,14 @@ function Step2Project({ cfg, onNext, onBack }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-400">选择要导入用例的项目（共 {projects.length} 个）。</p>
+      <p className="text-sm text-gray-400">项目ID从配置读取，默认选择配置中的项目；下方列表仅用于核对项目名称。</p>
       <div className="bg-darker border border-gray-700 rounded-lg p-3 space-y-2">
         <label className="block text-xs text-gray-400">项目ID（workspace_id）</label>
         <div className="flex gap-2">
           <input
-            className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-gray-500"
+            className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-gray-500 disabled:text-gray-300"
             value={projectIdInput}
-            onChange={(e) => setProjectIdInput(e.target.value)}
+            disabled
             placeholder="如 61252348"
           />
           <button
@@ -206,10 +216,10 @@ function Step2Project({ cfg, onNext, onBack }) {
             onClick={handlePickById}
             disabled={!projectIdInput.trim()}
           >
-            按ID选择
+            使用配置ID
           </button>
         </div>
-        <p className="text-xs text-gray-500">可直接输入项目ID快速跳转；也可在下方列表中选择。</p>
+        <p className="text-xs text-gray-500">如需更换项目ID，请在配置中心修改 TAPD 项目ID。</p>
       </div>
       {loading && <p className="text-gray-400 text-sm">加载项目列表...</p>}
       {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -218,11 +228,11 @@ function Step2Project({ cfg, onNext, onBack }) {
           {projects.map(p => (
             <button
               key={p.workspaceId}
-              onClick={() => setSelected(p)}
+              disabled
               className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors
                 ${selected?.workspaceId === p.workspaceId
                   ? 'border-blue-500 bg-blue-900/30 text-blue-300'
-                  : 'border-gray-700 hover:border-gray-500 text-gray-300'}`}
+                  : 'border-gray-700 text-gray-500'}`}
             >
               <span className="font-medium">{p.workspaceName}</span>
               <span className="text-gray-500 ml-2 text-xs">#{p.workspaceId}</span>
@@ -344,13 +354,6 @@ export default function TapdImportWizard({ onClose }) {
 
   const handleProject = useCallback((proj) => {
     setProject(proj);
-    const saved = loadConfig();
-    saveConfig({
-      ...saved,
-      ...cfg,
-      workspaceId: String(proj?.workspaceId || '').trim(),
-      workspaceName: String(proj?.workspaceName || '').trim(),
-    });
     setStep(3);
   }, [cfg]);
 

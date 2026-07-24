@@ -9,7 +9,10 @@ const ERROR_LOG = path.join(LOG_DIR, 'startup-error.log');
 const CHECK_LOG = path.join(LOG_DIR, 'startup-check.log');
 const BRIDGE_OUT_LOG = path.join(LOG_DIR, 'adb-bridge.out.log');
 const BRIDGE_ERR_LOG = path.join(LOG_DIR, 'adb-bridge.err.log');
+const BACKEND_OUT_LOG = path.join(LOG_DIR, 'backend.out.log');
+const BACKEND_ERR_LOG = path.join(LOG_DIR, 'backend.err.log');
 const DEV_PORT = 3000;
+const BACKEND_PORT = 3002;
 const BRIDGE_PORT = 17321;
 
 function ensureLogDir() {
@@ -17,19 +20,55 @@ function ensureLogDir() {
 }
 
 function appendLog(file, title, details = {}) {
-  ensureLogDir();
-  const body = [
-    '',
-    `[${new Date().toISOString()}] ${title}`,
-    JSON.stringify(details, null, 2)
-  ].join('\n');
-  fs.appendFileSync(file, `${body}\n`, 'utf8');
+  try {
+    ensureLogDir();
+    const body = [
+      '',
+      `[${new Date().toISOString()}] ${title}`,
+      JSON.stringify(details, null, 2)
+    ].join('\n');
+    fs.appendFileSync(file, `${body}\n`, 'utf8');
+  } catch (error) {
+    console.warn(`[startup] 写入日志失败: ${file}`);
+    console.warn(`[startup] ${error?.message || String(error)}`);
+  }
 }
 
 function appendErrorWithSolution(errorInfo, solution) {
   appendLog(ERROR_LOG, 'STARTUP_ERROR', {
     error: errorInfo,
     solution
+  });
+}
+
+function openAppendLogHandle(file) {
+  try {
+    ensureLogDir();
+    return fs.openSync(file, 'a');
+  } catch (error) {
+    console.warn(`[startup] 打开日志失败: ${file}`);
+    console.warn(`[startup] ${error?.message || String(error)}`);
+    return 'ignore';
+  }
+}
+
+function loadDotEnvFile() {
+  const envPath = path.join(ROOT, '.env');
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+  lines.forEach((line) => {
+    const text = line.trim();
+    if (!text || text.startsWith('#')) return;
+    const index = text.indexOf('=');
+    if (index <= 0) return;
+    const key = text.slice(0, index).trim();
+    let value = text.slice(index + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
   });
 }
 
@@ -134,9 +173,8 @@ async function ensureAdbBridge() {
     ]
   );
 
-  ensureLogDir();
-  const out = fs.openSync(BRIDGE_OUT_LOG, 'a');
-  const err = fs.openSync(BRIDGE_ERR_LOG, 'a');
+  const out = openAppendLogHandle(BRIDGE_OUT_LOG);
+  const err = openAppendLogHandle(BRIDGE_ERR_LOG);
   const child = spawn(process.execPath, [path.join(ROOT, 'scripts', 'adbBridge.cjs')], {
     cwd: ROOT,
     detached: true,
@@ -152,6 +190,72 @@ async function ensureAdbBridge() {
     health: healthAfter.ok ? healthAfter.data : healthAfter
   });
   return { started: true, pid: child.pid, health: healthAfter.ok ? healthAfter.data : null };
+}
+
+async function ensureBackend() {
+  const healthBefore = await requestText(BACKEND_PORT, '/api/auth/profile', 2500);
+  if (healthBefore.ok) {
+    appendLog(CHECK_LOG, 'BACKEND_ALREADY_RUNNING', {
+      port: BACKEND_PORT,
+      statusCode: healthBefore.statusCode
+    });
+    return { started: false };
+  }
+
+  if (!process.env.DATABASE_URL) {
+    appendErrorWithSolution(
+      {
+        type: 'BACKEND_DATABASE_URL_MISSING',
+        message: 'DATABASE_URL is required to start the local backend',
+        port: BACKEND_PORT
+      },
+      [
+        '在 .env 中配置 DATABASE_URL',
+        '本地开发后端端口使用 PORT=3002',
+        '配置后重新执行: npm run dev'
+      ]
+    );
+    return { started: false, error: 'DATABASE_URL missing' };
+  }
+
+  const out = openAppendLogHandle(BACKEND_OUT_LOG);
+  const err = openAppendLogHandle(BACKEND_ERR_LOG);
+  const child = spawn(process.execPath, [path.join(ROOT, 'server', 'index.js')], {
+    cwd: ROOT,
+    detached: true,
+    env: {
+      ...process.env,
+      PORT: String(BACKEND_PORT)
+    },
+    stdio: ['ignore', out, err],
+    windowsHide: true
+  });
+  child.unref();
+
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const healthAfter = await requestText(BACKEND_PORT, '/api/auth/profile', 2500);
+  appendLog(CHECK_LOG, 'BACKEND_STARTED', {
+    pid: child.pid,
+    port: BACKEND_PORT,
+    health: healthAfter
+  });
+  if (!healthAfter.ok) {
+    appendErrorWithSolution(
+      {
+        type: 'BACKEND_START_FAILED',
+        message: `Local backend port ${BACKEND_PORT} did not become reachable`,
+        detail: healthAfter.error || ''
+      },
+      [
+        '查看 logs/backend.err.log 获取后端启动错误',
+        '确认 .env 中 DATABASE_URL 可连接',
+        '确认 3002 端口未被其他程序占用',
+        '修复后重新执行: npm run dev'
+      ]
+    );
+    return { started: false, error: healthAfter.error || 'backend did not become reachable' };
+  }
+  return { started: true, pid: child.pid, health: healthAfter };
 }
 
 function startVite() {
@@ -194,14 +298,24 @@ function startVite() {
 }
 
 async function main() {
+  loadDotEnvFile();
   appendLog(CHECK_LOG, 'STARTUP_PREFLIGHT_BEGIN', {
     node: process.version,
     cwd: ROOT,
     devPort: DEV_PORT,
+    backendPort: BACKEND_PORT,
     bridgePort: BRIDGE_PORT
   });
 
   const bridge = await ensureAdbBridge();
+  const backend = await ensureBackend();
+  if (backend?.error) {
+    console.error(`VoiceAuto 后端未启动: ${backend.error}`);
+    console.error('请检查 .env 的 DATABASE_URL 和 logs/backend.err.log，然后重新执行 npm run dev');
+    process.exitCode = 1;
+    return;
+  }
+
   const voiceAuto = await isVoiceAutoRunning();
   if (voiceAuto.running) {
     appendErrorWithSolution(

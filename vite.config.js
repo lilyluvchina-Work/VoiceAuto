@@ -1,11 +1,16 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react';
 
+const API_PROXY_TARGET = process.env.VITE_API_PROXY_TARGET
+  || process.env.API_PROXY_TARGET
+  || 'http://127.0.0.1:3002';
+
 // Langfuse 各环境目标地址（与后端约定保持一致）
 const LANGFUSE_HOSTS = {
   uat:  'https://monitor-live-test-cedar.sdmc.tv',
   'uat-local': 'https://monitor-live-test-cedar.sdmc.tv',
   test: 'https://monitor-live-test-cedar.sdmc.tv',
+  'test-local': 'https://monitor-live-test-cedar.sdmc.tv',
   prod: 'https://monitor-live-test-cedar.sdmc.tv',
   'prod-local': 'https://monitor-live-test-cedar.sdmc.tv',
 };
@@ -29,8 +34,13 @@ export default defineConfig({
     strictPort: true,
     open: true,
     proxy: {
+      '/api': {
+        target: API_PROXY_TARGET,
+        changeOrigin: true,
+      },
       '/langfuse-api-uat-local': langfuseProxy('uat-local'),
       '/langfuse-api-uat':  langfuseProxy('uat'),
+      '/langfuse-api-test-local': langfuseProxy('test-local'),
       '/langfuse-api-test': langfuseProxy('test'),
       '/langfuse-api-prod-local': langfuseProxy('prod-local'),
       '/langfuse-api-prod': langfuseProxy('prod'),

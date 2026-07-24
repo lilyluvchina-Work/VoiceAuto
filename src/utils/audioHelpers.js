@@ -4,6 +4,7 @@
 
 const VALID_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/x-m4a'];
 const VALID_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a'];
+const VOICE_CONFIG_FIELDS = ['voice', 'voiceType', 'voiceName', 'provider'];
 
 /**
  * 获取音频时长
@@ -74,9 +75,20 @@ export function getSourceInfo(source) {
  * @returns {Promise<void>}
  */
 export function playAudioItem(audio, ttsService, fallbackConfig = {}, options = {}) {
+  const audioConfig = audio.config || {};
+  const hasModernAudioVoice = Boolean(
+    audioConfig.voiceType
+    || audioConfig.provider === 'doubao-v3'
+    || (audioConfig.voice && String(audioConfig.voice).includes('_'))
+  );
+  const normalizedAudioConfig = hasModernAudioVoice
+    ? audioConfig
+    : Object.fromEntries(
+        Object.entries(audioConfig).filter(([key]) => !VOICE_CONFIG_FIELDS.includes(key))
+      );
   const config = {
     ...fallbackConfig,
-    ...(audio.config || {})
+    ...normalizedAudioConfig
   };
 
   if (audio.source === 'file' && audio.audioUrl) {
@@ -96,7 +108,10 @@ export function playAudioItem(audio, ttsService, fallbackConfig = {}, options = 
   }
 
   return ttsService.speak(audio.text, {
+    voice: config.voice,
+    voiceType: config.voiceType,
     voiceName: config.voiceName,
+    provider: config.provider,
     lang: config.lang,
     volume: config.volume,
     rate: config.rate,

@@ -5,8 +5,11 @@
 
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { generateId } from '../utils/formatters';
+import { getDefaultLangfuseEnvironmentKey } from '../modules/langfuse/services/langfuseService';
+import { sanitizePersistedVoiceAutoState } from './stateSanitizer';
 
 const STORAGE_KEY = 'voiceauto_state';
+const DEFAULT_LANGFUSE_ENV_KEY = getDefaultLangfuseEnvironmentKey();
 
 const shouldKeepImportedCaseAfterAudioDelete = (audio) => {
   return audio?.source === 'tapd' || Boolean(audio?.tapdCaseId || audio?.tapdTestPlanId);
@@ -57,9 +60,11 @@ const initialState = {
 
   // 音频配置（默认值）
   defaultVoiceConfig: {
-    voice: 'xiaoxiao',
-    voiceName: '晓晓',
+    voice: 'zh_female_shuangkuaisisi_moon_bigtts',
+    voiceType: 'zh_female_shuangkuaisisi_moon_bigtts',
+    voiceName: '爽快思思',
     lang: 'zh-CN',
+    provider: 'doubao-v3',
     dialect: '普通话',
     volume: 100,
     rate: 1.0
@@ -74,7 +79,7 @@ const initialState = {
     debugSequence: false,
     dingTalkEnabled: false,
     autoFetchLangfuseLogs: true,
-    selectedLangfuseEnv: 'UAT',
+    selectedLangfuseEnv: DEFAULT_LANGFUSE_ENV_KEY,
     selectedTestModule: 'all',
     autonomousWake: {
       enabled: false,
@@ -173,7 +178,7 @@ const initialState = {
     lastTestAudioTime: null,
     langfuseFetchEndTime: null,
     langfuseAutoFetchRequestedAt: null,
-    langfuseEnvKey: 'UAT',
+    langfuseEnvKey: DEFAULT_LANGFUSE_ENV_KEY,
     successCount: 0,
     failCount: 0,
     cases: []
@@ -424,7 +429,7 @@ function testReducer(state, action) {
           lastTestAudioTime: null,
           langfuseFetchEndTime: null,
           langfuseAutoFetchRequestedAt: null,
-          langfuseEnvKey: state.testOptions.selectedLangfuseEnv || 'UAT',
+          langfuseEnvKey: state.testOptions.selectedLangfuseEnv || DEFAULT_LANGFUSE_ENV_KEY,
           successCount: 0,
           failCount: 0,
           cases: []
@@ -539,7 +544,7 @@ export function TestProvider({ children }) {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved);
+        const parsed = sanitizePersistedVoiceAutoState(JSON.parse(saved));
         return {
           ...init,
           wakeWord: {
@@ -562,7 +567,7 @@ export function TestProvider({ children }) {
             debugSequence: Boolean(parsed.testOptions?.debugSequence),
             dingTalkEnabled: Boolean(parsed.testOptions?.dingTalkEnabled),
             autoFetchLangfuseLogs: parsed.testOptions?.autoFetchLangfuseLogs !== false,
-            selectedLangfuseEnv: parsed.testOptions?.selectedLangfuseEnv || 'UAT',
+            selectedLangfuseEnv: parsed.testOptions?.selectedLangfuseEnv || DEFAULT_LANGFUSE_ENV_KEY,
             selectedTestModule: parsed.testOptions?.selectedTestModule || 'all',
             autonomousWake: {
               ...init.testOptions.autonomousWake,

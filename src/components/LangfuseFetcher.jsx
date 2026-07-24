@@ -3,11 +3,21 @@
  * 支持：暂停 / 继续 / 终止 / 悬浮预览
  */
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { fetchTraces, fetchObservations, FetchController, ENVIRONMENTS } from '../modules/langfuse/services/langfuseService';
+import {
+  fetchTraces,
+  fetchObservations,
+  FetchController,
+  ENVIRONMENTS,
+  LANGFUSE_ENVIRONMENTS_UPDATED_EVENT,
+  getDefaultLangfuseEnvironmentKey,
+  getLangfuseEnvironmentEntries,
+} from '../modules/langfuse/services/langfuseService';
+import { getLangfuseEnvStyle } from './langfuseEnvStyles';
 import { exportToExcel, exportSessionExcel, buildSessionRows, downloadJSON } from '../modules/langfuse/utils/excelExporter';
 import { createTapdBug } from '../modules/tapd/services/tapdService';
 import { useTest, actions } from '../stores/testStore';
 import { notifyDingTalk } from '../services/dingTalkService';
+import { CONFIG_TYPES, readConfig as readSecureConfig } from '../modules/config/secureConfigStore';
 import {
   SUMMARY_REPORT_EVENT,
   SUMMARY_REPORT_STORAGE_KEY,
@@ -15,14 +25,9 @@ import {
 } from '../utils/summaryReportBuilder';
 
 const LANGFUSE_PAGE_STORAGE_KEY = 'voiceauto_langfuse_page_state';
-const TAPD_CONFIG_KEY = 'voiceauto_tapd_config_v1';
 
 function loadTapdConfig() {
-  try {
-    return JSON.parse(localStorage.getItem(TAPD_CONFIG_KEY) || '{}');
-  } catch {
-    return {};
-  }
+  return readSecureConfig(CONFIG_TYPES.TAPD, { includeSecrets: true });
 }
 
 function normalizeLine(value) {
@@ -474,15 +479,6 @@ function FetchControls({ status, onPause, onResume, onAbort }) {
   );
 }
 
-/* ─── 环境标签颜色映射 ─── */
-const ENV_STYLES = {
-  UAT:  { badge: 'bg-purple-900/50 border-purple-600 text-purple-300', dot: 'bg-purple-400', active: 'ring-purple-500' },
-  UAT_LOCAL: { badge: 'bg-cyan-900/50 border-cyan-600 text-cyan-300', dot: 'bg-cyan-400', active: 'ring-cyan-500' },
-  TEST: { badge: 'bg-yellow-900/50 border-yellow-600 text-yellow-300', dot: 'bg-yellow-400', active: 'ring-yellow-500' },
-  PROD: { badge: 'bg-red-900/50  border-red-600  text-red-300',    dot: 'bg-red-400',    active: 'ring-red-500'    },
-  PROD_LOCAL: { badge: 'bg-rose-900/50 border-rose-600 text-rose-300', dot: 'bg-rose-400', active: 'ring-rose-500' },
-};
-
 const TIME_PRESETS = [
   { label: '15 分钟', mins: 15 },
   { label: '1 小时', mins: 60 },
@@ -518,7 +514,7 @@ export default function LangfuseFetcher() {
   const initFrom = splitDT(new Date(Date.now() - 60 * 60 * 1000));
   const initTo = splitDT(new Date());
   const shouldAutoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
-  const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || 'UAT';
+  const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || getDefaultLangfuseEnvironmentKey();
 
   const [envKey, setEnvKey] = useState(selectedLangfuseEnv);
 
@@ -530,6 +526,7 @@ export default function LangfuseFetcher() {
   // status: idle | fetching | paused | done | aborted | error
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
+  const [langfuseEnvVersion, setLangfuseEnvVersion] = useState(0);
   const [traceProgress, setTraceProgress] = useState({ fetched: 0, total: 0 });
   const [obsProgress, setObsProgress] = useState({ fetched: 0, total: 0 });
 
@@ -635,6 +632,27 @@ export default function LangfuseFetcher() {
     if (envKey === selectedLangfuseEnv) return;
     setEnvKey(selectedLangfuseEnv);
   }, [envKey, selectedLangfuseEnv, status]);
+
+  useEffect(() => {
+    const handleLangfuseEnvironmentUpdate = () => {
+      setLangfuseEnvVersion((value) => value + 1);
+    };
+    window.addEventListener(LANGFUSE_ENVIRONMENTS_UPDATED_EVENT, handleLangfuseEnvironmentUpdate);
+    return () => window.removeEventListener(LANGFUSE_ENVIRONMENTS_UPDATED_EVENT, handleLangfuseEnvironmentUpdate);
+  }, []);
+
+  const langfuseEnvironmentEntries = useMemo(
+    () => getLangfuseEnvironmentEntries(),
+    [langfuseEnvVersion]
+  );
+
+  useEffect(() => {
+    if (status === 'fetching' || status === 'paused') return;
+    const keys = langfuseEnvironmentEntries.map(([key]) => key);
+    if (keys.length > 0 && !keys.includes(envKey)) {
+      handleEnvChange(keys[0]);
+    }
+  }, [envKey, langfuseEnvironmentEntries, status]);
 
   useEffect(() => {
     try {
@@ -946,8 +964,8 @@ export default function LangfuseFetcher() {
         {/* 环境切换器 */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500 mr-1">环境</span>
-          {Object.keys(ENVIRONMENTS).map((key) => {
-            const s = ENV_STYLES[key];
+          {langfuseEnvironmentEntries.map(([key]) => {
+            const s = getLangfuseEnvStyle(key);
             const isActive = envKey === key;
             return (
               <button
@@ -960,7 +978,7 @@ export default function LangfuseFetcher() {
                   disabled:cursor-default`}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${s.dot} ${isActive ? 'animate-pulse' : ''}`} />
-                {ENVIRONMENTS[key].label}
+                {ENVIRONMENTS[key]?.label || key}
               </button>
             );
           })}

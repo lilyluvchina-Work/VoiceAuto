@@ -68,6 +68,7 @@ export default function AudioImporter() {
             audioBlob: null,
             audioUrl: null,
             duration: 0,
+            audioStatus: 'not_generated',
             config: { ...defaultVoiceConfig }
           }));
 
@@ -113,6 +114,7 @@ export default function AudioImporter() {
           audioUrl: url,
           duration,
           originalFile: file,
+          audioStatus: 'generated',
           config: { ...defaultVoiceConfig }
         }));
 
@@ -154,6 +156,7 @@ export default function AudioImporter() {
         audioBlob: null,
         audioUrl: null,
         duration: 0,
+        audioStatus: 'not_generated',
         config: { ...defaultVoiceConfig }
       }));
       successCount++;
@@ -187,6 +190,7 @@ export default function AudioImporter() {
         audioBlob: null,
         audioUrl: null,
         duration: 0,
+        audioStatus: 'not_generated',
         config: { ...defaultVoiceConfig }
       }));
     });

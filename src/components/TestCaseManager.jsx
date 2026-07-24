@@ -5,11 +5,18 @@ import {
   resolveTestCaseDirectory,
   sortTestCasesByDirectoryOrder,
 } from '../utils/testCaseOrdering';
+import { VOICE_OPTIONS, LANG_OPTIONS } from '../constants';
+import { buildGeneratedAudioConfig } from '../utils/testCaseAudioConfig';
+import { isGeneratedTestAudio } from '../utils/testAudioStatus';
 
 export default function TestCaseManager() {
+  const { state, dispatch } = useTest();
   const [showWizard, setShowWizard] = useState(false);
   const [selectedDirectory, setSelectedDirectory] = useState('all');
-  const { state, dispatch } = useTest();
+  const [generationVoice, setGenerationVoice] = useState(
+    state?.defaultVoiceConfig?.voiceType || state?.defaultVoiceConfig?.voice || VOICE_OPTIONS[0]?.value || ''
+  );
+  const [generationLang, setGenerationLang] = useState(state?.defaultVoiceConfig?.lang || 'zh-CN');
 
   const sortedCases = React.useMemo(() => {
     return sortTestCasesByDirectoryOrder(state.testAudios);
@@ -28,7 +35,7 @@ export default function TestCaseManager() {
   }, [sortedCases, selectedDirectory]);
 
   const totalGenerated = React.useMemo(() => {
-    return state.testAudios.filter((item) => (item.audioStatus ? item.audioStatus === 'generated' : true)).length;
+    return state.testAudios.filter(isGeneratedTestAudio).length;
   }, [state.testAudios]);
 
   const handleClearCases = () => {
@@ -43,33 +50,60 @@ export default function TestCaseManager() {
     dispatch(actions.clearTestAudios());
   };
 
+  const generationConfig = React.useMemo(() => buildGeneratedAudioConfig({
+    voiceValue: generationVoice,
+    lang: generationLang,
+    volume: state.defaultVoiceConfig.volume,
+    rate: state.defaultVoiceConfig.rate,
+  }), [generationVoice, generationLang, state.defaultVoiceConfig.volume, state.defaultVoiceConfig.rate]);
+
+  const selectedVoice = React.useMemo(() => VOICE_OPTIONS.find((voice) => (
+    voice.value === generationVoice || voice.voiceType === generationVoice || voice.legacyValue === generationVoice
+  )), [generationVoice]);
+
+  const hasLanguageMismatch = selectedVoice
+    && selectedVoice.lang !== 'multi'
+    && generationLang !== 'multi'
+    && selectedVoice.lang !== generationLang;
+
   const handleGenerateOne = (item) => {
     dispatch(actions.updateTestAudio({
       id: item.id,
-      audioStatus: 'generated'
+      audioStatus: 'generated',
+      source: item.source === 'file' ? item.source : 'tts',
+      config: {
+        ...(item.config || {}),
+        ...generationConfig,
+      },
     }));
   };
 
   const handleGenerateByGroup = (groupName) => {
     const items = sortTestCasesByDirectoryOrder(sortedCases, { directory: groupName });
     items.forEach((item) => {
-      if (item.audioStatus !== 'generated') {
-        dispatch(actions.updateTestAudio({
-          id: item.id,
-          audioStatus: 'generated'
-        }));
-      }
+      dispatch(actions.updateTestAudio({
+        id: item.id,
+        audioStatus: 'generated',
+        source: item.source === 'file' ? item.source : 'tts',
+        config: {
+          ...(item.config || {}),
+          ...generationConfig,
+        },
+      }));
     });
   };
 
   const handleGenerateAll = () => {
     sortedCases.forEach((item) => {
-      if (item.audioStatus !== 'generated') {
-        dispatch(actions.updateTestAudio({
-          id: item.id,
-          audioStatus: 'generated'
-        }));
-      }
+      dispatch(actions.updateTestAudio({
+        id: item.id,
+        audioStatus: 'generated',
+        source: item.source === 'file' ? item.source : 'tts',
+        config: {
+          ...(item.config || {}),
+          ...generationConfig,
+        },
+      }));
     });
   };
 
@@ -89,7 +123,7 @@ export default function TestCaseManager() {
           <span className="text-xs text-gray-400">已生成 {totalGenerated}/{state.testAudios.length}</span>
           <button
             onClick={handleGenerateAll}
-            disabled={totalGenerated === state.testAudios.length || state.testAudios.length === 0}
+            disabled={state.testAudios.length === 0}
             className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-medium transition-colors text-sm whitespace-nowrap"
           >
             <span>⚡</span> 全部生成测试音频
@@ -107,6 +141,62 @@ export default function TestCaseManager() {
           >
             <span>📋</span> TAPD 接口导入
           </button>
+        </div>
+      </div>
+
+      <div className="bg-dark rounded-xl p-5 border border-gray-700">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="text-lg font-semibold text-white">生成测试音频参数</h3>
+            <p className="text-sm text-gray-400 mt-1">选择后点击生成，所选音色和语言会写入对应测试用例。</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="space-y-1">
+              <span className="block text-xs text-gray-400">音色</span>
+              <select
+                value={generationVoice}
+                onChange={(event) => {
+                  const nextVoice = event.target.value;
+                  const next = VOICE_OPTIONS.find((voice) => voice.value === nextVoice);
+                  setGenerationVoice(nextVoice);
+                  if (next?.lang) setGenerationLang(next.lang);
+                }}
+                className="min-w-[240px] px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary"
+              >
+                {['zh-CN', 'en-US', 'multi'].map((lang) => (
+                  <optgroup key={lang} label={LANG_OPTIONS.find((item) => item.value === lang)?.label || lang}>
+                    {VOICE_OPTIONS.filter((voice) => voice.lang === lang).map((voice) => (
+                      <option key={voice.value} value={voice.value}>{voice.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="block text-xs text-gray-400">语言</span>
+              <select
+                value={generationLang}
+                onChange={(event) => setGenerationLang(event.target.value)}
+                className="min-w-[160px] px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary"
+              >
+                {LANG_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          <span className="px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-300">{generationConfig.voiceName}</span>
+          <span className="px-2.5 py-1 rounded-full bg-gray-800 text-gray-300">{generationConfig.voiceType}</span>
+          <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300">
+            {LANG_OPTIONS.find((item) => item.value === generationConfig.lang)?.label || generationConfig.lang}
+          </span>
+          {hasLanguageMismatch && (
+            <span className="px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-200">
+              当前音色与语言不完全匹配，仍允许生成
+            </span>
+          )}
         </div>
       </div>
 
@@ -143,7 +233,7 @@ export default function TestCaseManager() {
           <div className="max-h-[62vh] overflow-y-auto space-y-2 pr-1">
             {visibleCases.map((item, index) => {
               const source = item.source === 'tapd' ? 'TAPD' : (item.source === 'tts' ? 'TTS' : '文件');
-              const generated = item.audioStatus ? item.audioStatus === 'generated' : true;
+              const generated = isGeneratedTestAudio(item);
               const directoryName = resolveTestCaseDirectory(item);
 
               return (
@@ -169,10 +259,9 @@ export default function TestCaseManager() {
                       </span>
                       <button
                         onClick={() => handleGenerateOne(item)}
-                        disabled={generated}
                         className="px-2 py-1 bg-primary hover:bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 rounded text-xs transition-colors"
                       >
-                        生成测试音频
+                        {generated ? '重新生成测试音频' : '生成测试音频'}
                       </button>
                     </div>
                   </div>
@@ -182,6 +271,8 @@ export default function TestCaseManager() {
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
                     <span>目录：{directoryName}</span>
                     <span>模块：{item.module || directoryName}</span>
+                    {generated && item.config?.voiceName ? <span>音色：{item.config.voiceName}</span> : null}
+                    {generated && item.config?.lang ? <span>语言：{item.config.lang}</span> : null}
                     {item.workspaceName ? <span>项目：{item.workspaceName}</span> : null}
                     {item.tapdCaseId ? <span>用例ID：{item.tapdCaseId}</span> : null}
                     {item.tapdTestPlanName ? <span>计划：{item.tapdTestPlanName}</span> : null}

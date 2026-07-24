@@ -47,6 +47,30 @@
 
 ## 优化记录
 
+### 2026-07-24
+
+1. 配置中心数据库化。
+   - 之前实现：配置中心主要依赖前端本地配置缓存，浏览器缓存异常或换浏览器后配置不稳定。
+   - 现在实现：新增后端配置 API 和 PostgreSQL `app_config` 表，配置中心通过 `/api/configs/:type` 读写数据库；登录后预加载数据库配置到运行时缓存。
+   - 影响文件：`server/app.js`、`server/configRepository.js`、`src/modules/config/configApi.js`、`src/components/ConfigCenter.jsx`、`src/components/AuthGate.jsx`。
+2. TAPD 导入参数统一从配置中心读取。
+   - 之前实现：TAPD 导入向导保留旧的本地配置迁移和窗口内参数输入，容易和配置中心不一致。
+   - 现在实现：TAPD API User、API Password、Company ID、项目ID从数据库配置读取；导入向导只读展示参数，项目ID由配置中心控制。
+   - 影响文件：`src/components/TapdImportWizard.jsx`、`src/modules/config/parameterDisplay.js`、`src/config/sensitiveDefaults.js`。
+3. Langfuse 环境选择统一从配置生成。
+   - 之前实现：部分位置默认环境写死为 `UAT`，环境样式也只覆盖固定环境。
+   - 现在实现：语音测试页“日志环境”和 Langfuse 日志页环境按钮都从启用环境列表生成；默认环境取配置列表第一项；未知环境使用默认样式兜底。
+   - 影响文件：`src/modules/langfuse/services/langfuseService.js`、`src/components/PlaybackConsole.jsx`、`src/components/LangfuseFetcher.jsx`、`src/components/langfuseEnvStyles.js`、`src/stores/testStore.jsx`。
+4. 默认配置集中维护和入库。
+   - 新增 `src/config/sensitiveDefaults.js` 维护默认 TAPD、Langfuse、钉钉参数。
+   - 新增 `scripts/seedDefaultConfigs.js`，用于将默认配置写入 PostgreSQL。
+   - Docker 运行镜像包含后端、构建产物、seed 脚本和默认配置文件。
+   - 影响文件：`deploy/docker/Dockerfile`、`scripts/seedDefaultConfigs.js`、`src/config/sensitiveDefaults.js`。
+5. 登录与账号管理完善。
+   - 新增登录页、登录接口、登录态校验和账号新增能力。
+   - 登录成功后加载数据库配置，确保配置保存后立即被 TAPD、Langfuse、钉钉运行逻辑读取。
+   - 影响文件：`src/components/AuthGate.jsx`、`src/components/ConfigCenter.jsx`、`server/authRepository.js`、`server/app.js`。
+
 ### 2026-06-11
 
 1. 语音测试页主布局调整。

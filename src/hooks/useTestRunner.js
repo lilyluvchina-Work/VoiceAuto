@@ -8,6 +8,7 @@ import adbWakeService from '../services/adbWakeService';
 import responseMonitorService from '../services/responseMonitorService';
 import { notifyDingTalk } from '../services/dingTalkService';
 import { playAudioItem } from '../utils/audioHelpers';
+import { isGeneratedTestAudio } from '../utils/testAudioStatus';
 import {
   resolveTestCaseDirectory,
   sortTestCasesByDirectoryOrder,
@@ -223,7 +224,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
   const { wakeWord, testAudios, playback, defaultVoiceConfig, testOptions } = state;
 
   const playableAudios = sortTestCasesByDirectoryOrder(testAudios.filter((audio) => {
-    const generated = audio.audioStatus ? audio.audioStatus === 'generated' : true;
+    const generated = isGeneratedTestAudio(audio);
     const moduleMatched = (testOptions.selectedTestModule || 'all') === 'all'
       ? true
       : resolveTestCaseDirectory(audio) === testOptions.selectedTestModule;
@@ -339,7 +340,10 @@ export default function useTestRunner({ onTestComplete } = {}) {
             text: wakeWord.text
           });
           await ttsService.speak(wakeWord.text, {
+            voice: defaultVoiceConfig.voice,
+            voiceType: defaultVoiceConfig.voiceType,
             voiceName: defaultVoiceConfig.voiceName,
+            provider: defaultVoiceConfig.provider,
             lang: defaultVoiceConfig.lang,
             volume: 200,
             rate: defaultVoiceConfig.rate

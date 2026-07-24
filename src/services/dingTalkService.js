@@ -4,6 +4,7 @@ import {
   normalizeSubmissionParams,
 } from '../utils/summaryReportBuilder';
 import { ENVIRONMENTS } from '../modules/langfuse/services/langfuseService';
+import { CONFIG_TYPES, readConfig as readSecureConfig } from '../modules/config/secureConfigStore';
 
 const DEFAULT_PROXY_PATH = '/dingtalk-robot';
 const MISSING = '/';
@@ -211,12 +212,23 @@ function buildMarkdownMessage(type, context = {}) {
 }
 
 function getRobotConfig() {
+  const secureConfig = readSecureConfig(CONFIG_TYPES.DINGTALK, { includeSecrets: true });
+  if (secureConfig.configured || secureConfig.webhook || secureConfig.accessToken || secureConfig.secret) {
+    return {
+      enabled: secureConfig.enabled !== false,
+      webhook: normalize(secureConfig.webhook),
+      accessToken: normalize(secureConfig.accessToken),
+      secret: normalize(secureConfig.secret),
+      proxyPath: normalize(secureConfig.proxyPath) || DEFAULT_PROXY_PATH,
+    };
+  }
+
   return {
-    enabled: import.meta.env.VITE_DINGTALK_ENABLED !== 'false',
-    webhook: normalize(import.meta.env.VITE_DINGTALK_WEBHOOK),
-    accessToken: normalize(import.meta.env.VITE_DINGTALK_ACCESS_TOKEN),
-    secret: normalize(import.meta.env.VITE_DINGTALK_SECRET),
-    proxyPath: normalize(import.meta.env.VITE_DINGTALK_PROXY_PATH) || DEFAULT_PROXY_PATH,
+    enabled: false,
+    webhook: '',
+    accessToken: '',
+    secret: '',
+    proxyPath: DEFAULT_PROXY_PATH,
   };
 }
 

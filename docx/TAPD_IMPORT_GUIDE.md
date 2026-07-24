@@ -47,6 +47,24 @@ curl -u 'api_user:api_password' 'https://api.tapd.cn/接口路径'
 | `workspace_id` | TAPD 项目 ID |
 | `test_plan_id` | TAPD 测试计划 ID |
 
+### 2.2 当前系统参数来源
+
+TAPD 导入向导使用配置中心保存的数据库配置，不再在导入窗口中维护独立参数。
+
+| 页面展示 | 配置字段 | 说明 |
+|---|---|---|
+| API User | `apiUser` | 应用 ID / API User |
+| API Password | `apiPassword` | 应用密钥 |
+| Company ID | `companyId` | 公司 ID |
+| 项目ID | `workspaceId` | TAPD 项目 ID |
+
+使用约定：
+
+- 如需修改 TAPD 参数，进入“配置中心 -> TAPD 配置”保存。
+- 保存后重新打开 TAPD 导入向导即可读取最新配置。
+- 导入向导第一步只读展示参数，避免临时输入和配置中心不一致。
+- 项目选择默认使用配置中的 `workspaceId`；项目列表仅用于核对项目名称。
+
 ---
 
 ## 3. 本功能使用的 TAPD API

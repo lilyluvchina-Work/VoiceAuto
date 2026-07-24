@@ -41,7 +41,10 @@ export default function WakeWordConfig() {
     setIsPlaying(true);
     try {
       await ttsService.speak(wakeWord.text, {
+        voice: defaultVoiceConfig.voice,
+        voiceType: defaultVoiceConfig.voiceType,
         voiceName: defaultVoiceConfig.voiceName,
+        provider: defaultVoiceConfig.provider,
         lang: defaultVoiceConfig.lang,
         volume: 200,
         rate: defaultVoiceConfig.rate

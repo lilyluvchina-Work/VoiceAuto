@@ -12,6 +12,7 @@ import {
   resolveTestCaseDirectory,
   sortTestCasesByDirectoryOrder,
 } from '../utils/testCaseOrdering';
+import { isGeneratedTestAudio } from '../utils/testAudioStatus';
 
 export default function AudioList() {
   const { state, dispatch } = useTest();
@@ -20,7 +21,7 @@ export default function AudioList() {
 
   const generatedAudios = React.useMemo(() => {
     return sortTestCasesByDirectoryOrder(
-      testAudios.filter((audio) => (audio.audioStatus ? audio.audioStatus === 'generated' : true))
+      testAudios.filter(isGeneratedTestAudio)
     );
   }, [testAudios]);
 
@@ -245,6 +246,16 @@ export default function AudioList() {
                       <span className="text-xs text-gray-500">
                         {formatDuration(audio.duration || 0)}
                       </span>
+                      {audio.config?.voiceName && (
+                        <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-xs text-blue-300">
+                          {audio.config.voiceName}
+                        </span>
+                      )}
+                      {audio.config?.lang && (
+                        <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-xs text-emerald-300">
+                          {audio.config.lang}
+                        </span>
+                      )}
                     </div>
                     <p className={`whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere] ${isRunnerPlaying ? 'text-accent font-medium' : 'text-white'}`}>{audio.text}</p>
                   </div>

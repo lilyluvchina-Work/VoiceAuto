@@ -27,10 +27,16 @@
 7. `SERVER_DEPLOYMENT_GUIDE.md`
   - 服务器部署指南。
   - 说明从本地构建到公网访问（IP/域名/HTTPS）的完整流程。
-8. `WEEKLY_REPORT.md`
+8. `sensitive-config-management-design.md`
+  - 重要信息脱敏与配置中心设计方案。
+  - 说明登录、权限、配置中心、数据库持久化、TAPD / Langfuse / 钉钉参数来源。
+9. `2026-07-24_DEVELOPMENT_SUPPLEMENT.md`
+  - 阶段性开发补充说明。
+  - 归档 2026-07-23 至 2026-07-24 已落地的后端接口、配置表、UI 参数来源和部署变化。
+10. `WEEKLY_REPORT.md`
   - 项目周报。
   - 按周汇总项目更新、Bug 修复、影响范围与风险建议。
-9. `WEEKLY_REPORT_YYYY-MM-DD.md`
+11. `WEEKLY_REPORT_YYYY-MM-DD.md`
   - 带日期的项目周报。
   - 用于阶段性汇报，可直接复制粘贴到周报系统。
 

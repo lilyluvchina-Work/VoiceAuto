@@ -27,6 +27,29 @@
 
 ## 修复记录
 
+### 2026-07-24
+
+1. 修复登录后页面空白问题。
+  - 现象：登录成功后页面无内容。
+  - 根因：浏览器旧缓存中的 `voiceauto_state` 字段类型异常，例如 `testAudios` 不是数组，主应用挂载后组件调用 `map/filter` 报错。
+  - 修复：新增状态清洗逻辑，恢复本地测试状态时校验 `testAudios`、`testOptions`、`defaultVoiceConfig` 类型，异常值回退为安全默认值。
+  - 影响文件：`src/stores/stateSanitizer.js`、`src/stores/testStore.jsx`。
+2. 修复 Langfuse 自定义环境导致页面崩溃问题。
+  - 现象：控制台报 `Cannot read properties of undefined (reading 'badge')`，登录后页面空白或 Langfuse 页无法渲染。
+  - 根因：配置中心支持手动新增 Langfuse 环境后，环境 Key 不一定存在于固定样式表中。
+  - 修复：新增环境样式工具，已知环境使用指定样式，未知环境使用默认样式兜底。
+  - 影响文件：`src/components/langfuseEnvStyles.js`、`src/components/LangfuseFetcher.jsx`。
+3. 修复 Langfuse 配置坏数据阻塞登录页问题。
+  - 现象：登录页加载不出来。
+  - 根因：旧的 Langfuse 配置 payload 可能不是合法 JSON，应用启动读取配置时抛错。
+  - 修复：读取 Langfuse environments 时捕获坏数据并回退到默认环境，避免配置异常阻断页面启动。
+  - 影响文件：`src/modules/config/secureConfigStore.js`。
+4. 修复 TAPD / Langfuse 参数来源不一致问题。
+  - 现象：配置中心已保存参数，但 TAPD 导入或日志环境选择仍可能使用旧本地配置或写死默认值。
+  - 根因：部分 UI 仍保留本地存储兜底和 `UAT` 默认值。
+  - 修复：TAPD 导入参数、语音测试页日志环境、Langfuse 日志页环境按钮统一从配置中心/数据库配置生成。
+  - 影响文件：`src/components/TapdImportWizard.jsx`、`src/components/PlaybackConsole.jsx`、`src/components/LangfuseFetcher.jsx`、`src/stores/testStore.jsx`。
+
 ### 2026-06-11
 
 1. 汇总现有错误日志到统一文件。
