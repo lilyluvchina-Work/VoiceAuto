@@ -106,6 +106,16 @@ async function requestJson(path, options = {}) {
   };
 }
 
+function buildRemoteErrorResult(body = {}) {
+  const detail = normalize(body.detail);
+  const message = normalize(body.message || '登录失败');
+  return {
+    success: false,
+    ...body,
+    message: detail && !message.includes(detail) ? `${message}：${detail}` : message,
+  };
+}
+
 function readAuthStore(storage) {
   const targetStorage = getStorage(storage);
   if (!targetStorage) {
@@ -212,7 +222,7 @@ export async function authenticateUser(loginAccount, password, options = {}) {
       body: { loginAccount, password },
     });
     if (response) {
-      return response.ok ? response.body : { success: false, message: response.body?.message || '登录失败' };
+      return response.ok ? response.body : buildRemoteErrorResult(response.body);
     }
   } catch {
     // API 不可用时保留本地开发兜底。

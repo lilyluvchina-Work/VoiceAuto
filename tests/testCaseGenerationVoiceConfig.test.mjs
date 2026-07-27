@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 import { buildGeneratedAudioConfig } from '../src/utils/testCaseAudioConfig.js';
 
 const config = buildGeneratedAudioConfig({
-  voiceValue: 'en_female_skye_emo_v2_mars_bigtts',
-  lang: 'en-US',
+  voiceValue: 'zh_female_xiaohe_uranus_bigtts',
+  lang: 'zh-CN',
   volume: 85,
   rate: 1.3,
 });
 
-assert.equal(config.voice, 'en_female_skye_emo_v2_mars_bigtts');
-assert.equal(config.voiceType, 'en_female_skye_emo_v2_mars_bigtts');
-assert.equal(config.voiceName, 'Skye');
-assert.equal(config.lang, 'en-US');
+assert.equal(config.voice, 'zh_female_xiaohe_uranus_bigtts');
+assert.equal(config.voiceType, 'zh_female_xiaohe_uranus_bigtts');
+assert.equal(config.voiceName, '小何 2.0');
+assert.equal(config.lang, 'zh-CN');
 assert.equal(config.provider, 'doubao-v3');
 assert.equal(config.volume, 85);
 assert.equal(config.rate, 1.3);

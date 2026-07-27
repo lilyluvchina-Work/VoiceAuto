@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-为 VoiceAuto 接入豆包 V3 语音合成能力，使测试音频支持多音色、多语言，并且把鉴权信息保留在后端，避免 API Key 暴露到浏览器。
+为 VoiceAuto 接入豆包 V3 语音合成能力，使测试音频支持豆包可用音色，并且把鉴权信息保留在后端，避免密钥暴露到浏览器。
 
 当前 VoiceAuto 的播放方式是“一条测试文本生成一段音频并播放”，因此首选接入 V3 HTTP 单向流式接口：
 
@@ -20,7 +20,7 @@ VoiceAuto 已经具备 TTS 播放框架和豆包 TTS 配置雏形。
   - 当前已支持豆包优先、Web Speech API 回退。
   - 现在会把 `xiaoxiao`、`yunxi` 等前端短值映射为豆包 `voice_type`。
 - `src/constants/index.js`
-  - 当前只维护少量固定音色和语言选项。
+  - 当前只维护 `seed-tts-2.0` Resource ID 下真实验证通过的固定音色。
 - `src/components/VoiceConfig.jsx`
   - 当前提供音色、语种、音量、倍速配置。
 - `src/utils/audioHelpers.js`
@@ -33,11 +33,10 @@ VoiceAuto 已经具备 TTS 播放框架和豆包 TTS 配置雏形。
 主要缺口：
 
 ```text
-前端音色列表过少；
-未保存真实豆包 V3 speaker ID；
-豆包请求仍偏 V1 结构；
-新版控制台的 API Key 鉴权方式未接入；
-缺少后端 V3 代理接口。
+已接入后端 V3 代理接口；
+已保存真实豆包 V3 speaker ID；
+已将鉴权信息保留在后端；
+音色列表已按当前 Resource ID 收敛，避免资源不匹配。
 ```
 
 ## 3. 推荐架构
@@ -57,7 +56,7 @@ VoiceConfig
   -> playBlob()
 ```
 
-不要让浏览器直接请求豆包 V3。新版控制台通常使用 `X-Api-Key` 鉴权，直接放到前端会泄露密钥。
+不要让浏览器直接请求豆包 V3。当前项目由后端读取配置中心中的 APP ID、Access Token、Secret Key 和 Resource ID，再代理调用豆包接口。
 
 ## 4. 接入前准备工作
 
@@ -91,21 +90,14 @@ https://console.volcengine.com/speech
 豆包声音复刻模型 2.0
 ```
 
-### 4.4 获取 API Key
+### 4.4 获取认证信息
 
-新版控制台通常不再使用旧版的 `App ID + Access Token` 方式，而是在 `API Key 管理` 中创建或复制 API Key。
-
-后端调用 V3 时主要使用：
-
-```text
-X-Api-Key
-```
-
-旧版控制台才使用：
+当前 VoiceAuto 的豆包 V3 后端代理使用以下认证信息：
 
 ```text
 APP ID
 Access Token
+Secret Key
 ```
 
 ### 4.5 确认 Resource ID
@@ -117,6 +109,8 @@ seed-tts-2.0
 ```
 
 如果接声音复刻 2.0，需要在对应服务页面确认实际 Resource ID，不要直接套用标准 TTS 的值。
+
+注意：音色 ID 必须和 Resource ID 匹配。若豆包返回 `resource ID is mismatched with speaker related resource`，说明当前音色不属于配置中心保存的 Resource ID。
 
 ### 4.6 获取音色 ID
 
@@ -140,7 +134,7 @@ VoiceAuto 中的 V3 `speaker` 字段应使用这里拿到的音色 ID。
 ```text
 服务是否已开通；
 音色是否已授权；
-API Key 是否可用；
+APP ID / Access Token / Secret Key 是否可用；
 Resource ID 是否正确；
 是否有可用额度；
 是否有并发限制；
@@ -159,7 +153,9 @@ Resource ID 是否正确；
   provider: 'doubao',
   apiVersion: 'v3',
   v3Url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
-  apiKey: '',
+  apiKeyId: '',       // APP ID
+  apiKeySecret: '',   // Access Token
+  secretKey: '',
   resourceId: 'seed-tts-2.0',
   defaultVoiceType: 'zh_female_shuangkuaisisi_moon_bigtts',
   uid: 'voiceauto-web',
@@ -211,20 +207,22 @@ tests/defaultSensitiveConfig.test.mjs
 }
 ```
 
-英文音色示例：
+当前 `seed-tts-2.0` 已验证可播放音色：
 
-```js
-{
-  value: 'en_female_skye_emo_v2_mars_bigtts',
-  voiceType: 'en_female_skye_emo_v2_mars_bigtts',
-  label: 'Skye（英文女声）',
-  lang: 'en-US',
-  gender: 'female',
-  provider: 'doubao-v3'
-}
+```text
+VV（中文女声） -> zh_female_vv_uranus_bigtts
+小何 2.0（中文女声） -> zh_female_xiaohe_uranus_bigtts
+柔美月声（中文女声） -> zh_female_roumei_moon_bigtts
+湾湾小荷（中文女声） -> zh_female_wanwanxiaohe_moon_bigtts
+清新女声 2.0（中文女声） -> zh_female_qingxinnvsheng_uranus_bigtts
+清爽京声（中文男声） -> zh_male_qingshuangjingshen_moon_bigtts
+云舟 2.0（中文男声） -> zh_male_m191_uranus_bigtts
+小天 2.0（中文男声） -> zh_male_taocheng_uranus_bigtts
+刘飞 2.0（中文男声） -> zh_male_liufei_uranus_bigtts
+Vivi 2.0（多语种兼容） -> zh_female_vv_uranus_bigtts
 ```
 
-注意：上面的音色 ID 需要以控制台实际可用音色为准。
+注意：`mars`、`emo_v2_mars`、部分 `moon` 音色在当前配置下可能不属于 `seed-tts-2.0`，不要直接加入可用列表。新增音色前必须先用当前 Resource ID 真实请求验证。
 
 ### 6.2 语言列表
 
@@ -291,9 +289,9 @@ dispatch(actions.setVoiceConfig({
 可选优化：
 
 ```text
-根据语言筛选音色；
-相同语言音色优先展示；
-不隐藏其他语言音色，方便测试跨语言异常场景。
+只展示当前 Resource ID 下验证通过的音色；
+音色下拉平铺展示，不再按中文、英文、多语言分组；
+如需混用其他资源音色，需改造为每个音色绑定独立 resourceId。
 ```
 
 ### 7.3 修改 `src/services/ttsService.jsx`
@@ -304,7 +302,9 @@ dispatch(actions.setVoiceConfig({
 {
   apiVersion,
   v3Url,
-  apiKey,
+  apiKeyId,
+  apiKeySecret,
+  secretKey,
   resourceId,
   defaultVoiceType,
   uid,
@@ -396,11 +396,12 @@ Content-Type: audio/mpeg
 
 ### 8.2 调用豆包 V3
 
-新版控制台请求头：
+当前后端请求头：
 
 ```js
 {
-  'X-Api-Key': apiKey,
+  'X-Api-App-Id': apiKeyId,
+  'X-Api-Access-Key': apiKeySecret,
   'X-Api-Resource-Id': resourceId,
   'X-Api-Request-Id': requestId,
   'Content-Type': 'application/json',
@@ -449,18 +450,20 @@ X-Api-Status-Code
 X-Api-Message
 ```
 
-不要打印 API Key。
+不要打印 APP ID、Access Token、Secret Key。
 
 ## 9. 错误处理
 
 需要明确处理以下异常：
 
 ```text
-API Key 未配置；
+APP ID 或 Access Token 未配置；
+APP ID 不是数字型语音应用 ID；
 Resource ID 未配置；
 voiceType 未配置；
 文本为空；
 音色未授权；
+音色和 Resource ID 不匹配；
 额度不足；
 语言不支持；
 豆包服务超时；
@@ -495,9 +498,10 @@ voiceType 未配置；
 
 ```text
 VoiceConfig 保存 voiceType；
-豆包配置能保存 apiKey、resourceId、apiVersion；
+豆包配置能保存 APP ID、Access Token、Secret Key、Resource ID、API Version；
 V3 请求参数能正确限制 speed_ratio 和 volume_ratio；
-API Key 缺失时返回明确错误；
+APP ID 或 Access Token 缺失时返回明确错误；
+音色和 Resource ID 不匹配时返回明确错误；
 没有音频片段时返回明确错误；
 豆包失败后能回退 Web Speech。
 ```
@@ -511,14 +515,7 @@ API Key 缺失时返回明确错误；
 今天天气怎么样，请用简短的话告诉我。
 ```
 
-英文测试：
-
-```text
-Turn on the living room light.
-Set the air conditioner to twenty four degrees.
-```
-
-混合测试：
+多语言兼容测试：
 
 ```text
 请播放 Taylor Swift 的音乐。
@@ -529,12 +526,12 @@ Turn on 客厅灯.
 
 ```text
 中文音色可以正常播放中文文本；
-英文音色可以正常播放英文文本；
+当前 `seed-tts-2.0` 保留音色全部可以正常生成音频；
 切换音色后无需刷新页面即可生效；
 音量和倍速仍然生效；
 豆包失败后测试流程不中断；
 后端日志能看到 X-Tt-Logid；
-API Key 不出现在浏览器请求、控制台日志或前端构建产物中。
+APP ID、Access Token、Secret Key 不出现在浏览器请求、控制台日志或前端构建产物中。
 ```
 
 ## 11. 实施顺序
@@ -545,11 +542,11 @@ API Key 不出现在浏览器请求、控制台日志或前端构建产物中。
 1. 增加 V3 配置字段，保持 V1 兼容；
 2. 新增后端 /api/tts/doubao-v3 接口；
 3. 新增前端 speakWithDoubaoV3；
-4. 扩展 VOICE_OPTIONS 和 LANG_OPTIONS；
+4. 按 Resource ID 验证并收敛 VOICE_OPTIONS；
 5. 修改 VoiceConfig 保存 voiceType；
 6. 增加测试；
-7. 使用一个中文音色和一个英文音色完成端到端验证；
-8. 验证通过后再扩展更多音色。
+7. 使用当前保留音色完成端到端验证；
+8. 如需扩展其他资源音色，先增加“音色绑定 resourceId”的能力。
 ```
 
 ## 12. VoiceAuto 推荐配置示例
@@ -558,7 +555,9 @@ API Key 不出现在浏览器请求、控制台日志或前端构建产物中。
 Provider: doubao
 API Version: v3
 API URL: https://openspeech.bytedance.com/api/v3/tts/unidirectional
-API Key: 在后端或配置中心保存
+APP ID: 在配置中心保存
+Access Token: 在配置中心保存
+Secret Key: 在配置中心保存
 Resource ID: seed-tts-2.0
 Default Voice Type: 以控制台实际音色 ID 为准
 UID: voiceauto-web

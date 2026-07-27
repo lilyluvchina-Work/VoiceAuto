@@ -45,6 +45,57 @@ function sendBuffer(res, status, buffer, contentType, headers = {}) {
   res.end(buffer);
 }
 
+function classifyServiceError(error) {
+  const message = String(error?.message || error || '');
+  if (/no pg_hba\.conf entry/i.test(message)) {
+    return {
+      status: 503,
+      errorCode: 'DB_PG_HBA_REJECTED',
+      message: '数据库访问被拒绝：当前机器 IP 未加入 PostgreSQL 访问白名单',
+      detail: message,
+      solution: [
+        '在 PostgreSQL 服务器 pg_hba.conf 放行当前客户端 IP',
+        '确认认证方式与用户密码类型一致，例如 md5 或 scram-sha-256',
+        'reload PostgreSQL 配置后重试登录',
+      ],
+    };
+  }
+  if (/server does not support SSL connections/i.test(message)) {
+    return {
+      status: 503,
+      errorCode: 'DB_SSL_UNSUPPORTED',
+      message: '数据库不支持 SSL 连接，请移除 DATABASE_URL 中的 sslmode 参数或调整数据库 SSL 配置',
+      detail: message,
+    };
+  }
+  if (/password authentication failed/i.test(message)) {
+    return {
+      status: 503,
+      errorCode: 'DB_AUTH_FAILED',
+      message: '数据库账号或密码错误，请检查 DATABASE_URL',
+      detail: message,
+    };
+  }
+  if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|timeout|connect/i.test(message)) {
+    return {
+      status: 503,
+      errorCode: 'DB_CONNECTION_FAILED',
+      message: '数据库连接失败，请检查 DATABASE_URL、网络和数据库服务状态',
+      detail: message,
+    };
+  }
+  return {
+    status: 500,
+    errorCode: 'SERVICE_ERROR',
+    message: message || '服务异常',
+  };
+}
+
+async function checkDatabase(pool) {
+  await pool.query('SELECT 1');
+  return { success: true, message: '数据库连接正常' };
+}
+
 async function readJson(req) {
   const chunks = [];
   for await (const chunk of req) {
@@ -93,11 +144,9 @@ function clampNumber(value, min, max, fallback) {
 function getDoubaoV3Config(config = {}) {
   const payload = config.payload || config;
   return {
-    apiKey: String(payload.apiKey || payload.xApiKey || '').trim(),
     apiKeyId: String(payload.apiKeyId || '').trim(),
     apiKeySecret: String(payload.apiKeySecret || '').trim(),
-    accessKeyId: String(payload.accessKeyId || '').trim(),
-    secretAccessKey: String(payload.secretAccessKey || '').trim(),
+    secretKey: String(payload.secretKey || '').trim(),
     resourceId: String(payload.resourceId || 'seed-tts-2.0').trim(),
     url: String(payload.v3Url || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional').trim(),
     uid: String(payload.uid || 'voiceauto-web').trim(),
@@ -106,21 +155,10 @@ function getDoubaoV3Config(config = {}) {
 }
 
 function buildDoubaoAuthHeaders(config) {
-  if (config.apiKey) {
-    return {
-      'X-Api-Key': config.apiKey,
-    };
-  }
   if (config.apiKeyId && config.apiKeySecret) {
     return {
-      'X-Api-App-Key': config.apiKeyId,
+      'X-Api-App-Id': config.apiKeyId,
       'X-Api-Access-Key': config.apiKeySecret,
-    };
-  }
-  if (config.accessKeyId && config.secretAccessKey) {
-    return {
-      'X-Api-App-Key': config.accessKeyId,
-      'X-Api-Access-Key': config.secretAccessKey,
     };
   }
   return {};
@@ -129,9 +167,11 @@ function buildDoubaoAuthHeaders(config) {
 function hasDoubaoAuth(config) {
   return Boolean(
     (config.apiKeyId && config.apiKeySecret)
-    || config.apiKey
-    || (config.accessKeyId && config.secretAccessKey)
   );
+}
+
+function isDoubaoAppId(value) {
+  return /^\d{6,}$/.test(String(value || '').trim());
 }
 
 function parseDoubaoErrorMessage(text) {
@@ -139,11 +179,18 @@ function parseDoubaoErrorMessage(text) {
   if (!raw) return '';
   try {
     const parsed = JSON.parse(raw);
-    return parsed?.message
+    const message = parsed?.message
       || parsed?.header?.message
       || parsed?.error?.message
       || raw;
+    if (/load grant: requested grant not found in SaaS storage/i.test(message)) {
+      return '豆包 V3 授权未匹配：请确认 APP ID、Access Token、Resource ID 来自同一个豆包语音应用，并且该应用已开通对应资源';
+    }
+    return message;
   } catch {
+    if (/load grant: requested grant not found in SaaS storage/i.test(raw)) {
+      return '豆包 V3 授权未匹配：请确认 APP ID、Access Token、Resource ID 来自同一个豆包语音应用，并且该应用已开通对应资源';
+    }
     return raw;
   }
 }
@@ -257,6 +304,17 @@ export function createApp(options) {
   return async function app(req, res) {
     const url = new URL(req.url, 'http://localhost');
     try {
+      if (req.method === 'GET' && url.pathname === '/api/health/database') {
+        try {
+          const result = await checkDatabase(pool);
+          sendJson(res, 200, result);
+        } catch (error) {
+          const serviceError = classifyServiceError(error);
+          sendJson(res, serviceError.status, { success: false, ...serviceError });
+        }
+        return;
+      }
+
       if (req.method === 'POST' && url.pathname === '/api/auth/login') {
         const body = await readJson(req);
         const result = await authenticateUser(pool, body.loginAccount ?? body.username, body.password, {
@@ -383,7 +441,14 @@ export function createApp(options) {
         const savedConfig = await readAppConfig(pool, 'doubaoTts');
         const doubaoConfig = getDoubaoV3Config(savedConfig);
         if (!hasDoubaoAuth(doubaoConfig)) {
-          sendJson(res, 400, { success: false, message: '豆包 V3 API Key 未配置' });
+          sendJson(res, 400, { success: false, message: '豆包 V3 APP ID 或 Access Token 未配置' });
+          return;
+        }
+        if (!isDoubaoAppId(doubaoConfig.apiKeyId)) {
+          sendJson(res, 400, {
+            success: false,
+            message: '豆包 V3 APP ID 配置不正确：请填写豆包语音控制台“服务接口认证信息”中的数字 APP ID，不是方舟 API Key ID',
+          });
           return;
         }
         if (!doubaoConfig.resourceId) {
@@ -486,7 +551,8 @@ export function createApp(options) {
 
       sendJson(res, 405, { success: false, message: 'Method not allowed' });
     } catch (error) {
-      sendJson(res, 500, { success: false, message: error?.message || '服务异常' });
+      const serviceError = classifyServiceError(error);
+      sendJson(res, serviceError.status, { success: false, ...serviceError });
     }
   };
 }

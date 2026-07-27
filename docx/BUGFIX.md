@@ -27,6 +27,24 @@
 
 ## 修复记录
 
+### 2026-07-27
+
+1. 修复后端登录失败时前端只提示“登录失败”的问题。
+  - 现象：登录页无法判断是账号密码错误、数据库连接失败，还是 PostgreSQL 白名单拒绝。
+  - 根因：后端统一返回 500/401 文案，前端未透出数据库连接细节。
+  - 修复：新增 `/api/health/database`，并将数据库错误分类为 `DB_PG_HBA_REJECTED`、`DB_AUTH_FAILED`、`DB_CONNECTION_FAILED` 等；前端登录失败时展示后端 detail。
+  - 影响文件：`server/app.js`、`src/modules/config/authStore.js`、`scripts/startDev.cjs`、`tests/backendAuth.test.mjs`、`tests/authStore.test.mjs`。
+2. 修复本机 IP 未放行导致无法登录问题。
+  - 现象：登录页提示 `no pg_hba.conf entry for host "192.168.231.126"`。
+  - 根因：数据库服务器 `10.10.64.202` 的 PostgreSQL `pg_hba.conf` 未放行当前客户端 IP。
+  - 修复：在 `/var/lib/pgsql/data/pg_hba.conf` 追加 `192.168.231.126/32` 白名单并 reload PostgreSQL。
+  - 备份文件：`/var/lib/pgsql/data/pg_hba.conf.bak.20260727162250`。
+3. 修复豆包 V3 TTS 502 错误提示不清晰问题。
+  - 现象：播放生成音频时报 502，响应包含 `load grant: requested grant not found in SaaS storage` 或 `resource ID is mismatched with speaker related resource`。
+  - 根因：豆包配置字段含义与控制台不一致；部分音色不属于当前 `seed-tts-2.0` Resource ID。
+  - 修复：后端鉴权头调整为 `X-Api-App-Id` + `X-Api-Access-Key`，增加 APP ID 格式校验和上游授权错误中文提示；音色列表收窄为当前 Resource ID 真实验证通过的音色。
+  - 影响文件：`server/app.js`、`src/services/ttsService.jsx`、`src/constants/index.js`、`tests/backendDoubaoTts.test.mjs`、`tests/doubaoVoiceOptions.test.mjs`。
+
 ### 2026-07-24
 
 1. 修复登录后页面空白问题。

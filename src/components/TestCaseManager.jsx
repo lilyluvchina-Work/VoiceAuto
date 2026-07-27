@@ -9,6 +9,22 @@ import { VOICE_OPTIONS, LANG_OPTIONS } from '../constants';
 import { buildGeneratedAudioConfig } from '../utils/testCaseAudioConfig';
 import { isGeneratedTestAudio } from '../utils/testAudioStatus';
 
+function isTextImportedCase(item) {
+  return item?.source === 'text' || item?.importSource === 'text_file' || item?.importSource === 'manual_text';
+}
+
+function sortTextImportedFirst(items) {
+  return [...(items || [])].sort((left, right) => {
+    const leftText = isTextImportedCase(left);
+    const rightText = isTextImportedCase(right);
+    if (leftText !== rightText) return leftText ? -1 : 1;
+    if (leftText && rightText) {
+      return Number(right.importedAt || 0) - Number(left.importedAt || 0);
+    }
+    return 0;
+  });
+}
+
 export default function TestCaseManager() {
   const { state, dispatch } = useTest();
   const [showWizard, setShowWizard] = useState(false);
@@ -28,11 +44,23 @@ export default function TestCaseManager() {
   }, [sortedCases]);
 
   const visibleCases = React.useMemo(() => {
-    if (selectedDirectory === 'all') {
-      return sortedCases;
-    }
-    return sortTestCasesByDirectoryOrder(sortedCases, { directory: selectedDirectory });
+    const cases = selectedDirectory === 'all'
+      ? sortedCases
+      : sortTestCasesByDirectoryOrder(sortedCases, { directory: selectedDirectory });
+    return sortTextImportedFirst(cases);
   }, [sortedCases, selectedDirectory]);
+
+  const textImportedCount = React.useMemo(() => (
+    state.testAudios.filter(isTextImportedCase).length
+  ), [state.testAudios]);
+
+  const tapdImportedCount = React.useMemo(() => (
+    state.testAudios.filter((item) => item.source === 'tapd').length
+  ), [state.testAudios]);
+
+  const visibleTextImportedCount = React.useMemo(() => (
+    visibleCases.filter(isTextImportedCase).length
+  ), [visibleCases]);
 
   const totalGenerated = React.useMemo(() => {
     return state.testAudios.filter(isGeneratedTestAudio).length;
@@ -70,7 +98,7 @@ export default function TestCaseManager() {
     dispatch(actions.updateTestAudio({
       id: item.id,
       audioStatus: 'generated',
-      source: item.source === 'file' ? item.source : 'tts',
+      source: item.source || 'tts',
       config: {
         ...(item.config || {}),
         ...generationConfig,
@@ -84,7 +112,7 @@ export default function TestCaseManager() {
       dispatch(actions.updateTestAudio({
         id: item.id,
         audioStatus: 'generated',
-        source: item.source === 'file' ? item.source : 'tts',
+        source: item.source || 'tts',
         config: {
           ...(item.config || {}),
           ...generationConfig,
@@ -98,7 +126,7 @@ export default function TestCaseManager() {
       dispatch(actions.updateTestAudio({
         id: item.id,
         audioStatus: 'generated',
-        source: item.source === 'file' ? item.source : 'tts',
+        source: item.source || 'tts',
         config: {
           ...(item.config || {}),
           ...generationConfig,
@@ -116,11 +144,13 @@ export default function TestCaseManager() {
             测试用例管理
           </h2>
           <p className="text-sm text-gray-400 mt-1">
-            统一管理已导入测试用例，按用例目录分组展示；点击“生成测试音频”后才进入语音测试可测列表。
+            统一管理已导入测试用例；文本导入置顶展示，TAPD 接口导入单独标记。
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">已生成 {totalGenerated}/{state.testAudios.length}</span>
+          <span className="text-xs text-gray-400">
+            文本 {textImportedCount} · TAPD {tapdImportedCount} · 已生成 {totalGenerated}/{state.testAudios.length}
+          </span>
           <button
             onClick={handleGenerateAll}
             disabled={state.testAudios.length === 0}
@@ -163,12 +193,8 @@ export default function TestCaseManager() {
                 }}
                 className="min-w-[240px] px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary"
               >
-                {['zh-CN', 'en-US', 'multi'].map((lang) => (
-                  <optgroup key={lang} label={LANG_OPTIONS.find((item) => item.value === lang)?.label || lang}>
-                    {VOICE_OPTIONS.filter((voice) => voice.lang === lang).map((voice) => (
-                      <option key={voice.value} value={voice.value}>{voice.label}</option>
-                    ))}
-                  </optgroup>
+                {VOICE_OPTIONS.map((voice) => (
+                  <option key={voice.value} value={voice.value}>{voice.label}</option>
                 ))}
               </select>
             </label>
@@ -227,24 +253,37 @@ export default function TestCaseManager() {
           <div className="text-center py-12 text-gray-400">
             <p className="text-4xl mb-3">📭</p>
             <p>当前暂无导入用例</p>
-            <p className="text-xs mt-2">点击右上角「TAPD 接口导入」后将显示在这里</p>
+            <p className="text-xs mt-2">从导入测试音频页导入文本，或点击右上角「TAPD 接口导入」</p>
           </div>
         ) : (
           <div className="max-h-[62vh] overflow-y-auto space-y-2 pr-1">
             {visibleCases.map((item, index) => {
-              const source = item.source === 'tapd' ? 'TAPD' : (item.source === 'tts' ? 'TTS' : '文件');
+              const isTextImported = isTextImportedCase(item);
+              const source = item.source === 'tapd'
+                ? 'TAPD'
+                : isTextImported
+                ? '文本导入'
+                : (item.source === 'tts' ? 'TTS' : '音频文件');
               const generated = isGeneratedTestAudio(item);
               const directoryName = resolveTestCaseDirectory(item);
 
               return (
                 <div key={item.id || `${item.text}-${index}`} className="bg-darker border border-gray-700 rounded-lg p-3">
+                  {index === 0 && visibleTextImportedCount > 0 && isTextImported && (
+                    <div className="mb-2 text-xs font-medium text-blue-300">文本导入用例</div>
+                  )}
+                  {index === visibleTextImportedCount && visibleTextImportedCount > 0 && !isTextImported && (
+                    <div className="mb-2 text-xs font-medium text-gray-400">TAPD / 已生成音频用例</div>
+                  )}
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm text-white truncate">
                       {item.caseTitle || item.text}
                     </p>
                     <div className="flex items-center gap-2">
                       <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${
-                        item.source === 'tapd'
+                        isTextImported
+                          ? 'bg-blue-500/20 text-blue-300'
+                          : item.source === 'tapd'
                           ? 'bg-indigo-500/20 text-indigo-300'
                           : item.source === 'tts'
                           ? 'bg-blue-500/20 text-blue-400'

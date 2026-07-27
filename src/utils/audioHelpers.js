@@ -53,10 +53,13 @@ export function getFileExtension(filename) {
 
 /**
  * 获取音频来源类型标识
- * @param {string} source - 'tts' | 'tapd' | 'file'
+ * @param {string} source - 'text' | 'tts' | 'tapd' | 'file'
  * @returns {object} { icon, label }
  */
 export function getSourceInfo(source) {
+  if (source === 'text') {
+    return { icon: '📄', label: '文本导入' };
+  }
   if (source === 'tts') {
     return { icon: '🎵', label: 'TTS' };
   }

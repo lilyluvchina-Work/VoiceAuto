@@ -21,10 +21,8 @@ function createMockPool(doubaoPayload = {}) {
   configs.set('doubaoTts', {
     config_type: 'doubaoTts',
     payload: {
-      accessKeyId: 'ak-test',
-      secretAccessKey: 'sk-test',
-      apiKeyId: 'api-key-id-test',
-      apiKeySecret: 'v3-api-key-secret',
+      apiKeyId: '1005636266',
+      apiKeySecret: 'v3-access-token-test',
       ...doubaoPayload,
     },
     updated_by: 'test',
@@ -117,8 +115,9 @@ try {
   assert.equal(response.buffer.toString('utf8'), 'mp3-bytes');
 
   assert.equal(doubaoCalls.length, 1);
-  assert.equal(doubaoCalls[0].options.headers['X-Api-App-Key'], 'api-key-id-test');
-  assert.equal(doubaoCalls[0].options.headers['X-Api-Access-Key'], 'v3-api-key-secret');
+  assert.equal(doubaoCalls[0].options.headers['X-Api-App-Id'], '1005636266');
+  assert.equal(doubaoCalls[0].options.headers['X-Api-Access-Key'], 'v3-access-token-test');
+  assert.equal('X-Api-App-Key' in doubaoCalls[0].options.headers, false);
   assert.equal('X-Api-Key' in doubaoCalls[0].options.headers, false);
   assert.equal(doubaoCalls[0].options.headers['X-Api-Resource-Id'], 'seed-tts-2.0');
   assert.equal(doubaoCalls[0].body.req_params.speaker, 'zh_female_vv_uranus_bigtts');
@@ -155,7 +154,7 @@ try {
   doubaoResponseBody = JSON.stringify({
     header: {
       code: 45000010,
-      message: 'Invalid X-Api-Key',
+      message: 'load grant: requested grant not found in SaaS storage',
     },
   });
   const invalidKeyResponse = await request(server, 'POST', '/api/tts/doubao-v3', {
@@ -163,15 +162,15 @@ try {
     voiceType: 'en_female_skye_emo_v2_mars_bigtts',
   }, cookie);
   assert.equal(invalidKeyResponse.status, 502);
-  assert.equal(invalidKeyResponse.json().message, 'Invalid X-Api-Key');
+  assert.match(invalidKeyResponse.json().message, /豆包 V3 授权未匹配/);
   assert.equal(invalidKeyResponse.json().providerStatus, 401);
 
   await new Promise((resolve) => server.close(resolve));
-  const apiKeyServer = createServer(createApp({
-    pool: createMockPool({ apiKey: 'direct-api-key-test' }),
+  const staleApiKeyServer = createServer(createApp({
+    pool: createMockPool({ apiKey: 'stale-direct-api-key' }),
     sessionStore: new Map(),
   }));
-  await new Promise((resolve) => apiKeyServer.listen(0, '127.0.0.1', resolve));
+  await new Promise((resolve) => staleApiKeyServer.listen(0, '127.0.0.1', resolve));
   try {
     doubaoCalls.length = 0;
     doubaoResponseStatus = 200;
@@ -179,21 +178,76 @@ try {
     doubaoResponseBody = JSON.stringify({
       data: Buffer.from('mp3-bytes').toString('base64'),
     });
-    const apiKeyLogin = await request(apiKeyServer, 'POST', '/api/auth/login', {
+    const apiKeyLogin = await request(staleApiKeyServer, 'POST', '/api/auth/login', {
       loginAccount: 'LilyLuv',
       password: 'Sdmc1234',
     });
     const apiKeyCookie = apiKeyLogin.headers.get('set-cookie');
-    const apiKeyResponse = await request(apiKeyServer, 'POST', '/api/tts/doubao-v3', {
-      text: 'direct api key',
+    const apiKeyResponse = await request(staleApiKeyServer, 'POST', '/api/tts/doubao-v3', {
+      text: 'stale direct api key',
       voiceType: 'en_female_skye_emo_v2_mars_bigtts',
     }, apiKeyCookie);
     assert.equal(apiKeyResponse.status, 200);
-    assert.equal(doubaoCalls[0].options.headers['X-Api-Key'], 'direct-api-key-test');
+    assert.equal(doubaoCalls[0].options.headers['X-Api-App-Id'], '1005636266');
+    assert.equal(doubaoCalls[0].options.headers['X-Api-Access-Key'], 'v3-access-token-test');
     assert.equal('X-Api-App-Key' in doubaoCalls[0].options.headers, false);
-    assert.equal('X-Api-Access-Key' in doubaoCalls[0].options.headers, false);
+    assert.equal('X-Api-Key' in doubaoCalls[0].options.headers, false);
   } finally {
-    await new Promise((resolve) => apiKeyServer.close(resolve));
+    await new Promise((resolve) => staleApiKeyServer.close(resolve));
+  }
+
+  const legacyOnlyServer = createServer(createApp({
+    pool: createMockPool({
+      apiKeyId: '',
+      apiKeySecret: '',
+      accessKeyId: 'legacy-ak',
+      secretAccessKey: 'legacy-sk',
+    }),
+    sessionStore: new Map(),
+  }));
+  await new Promise((resolve) => legacyOnlyServer.listen(0, '127.0.0.1', resolve));
+  try {
+    doubaoCalls.length = 0;
+    const legacyLogin = await request(legacyOnlyServer, 'POST', '/api/auth/login', {
+      loginAccount: 'LilyLuv',
+      password: 'Sdmc1234',
+    });
+    const legacyCookie = legacyLogin.headers.get('set-cookie');
+    const legacyResponse = await request(legacyOnlyServer, 'POST', '/api/tts/doubao-v3', {
+      text: 'legacy credentials only',
+      voiceType: 'en_female_skye_emo_v2_mars_bigtts',
+    }, legacyCookie);
+    assert.equal(legacyResponse.status, 400);
+    assert.equal(legacyResponse.json().message, '豆包 V3 APP ID 或 Access Token 未配置');
+    assert.equal(doubaoCalls.length, 0);
+  } finally {
+    await new Promise((resolve) => legacyOnlyServer.close(resolve));
+  }
+
+  const invalidAppIdServer = createServer(createApp({
+    pool: createMockPool({
+      apiKeyId: 'not-a-speech-app-id',
+      apiKeySecret: 'v3-access-token-test',
+    }),
+    sessionStore: new Map(),
+  }));
+  await new Promise((resolve) => invalidAppIdServer.listen(0, '127.0.0.1', resolve));
+  try {
+    doubaoCalls.length = 0;
+    const invalidAppLogin = await request(invalidAppIdServer, 'POST', '/api/auth/login', {
+      loginAccount: 'LilyLuv',
+      password: 'Sdmc1234',
+    });
+    const invalidAppCookie = invalidAppLogin.headers.get('set-cookie');
+    const invalidAppResponse = await request(invalidAppIdServer, 'POST', '/api/tts/doubao-v3', {
+      text: 'invalid app id',
+      voiceType: 'en_female_skye_emo_v2_mars_bigtts',
+    }, invalidAppCookie);
+    assert.equal(invalidAppResponse.status, 400);
+    assert.match(invalidAppResponse.json().message, /APP ID 配置不正确/);
+    assert.equal(doubaoCalls.length, 0);
+  } finally {
+    await new Promise((resolve) => invalidAppIdServer.close(resolve));
   }
 } finally {
   globalThis.fetch = originalFetch;

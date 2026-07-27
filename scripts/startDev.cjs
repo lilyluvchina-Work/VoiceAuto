@@ -15,6 +15,10 @@ const DEV_PORT = 3000;
 const BACKEND_PORT = 3002;
 const BRIDGE_PORT = 17321;
 
+function compactText(value, maxLength = 800) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
 function ensureLogDir() {
   fs.mkdirSync(LOG_DIR, { recursive: true });
 }
@@ -195,9 +199,31 @@ async function ensureAdbBridge() {
 async function ensureBackend() {
   const healthBefore = await requestText(BACKEND_PORT, '/api/auth/profile', 2500);
   if (healthBefore.ok) {
+    const databaseHealth = await requestText(BACKEND_PORT, '/api/health/database', 6000);
+    if (!databaseHealth.ok || !/^2\d\d$/.test(String(databaseHealth.statusCode || ''))) {
+      appendErrorWithSolution(
+        {
+          type: 'BACKEND_DATABASE_UNHEALTHY',
+          message: 'Backend is running but database health check failed',
+          port: BACKEND_PORT,
+          detail: databaseHealth.body || databaseHealth.error || ''
+        },
+        [
+          '如果 detail 包含 no pg_hba.conf entry：在 PostgreSQL 服务器 pg_hba.conf 放行当前机器 IP，并 reload PostgreSQL',
+          '如果 detail 包含 SSL：确认数据库是否支持 SSL，并同步调整 DATABASE_URL 的 sslmode 参数',
+          '确认 .env 中 DATABASE_URL 的 host、database、user、password 正确',
+          '修复后重启后端，再执行 npm run dev'
+        ]
+      );
+      return {
+        started: false,
+        error: `database health check failed: ${compactText(databaseHealth.body || databaseHealth.error || '')}`
+      };
+    }
     appendLog(CHECK_LOG, 'BACKEND_ALREADY_RUNNING', {
       port: BACKEND_PORT,
-      statusCode: healthBefore.statusCode
+      statusCode: healthBefore.statusCode,
+      databaseHealth: databaseHealth.body || ''
     });
     return { started: false };
   }
@@ -254,6 +280,28 @@ async function ensureBackend() {
       ]
     );
     return { started: false, error: healthAfter.error || 'backend did not become reachable' };
+  }
+
+  const databaseHealth = await requestText(BACKEND_PORT, '/api/health/database', 6000);
+  if (!databaseHealth.ok || !/^2\d\d$/.test(String(databaseHealth.statusCode || ''))) {
+    appendErrorWithSolution(
+      {
+        type: 'BACKEND_DATABASE_UNHEALTHY',
+        message: 'Backend started but database health check failed',
+        port: BACKEND_PORT,
+        detail: databaseHealth.body || databaseHealth.error || ''
+      },
+      [
+        '如果 detail 包含 no pg_hba.conf entry：在 PostgreSQL 服务器 pg_hba.conf 放行当前机器 IP，并 reload PostgreSQL',
+        '如果 detail 包含 SSL：确认数据库是否支持 SSL，并同步调整 DATABASE_URL 的 sslmode 参数',
+        '确认 .env 中 DATABASE_URL 的 host、database、user、password 正确',
+        '修复后重启后端，再执行 npm run dev'
+      ]
+    );
+    return {
+      started: false,
+      error: `database health check failed: ${compactText(databaseHealth.body || databaseHealth.error || '')}`
+    };
   }
   return { started: true, pid: child.pid, health: healthAfter };
 }

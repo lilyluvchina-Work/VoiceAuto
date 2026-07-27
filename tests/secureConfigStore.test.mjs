@@ -144,15 +144,14 @@ assert.equal(maskSensitiveValue(''), '');
   const storage = createMemoryStorage();
   assert.deepEqual(
     getConfigStatus(CONFIG_TYPES.DOUBAO_TTS, { storage }).missingRequiredFields,
-    ['accessKeyId', 'secretAccessKey', 'apiKeyId', 'apiKeySecret']
+    ['apiKeyId', 'apiKeySecret']
   );
 
   saveConfig(CONFIG_TYPES.DOUBAO_TTS, {
-    accessKeyId: 'ak-doubao-test',
-    secretAccessKey: 'sk-doubao-test',
     apiKey: 'api-key-direct-test',
     apiKeyId: 'api-key-id-test',
     apiKeySecret: 'api-key-secret-test',
+    secretKey: 'secret-key-test',
     appId: 'legacy-app-id',
     accessToken: 'legacy-access-token',
     provider: 'legacy-provider',
@@ -164,36 +163,39 @@ assert.equal(maskSensitiveValue(''), '');
   assert.equal(rawStorage.includes('api-key-direct-test'), false);
   assert.equal(rawStorage.includes('api-key-id-test'), false);
   assert.equal(rawStorage.includes('api-key-secret-test'), false);
+  assert.equal(rawStorage.includes('secret-key-test'), false);
 
   const masked = readConfig(CONFIG_TYPES.DOUBAO_TTS, { storage });
-  assert.equal(masked.accessKeyId, 'ak-dou****test');
-  assert.equal(masked.secretAccessKey, 'sk-dou****test');
-  assert.equal(masked.apiKey, 'api-ke****test');
+  assert.equal('accessKeyId' in masked, false);
+  assert.equal('secretAccessKey' in masked, false);
+  assert.equal('apiKey' in masked, false);
   assert.equal(masked.apiKeyId, 'api-ke****test');
   assert.equal(masked.apiKeySecret, 'api-ke****test');
+  assert.equal(masked.secretKey, 'secret****test');
 
   const plain = readConfig(CONFIG_TYPES.DOUBAO_TTS, { storage, includeSecrets: true });
-  assert.equal(plain.accessKeyId, 'ak-doubao-test');
-  assert.equal(plain.secretAccessKey, 'sk-doubao-test');
-  assert.equal(plain.apiKey, 'api-key-direct-test');
+  assert.equal('accessKeyId' in plain, false);
+  assert.equal('secretAccessKey' in plain, false);
+  assert.equal('apiKey' in plain, false);
   assert.equal(plain.apiKeyId, 'api-key-id-test');
   assert.equal(plain.apiKeySecret, 'api-key-secret-test');
+  assert.equal(plain.secretKey, 'secret-key-test');
   assert.equal(plain.appId, 'legacy-app-id');
 
   saveConfig(CONFIG_TYPES.DOUBAO_TTS, {
-    accessKeyId: '',
-    secretAccessKey: '',
     apiKey: '',
     apiKeyId: '',
     apiKeySecret: '',
+    secretKey: '',
   }, { storage });
 
   const cleaned = readConfig(CONFIG_TYPES.DOUBAO_TTS, { storage, includeSecrets: true });
-  assert.equal(cleaned.accessKeyId, 'ak-doubao-test');
-  assert.equal(cleaned.secretAccessKey, 'sk-doubao-test');
-  assert.equal(cleaned.apiKey, 'api-key-direct-test');
+  assert.equal('accessKeyId' in cleaned, false);
+  assert.equal('secretAccessKey' in cleaned, false);
+  assert.equal('apiKey' in cleaned, false);
   assert.equal(cleaned.apiKeyId, 'api-key-id-test');
   assert.equal(cleaned.apiKeySecret, 'api-key-secret-test');
+  assert.equal(cleaned.secretKey, 'secret-key-test');
   assert.equal(cleaned.appId, undefined);
   assert.equal(cleaned.accessToken, undefined);
   assert.equal(cleaned.provider, 'doubao');

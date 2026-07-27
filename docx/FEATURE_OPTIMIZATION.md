@@ -47,6 +47,26 @@
 
 ## 优化记录
 
+### 2026-07-27
+
+1. 豆包 V3 TTS 配置口径统一。
+   - 配置中心将豆包 TTS 字段明确为 `APP ID`、`Access Token`、`Secret Key`、`Resource ID`。
+   - `Secret Key` 纳入敏感字段管理，保存后本地显示脱敏值，读取时可恢复真实值。
+   - 后端继续通过代理接口 `/api/tts/doubao-v3` 调用豆包，浏览器不直接接触密钥。
+   - 影响文件：`src/modules/config/secureConfigStore.js`、`src/components/ConfigCenter.jsx`、`server/app.js`、`tests/secureConfigStore.test.mjs`。
+2. `seed-tts-2.0` 音色列表收敛。
+   - 通过真实接口逐个验证音色是否匹配当前 Resource ID。
+   - 下拉仅保留当前 `seed-tts-2.0` 配置下可播放的音色，避免选择后出现 `resource ID is mismatched with speaker related resource`。
+   - 音色下拉改为平铺展示，不再按中文、英文、多语言分组。
+   - 当前保留音色：VV、小何 2.0、柔美月声、湾湾小荷、清新女声 2.0、清爽京声、云舟 2.0、小天 2.0、刘飞 2.0、Vivi 2.0 多语种兼容。
+   - 影响文件：`src/constants/index.js`、`src/components/TestCaseManager.jsx`、`tests/doubaoVoiceOptions.test.mjs`、`tests/testCaseGenerationVoiceConfig.test.mjs`。
+3. 导入测试音频流程整理。
+   - “导入测试音频”页面第一个入口调整为“音频文件导入”。
+   - 移除该页面最后的 TAPD 粘贴导入入口，TAPD 保留在“测试用例管理”页通过接口导入。
+   - 音频文件导入后直接显示在当前页面的“已导入音频文件”列表。
+   - 文本文件/手动输入用例标记为“文本导入”，在“测试用例管理”页置顶展示，并与 TAPD 用例明确区分。
+   - 影响文件：`src/components/AudioImporter.jsx`、`src/components/TestCaseManager.jsx`、`src/utils/audioHelpers.js`。
+
 ### 2026-07-24
 
 1. 配置中心数据库化。

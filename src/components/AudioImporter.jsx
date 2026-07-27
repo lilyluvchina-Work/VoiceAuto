@@ -8,11 +8,11 @@ import {
   readTextFile,
   parseTestCases,
   parseTestCasesWithModule,
-  parseTapdTestCases,
   isValidAudioFile,
   getAudioDuration,
   generateId
 } from '../utils/audioUtils.jsx';
+import { formatDuration } from '../utils/formatters';
 
 const MODULE_OPTIONS = [
   '未分类',
@@ -28,15 +28,18 @@ export default function AudioImporter() {
   const { defaultVoiceConfig } = state;
 
   const [inputText, setInputText] = useState('');
-  const [tapdInputText, setTapdInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [importMode, setImportMode] = useState('text');
+  const [importMode, setImportMode] = useState('file');
   const [selectedModule, setSelectedModule] = useState('未分类');
   const [customModule, setCustomModule] = useState('');
   const fileInputRef = useRef(null);
   const resolvedModule = selectedModule === '__custom__'
     ? (customModule.trim() || '未分类')
     : selectedModule;
+  const importedAudioFiles = React.useMemo(
+    () => state.testAudios.filter((audio) => audio.source === 'file'),
+    [state.testAudios]
+  );
 
   // 处理文本导入
   const handleTextImport = async (e) => {
@@ -64,7 +67,9 @@ export default function AudioImporter() {
             id,
             text: item.text,
             module: item.module || resolvedModule,
-            source: 'tts',
+            source: 'text',
+            importSource: 'text_file',
+            importedAt: Date.now(),
             audioBlob: null,
             audioUrl: null,
             duration: 0,
@@ -152,7 +157,9 @@ export default function AudioImporter() {
         id,
         text,
         module: resolvedModule,
-        source: 'tts',
+        source: 'text',
+        importSource: 'manual_text',
+        importedAt: Date.now(),
         audioBlob: null,
         audioUrl: null,
         duration: 0,
@@ -167,36 +174,6 @@ export default function AudioImporter() {
     if (successCount > 0) {
       alert(`成功添加 ${successCount} 条测试音频`);
     }
-  };
-
-  const handleTapdImport = () => {
-    if (!tapdInputText.trim()) {
-      alert('请先粘贴 TAPD 用例内容');
-      return;
-    }
-
-    const cases = parseTapdTestCases(tapdInputText);
-    if (cases.length === 0) {
-      alert('未识别到有效 TAPD 用例，请检查粘贴内容');
-      return;
-    }
-
-    cases.forEach((text) => {
-      dispatch(actions.addTestAudio({
-        id: generateId(),
-        text,
-        module: resolvedModule === '未分类' ? 'TAPD导入' : resolvedModule,
-        source: 'tts',
-        audioBlob: null,
-        audioUrl: null,
-        duration: 0,
-        audioStatus: 'not_generated',
-        config: { ...defaultVoiceConfig }
-      }));
-    });
-
-    alert(`成功导入 ${cases.length} 条 TAPD 用例`);
-    setTapdInputText('');
   };
 
   return (
@@ -241,6 +218,16 @@ export default function AudioImporter() {
       {/* 导入模式切换 */}
       <div className="flex gap-2 mb-6">
         <button
+          onClick={() => setImportMode('file')}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            importMode === 'file'
+              ? 'bg-primary text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          }`}
+        >
+          📁 音频文件导入
+        </button>
+        <button
           onClick={() => setImportMode('text')}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             importMode === 'text'
@@ -249,16 +236,6 @@ export default function AudioImporter() {
           }`}
         >
           📄 文本导入
-        </button>
-        <button
-          onClick={() => setImportMode('file')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            importMode === 'file'
-              ? 'bg-primary text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-          }`}
-        >
-          📁 文件导入
         </button>
         <button
           onClick={() => setImportMode('manual')}
@@ -270,17 +247,34 @@ export default function AudioImporter() {
         >
           ✏️ 手动输入
         </button>
-        <button
-          onClick={() => setImportMode('tapd')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            importMode === 'tapd'
-              ? 'bg-primary text-white'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-          }`}
-        >
-          🧩 TAPD 导入
-        </button>
       </div>
+
+      {/* 音频文件导入模式 */}
+      {importMode === 'file' && (
+        <div className="space-y-4">
+          <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center
+                        hover:border-primary transition-colors">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".mp3,.wav,.ogg,.m4a"
+              multiple
+              onChange={handleFileImport}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-6 py-3 bg-secondary hover:bg-indigo-600
+                       rounded-lg font-medium transition-colors"
+            >
+              选择音频文件
+            </button>
+            <p className="mt-3 text-sm text-gray-400">
+              支持 mp3, wav, ogg, m4a 格式，可多选
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 文本导入模式 */}
       {importMode === 'text' && (
@@ -304,33 +298,6 @@ export default function AudioImporter() {
             </button>
             <p className="mt-3 text-sm text-gray-400">
               每行作为一条独立的测试用例
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* 文件导入模式 */}
-      {importMode === 'file' && (
-        <div className="space-y-4">
-          <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center
-                        hover:border-primary transition-colors">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".mp3,.wav,.ogg,.m4a"
-              multiple
-              onChange={handleFileImport}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="px-6 py-3 bg-secondary hover:bg-indigo-600
-                       rounded-lg font-medium transition-colors"
-            >
-              选择音频文件
-            </button>
-            <p className="mt-3 text-sm text-gray-400">
-              支持 mp3, wav, ogg, m4a 格式，可多选
             </p>
           </div>
         </div>
@@ -361,38 +328,40 @@ export default function AudioImporter() {
         </div>
       )}
 
-      {importMode === 'tapd' && (
-        <div className="space-y-4">
-          <div>
-            <textarea
-              value={tapdInputText}
-              onChange={(e) => setTapdInputText(e.target.value)}
-              placeholder="粘贴 TAPD 导出的用例内容（支持表格/CSV/逐行文本）"
-              className="w-full h-40 px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg
-                       focus:border-primary focus:ring-1 focus:ring-primary
-                       text-white placeholder-gray-500 resize-none"
-            />
-          </div>
-          <button
-            onClick={handleTapdImport}
-            disabled={!tapdInputText.trim()}
-            className="w-full px-4 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-600
-                     rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-          >
-            <span>⬇️</span>
-            导入 TAPD 用例
-          </button>
+      <div className="mt-6 rounded-lg border border-gray-700 bg-gray-900/40">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+          <h3 className="text-sm font-semibold text-gray-200">已导入音频文件</h3>
+          <span className="text-xs text-gray-500">{importedAudioFiles.length} 个</span>
         </div>
-      )}
+        {importedAudioFiles.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-gray-500">当前页面暂无导入的音频文件</p>
+        ) : (
+          <div className="max-h-64 overflow-y-auto divide-y divide-gray-800">
+            {importedAudioFiles.map((audio) => (
+              <div key={audio.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-white">{audio.text}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {audio.module || '未分类'} · {formatDuration(audio.duration || 0)}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-green-500/15 px-2 py-0.5 text-xs text-green-300">
+                  音频文件
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* 提示 */}
       <div className="mt-6 p-4 bg-gray-800/50 rounded-lg">
         <p className="text-xs text-gray-400 mb-2 font-medium">💡 提示</p>
         <ul className="text-xs text-gray-500 space-y-1">
+          <li>• 音频文件导入：直接使用现有音频文件，并显示在当前页面</li>
           <li>• 文本导入：支持按标题自动识别模块（如 # 音乐控制）</li>
-          <li>• 文件导入：直接使用现有音频文件</li>
-          <li>• 手动输入：适合单条或少量用例</li>
-          <li>• TAPD 导入：支持粘贴 TAPD 表格或文本记录</li>
+          <li>• 手动输入：适合单条或少量文本用例</li>
+          <li>• 文本用例会显示在测试用例管理页顶部，并标记为文本导入</li>
           <li>• 无法识别模块时，将归类到当前选择的模块</li>
         </ul>
       </div>

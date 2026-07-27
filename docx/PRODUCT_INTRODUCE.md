@@ -9,7 +9,7 @@
 
 VoiceAuto 是一个面向语音助手测试场景的前端自动化测试平台。产品提供从测试用例导入、语音参数配置、批量播放执行到报告导出与日志分析的一体化流程，帮助测试与开发团队快速完成语音交互能力验证。
 
-当前版本以前端页面为主，支持 Web Speech API，并可通过环境变量切换为豆包 TTS 优先、Web Speech 回退的双通道语音合成策略。需要自动判断 Speaker 唤醒、ASR 和 Speaker 播报音频收录状态时，可配套启用本地 ADB Bridge 读取设备日志。
+当前版本由前端页面配合 Node 后端服务组成，支持登录、配置中心数据库持久化、豆包 V3 TTS 后端代理和 Web Speech 回退能力。需要自动判断 Speaker 唤醒、ASR 和 Speaker 播报音频收录状态时，可配套启用本地 ADB Bridge 读取设备日志。
 
 ## 2. 目标用户
 
@@ -40,7 +40,7 @@ VoiceAuto 是一个面向语音助手测试场景的前端自动化测试平台�
 
 #### 4.1.2 音频配置
 
-- 音色选择（男女声）。
+- 音色选择（当前展示 `seed-tts-2.0` Resource ID 下验证通过的可用音色）。
 - 语种/方言选择。
 - 音量调节（0%~200%）。
 - 播放倍速调节（0.5x~2.0x）。
@@ -167,7 +167,7 @@ VoiceAuto 是一个面向语音助手测试场景的前端自动化测试平台�
 - ADB Bridge：Node.js 本地桥接服务，用于读取 `adb devices`、`adb logcat`、执行 ADB 自检和恢复。
 - 语音合成：
   - Web Speech API（默认）
-  - 豆包 TTS（可选，需环境变量）
+  - 豆包 V3 TTS（可选，配置中心维护，后端代理调用）
 - Speaker 响应录音：Web Audio API 连续 PCM 采样并编码 WAV。
 - 报告导出：浏览器 Blob 下载 txt / Markdown / HTML，xlsx 导出 Excel
 - 过程记录导出：xlsx 导出“概览 / 具体数据”双 Sheet，并支持明细合并单元格。
@@ -177,17 +177,14 @@ VoiceAuto 是一个面向语音助手测试场景的前端自动化测试平台�
 
 ## 8. 环境配置
 
-可选启用豆包 TTS，主要变量如下：
+可选启用豆包 V3 TTS，推荐在配置中心维护：
 
-- VITE_TTS_PROVIDER
-- VITE_DOUBAO_TTS_URL
-- VITE_DOUBAO_APP_ID
-- VITE_DOUBAO_ACCESS_TOKEN
-- VITE_DOUBAO_CLUSTER
-- VITE_DOUBAO_VOICE_TYPE
-- VITE_DOUBAO_UID
+- APP ID
+- Access Token
+- Secret Key
+- Resource ID
 
-当 provider 为 doubao 且配置可用时优先豆包；失败自动回退 Web Speech。
+浏览器通过后端 `/api/tts/doubao-v3` 代理请求豆包，密钥不直接暴露给前端。当前音色列表只展示 `seed-tts-2.0` 下已验证可播放的音色。
 
 ## 9. 非功能要求
 

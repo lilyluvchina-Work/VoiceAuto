@@ -82,3 +82,24 @@ function createMemoryStorage() {
   assert.equal(result.user.id, 9);
   assert.equal(calls[0].url, '/api/auth/login');
 }
+
+{
+  const result = await authenticateUser('LilyLuv', 'Sdmc1234', {
+    fetchImpl: async () => ({
+      ok: false,
+      status: 503,
+      async json() {
+        return {
+          success: false,
+          errorCode: 'DB_PG_HBA_REJECTED',
+          message: '数据库访问被拒绝：当前机器 IP 未加入 PostgreSQL 访问白名单',
+          detail: 'no pg_hba.conf entry for host "10.10.122.130"',
+        };
+      },
+    }),
+  });
+  assert.equal(result.success, false);
+  assert.equal(result.errorCode, 'DB_PG_HBA_REJECTED');
+  assert.match(result.message, /数据库访问被拒绝/);
+  assert.match(result.message, /10\.10\.122\.130/);
+}

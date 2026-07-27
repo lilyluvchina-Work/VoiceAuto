@@ -145,6 +145,33 @@ try {
   });
   assert.equal(bad.status, 401);
   assert.equal(bad.body.message, '密码错误');
+
+  const blockedDbServer = createServer(createApp({
+    pool: {
+      async query() {
+        throw new Error('no pg_hba.conf entry for host "10.10.122.130", user "voiceauto_app", database "voiceauto", SSL off');
+      },
+    },
+    sessionStore: new Map(),
+  }));
+  await new Promise((resolve) => blockedDbServer.listen(0, '127.0.0.1', resolve));
+  try {
+    const blockedLogin = await request(blockedDbServer, 'POST', '/api/auth/login', {
+      loginAccount: 'LilyLuv',
+      password,
+    });
+    assert.equal(blockedLogin.status, 503);
+    assert.equal(blockedLogin.body.success, false);
+    assert.equal(blockedLogin.body.errorCode, 'DB_PG_HBA_REJECTED');
+    assert.equal(blockedLogin.body.message, '数据库访问被拒绝：当前机器 IP 未加入 PostgreSQL 访问白名单');
+    assert.match(blockedLogin.body.detail, /10\.10\.122\.130/);
+
+    const databaseHealth = await request(blockedDbServer, 'GET', '/api/health/database');
+    assert.equal(databaseHealth.status, 503);
+    assert.equal(databaseHealth.body.errorCode, 'DB_PG_HBA_REJECTED');
+  } finally {
+    await new Promise((resolve) => blockedDbServer.close(resolve));
+  }
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

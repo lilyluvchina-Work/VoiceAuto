@@ -27,6 +27,10 @@ export const CONFIG_TYPES = {
   DATABASE: 'database',
 };
 
+const DEPRECATED_CONFIG_FIELDS = {
+  [CONFIG_TYPES.DOUBAO_TTS]: ['accessKeyId', 'secretAccessKey', 'apiKey'],
+};
+
 export const CONFIG_SCHEMAS = {
   [CONFIG_TYPES.LANGFUSE]: {
     label: 'Langfuse 配置',
@@ -66,8 +70,8 @@ export const CONFIG_SCHEMAS = {
   },
   [CONFIG_TYPES.DOUBAO_TTS]: {
     label: '豆包 TTS 配置',
-    required: ['accessKeyId', 'secretAccessKey', 'apiKeyId', 'apiKeySecret'],
-    sensitive: ['accessKeyId', 'secretAccessKey', 'apiKey', 'apiKeyId', 'apiKeySecret'],
+    required: ['apiKeyId', 'apiKeySecret'],
+    sensitive: ['apiKeyId', 'apiKeySecret', 'secretKey'],
     defaults: {
       provider: 'doubao',
       apiVersion: 'v3',
@@ -77,11 +81,9 @@ export const CONFIG_SCHEMAS = {
       uid: 'voiceauto-web',
       sampleRate: 24000,
       enabled: true,
-      accessKeyId: '',
-      secretAccessKey: '',
-      apiKey: '',
       apiKeyId: '',
       apiKeySecret: '',
+      secretKey: '',
     },
   },
   [CONFIG_TYPES.SERVER]: {
@@ -216,12 +218,14 @@ function getSchema(type) {
 function splitConfig(type, input) {
   const schema = getSchema(type);
   const sensitiveSet = new Set(schema.sensitive);
+  const deprecatedSet = new Set(DEPRECATED_CONFIG_FIELDS[type] || []);
   const normalConfig = {};
   const secretConfig = {};
   const secretMask = {};
   const mergedInput = { ...schema.defaults, ...(input || {}) };
 
   Object.entries(mergedInput).forEach(([key, value]) => {
+    if (deprecatedSet.has(key)) return;
     if (sensitiveSet.has(key)) {
       const text = normalizeText(value);
       if (text) {
@@ -402,6 +406,7 @@ export function saveConfig(type, input, options = {}) {
 
 export function readConfig(type, options = {}) {
   const schema = getSchema(type);
+  const deprecatedSet = new Set(DEPRECATED_CONFIG_FIELDS[type] || []);
   const record = readStore(options.storage).configs[type];
   if (!record) {
     const defaultConfig = {
@@ -422,14 +427,21 @@ export function readConfig(type, options = {}) {
   }
 
   const plainSecrets = Object.entries(record.secretConfig || {}).reduce((acc, [key, value]) => {
+    if (deprecatedSet.has(key)) return acc;
     acc[key] = decryptSensitiveValue(value);
     return acc;
   }, {});
 
   const baseConfig = {
     ...schema.defaults,
-    ...(record.normalConfig || {}),
-    ...(options.includeSecrets ? plainSecrets : (record.secretMask || {})),
+    ...Object.fromEntries(
+      Object.entries(record.normalConfig || {}).filter(([key]) => !deprecatedSet.has(key))
+    ),
+    ...(options.includeSecrets
+      ? plainSecrets
+      : Object.fromEntries(
+        Object.entries(record.secretMask || {}).filter(([key]) => !deprecatedSet.has(key))
+      )),
     type,
     configured: true,
     hasSecrets: Object.keys(record.secretConfig || {}).length > 0,

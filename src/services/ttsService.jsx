@@ -193,7 +193,7 @@ class TTSService {
 
   async speakWithDoubao(text, config = {}) {
     if (!this.isDoubaoReady()) {
-      throw new Error('豆包 TTS 未配置，请先在配置中心设置 Access Key ID 与 Secret Access Key');
+      throw new Error('豆包 TTS 未配置，请先在配置中心设置 API Key ID 与 API Key Secret');
     }
 
     if (this.doubaoConfig.apiVersion === 'v3') {
@@ -280,6 +280,13 @@ class TTSService {
       try {
         const parsed = JSON.parse(errorText);
         message = parsed.message || message;
+        const details = [
+          parsed.providerStatus ? `状态码 ${parsed.providerStatus}` : '',
+          parsed.logId ? `LogId ${parsed.logId}` : ''
+        ].filter(Boolean);
+        if (details.length > 0) {
+          message = `${message}（${details.join('，')}）`;
+        }
       } catch {
         // Keep plain text error.
       }
