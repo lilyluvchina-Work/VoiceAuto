@@ -134,7 +134,7 @@ D:\deploy-output\voiceauto-20260511-220000
 dist/
 deploy/nginx/
 deploy/docker/
-SERVER_DEPLOYMENT_GUIDE.md
+server-deployment-guide.md
 ```
 
 ### 步骤 2：安装服务器基础环境

@@ -35,9 +35,9 @@
 - deploy/docker/nginx.default.conf
 - deploy/docker/docker-compose.yml
 - README.md
-- docx/PRODUCT_ARCH.md
-- docx/SERVER_DEPLOYMENT_GUIDE.md
-- docx/README.md
+- docs/architecture/product-architecture.md
+- docs/deployment/server-deployment-guide.md
+- docs/readme.md
 - scripts/startDev.cjs
 - scripts/adbBridge.cjs
 - src/services/adbWakeService.js
@@ -317,7 +317,7 @@
 ### 2026-05-11
 
 1. 服务器部署文档补全。
-   - 新增 `docx/SERVER_DEPLOYMENT_GUIDE.md`，提供从本地构建到公网访问的完整步骤。
+   - 新增 `docs/deployment/server-deployment-guide.md`，提供从本地构建到公网访问的完整步骤。
    - 文档按当前项目实际（Vite 前端 + Nginx 代理）给出可执行命令与配置示例。
    - 增加部署前准备清单、上线检查清单、域名与 HTTPS 配置说明。
 2. 部署资产标准化。
@@ -394,9 +394,9 @@
 ### 2026-06-01
 
 1. 运维部署文档精简化。
-   - 新增 `docx/DEPLOYMENT_OPS_SOP.md`，提供面向运维同学的最短上线路径。
+   - 新增 `docs/deployment/deployment-ops-sop.md`，提供面向运维同学的最短上线路径。
    - 文档覆盖上线前检查、标准上线、紧急回滚、故障排查、值班交接模板。
-   - 补充 `docx/README.md` 文档索引，确保运维 SOP 可快速检索。
+   - 补充 `docs/readme.md` 文档索引，确保运维 SOP 可快速检索。
 
 ## 归档来源
 

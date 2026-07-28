@@ -77,7 +77,7 @@ export const CONFIG_SCHEMAS = {
       apiVersion: 'v3',
       v3Url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
       resourceId: 'seed-tts-2.0',
-      defaultVoiceType: 'zh_female_shuangkuaisisi_moon_bigtts',
+      defaultVoiceType: 'zh_female_wanwanxiaohe_moon_bigtts',
       uid: 'voiceauto-web',
       sampleRate: 24000,
       enabled: true,

@@ -22,7 +22,7 @@ echo "[4/5] Copying reusable deployment assets"
 mkdir -p "$BUNDLE_DIR/deploy"
 cp -R "$PROJECT_ROOT/deploy/nginx" "$BUNDLE_DIR/deploy/"
 cp -R "$PROJECT_ROOT/deploy/docker" "$BUNDLE_DIR/deploy/"
-cp "$PROJECT_ROOT/docx/SERVER_DEPLOYMENT_GUIDE.md" "$BUNDLE_DIR/"
+cp "$PROJECT_ROOT/docs/deployment/server-deployment-guide.md" "$BUNDLE_DIR/"
 
 echo "[5/5] Bundle ready"
 echo "Output: $BUNDLE_DIR"

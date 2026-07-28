@@ -1,6 +1,7 @@
 /**
  * 音频文件相关工具函数
  */
+import { normalizeVoiceConfigByLang } from '../constants/index.js';
 
 const VALID_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/x-m4a'];
 const VALID_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a'];
@@ -93,12 +94,13 @@ export function playAudioItem(audio, ttsService, fallbackConfig = {}, options = 
     ...fallbackConfig,
     ...normalizedAudioConfig
   };
+  const resolvedConfig = normalizeVoiceConfigByLang(config);
 
   if (audio.source === 'file' && audio.audioUrl) {
     return new Promise((resolve, reject) => {
       const audioEl = new Audio(audio.audioUrl);
-      audioEl.volume = (config.volume || 100) / 100;
-      audioEl.playbackRate = config.rate || 1.0;
+      audioEl.volume = (resolvedConfig.volume || 100) / 100;
+      audioEl.playbackRate = resolvedConfig.rate || 1.0;
       audioEl.onplaying = () => options.onStart?.();
       audioEl.onended = resolve;
       audioEl.onerror = reject;
@@ -111,13 +113,13 @@ export function playAudioItem(audio, ttsService, fallbackConfig = {}, options = 
   }
 
   return ttsService.speak(audio.text, {
-    voice: config.voice,
-    voiceType: config.voiceType,
-    voiceName: config.voiceName,
-    provider: config.provider,
-    lang: config.lang,
-    volume: config.volume,
-    rate: config.rate,
+    voice: resolvedConfig.voice,
+    voiceType: resolvedConfig.voiceType,
+    voiceName: resolvedConfig.voiceName,
+    provider: resolvedConfig.provider,
+    lang: resolvedConfig.lang,
+    volume: resolvedConfig.volume,
+    rate: resolvedConfig.rate,
     onStart: options.onStart
   });
 }

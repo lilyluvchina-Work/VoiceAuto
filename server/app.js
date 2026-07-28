@@ -216,7 +216,6 @@ function normalizeDoubaoVoiceType(resourceId, voiceType) {
     const seedTts2Fallbacks = {
       zh_female_shuangkuaisisi_moon_bigtts: 'zh_female_vv_uranus_bigtts',
       zh_female_roumei_moon_bigtts: 'zh_female_vv_uranus_bigtts',
-      zh_female_wanwanxiaohe_moon_bigtts: 'zh_female_vv_uranus_bigtts',
       zh_male_qingshuangjingshen_moon_bigtts: 'zh_female_vv_uranus_bigtts',
     };
     return seedTts2Fallbacks[text] || text;

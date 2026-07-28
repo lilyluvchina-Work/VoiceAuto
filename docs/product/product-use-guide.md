@@ -307,6 +307,6 @@
 
 ## 8. 关联文档
 
-- 产品介绍：docx/PRODUCT_INTRODUCE.md
-- 产品架构：docx/PRODUCT_ARCH.md
-- TAPD 导入说明：docx/TAPD_IMPORT_GUIDE.md
+- 产品介绍：docs/product/product-introduction.md
+- 产品架构：docs/architecture/product-architecture.md
+- TAPD 导入说明：docs/integrations/tapd-import-guide.md

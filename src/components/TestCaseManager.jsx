@@ -5,7 +5,12 @@ import {
   resolveTestCaseDirectory,
   sortTestCasesByDirectoryOrder,
 } from '../utils/testCaseOrdering';
-import { VOICE_OPTIONS, LANG_OPTIONS } from '../constants';
+import {
+  LANG_OPTIONS,
+  findVoiceOption,
+  getVoiceForLangAndGender,
+  getVoiceOptionsForLang,
+} from '../constants';
 import { buildGeneratedAudioConfig } from '../utils/testCaseAudioConfig';
 import { isGeneratedTestAudio } from '../utils/testAudioStatus';
 
@@ -29,10 +34,11 @@ export default function TestCaseManager() {
   const { state, dispatch } = useTest();
   const [showWizard, setShowWizard] = useState(false);
   const [selectedDirectory, setSelectedDirectory] = useState('all');
+  const initialGenerationLang = state?.defaultVoiceConfig?.lang || 'zh-CN';
+  const [generationLang, setGenerationLang] = useState(initialGenerationLang);
   const [generationVoice, setGenerationVoice] = useState(
-    state?.defaultVoiceConfig?.voiceType || state?.defaultVoiceConfig?.voice || VOICE_OPTIONS[0]?.value || ''
+    getVoiceForLangAndGender(initialGenerationLang, state?.defaultVoiceConfig?.gender || 'female')?.value || ''
   );
-  const [generationLang, setGenerationLang] = useState(state?.defaultVoiceConfig?.lang || 'zh-CN');
 
   const sortedCases = React.useMemo(() => {
     return sortTestCasesByDirectoryOrder(state.testAudios);
@@ -85,14 +91,28 @@ export default function TestCaseManager() {
     rate: state.defaultVoiceConfig.rate,
   }), [generationVoice, generationLang, state.defaultVoiceConfig.volume, state.defaultVoiceConfig.rate]);
 
-  const selectedVoice = React.useMemo(() => VOICE_OPTIONS.find((voice) => (
-    voice.value === generationVoice || voice.voiceType === generationVoice || voice.legacyValue === generationVoice
-  )), [generationVoice]);
+  const voiceOptions = React.useMemo(() => getVoiceOptionsForLang(generationLang), [generationLang]);
+  const selectedVoice = React.useMemo(() => {
+    const current = findVoiceOption(generationVoice);
+    if (current?.lang === generationLang) {
+      return current;
+    }
+    return voiceOptions[0] || null;
+  }, [generationLang, generationVoice, voiceOptions]);
 
-  const hasLanguageMismatch = selectedVoice
-    && selectedVoice.lang !== 'multi'
-    && generationLang !== 'multi'
-    && selectedVoice.lang !== generationLang;
+  React.useEffect(() => {
+    const selectedInCurrentLang = voiceOptions.some((voice) => voice.value === generationVoice);
+    if (!selectedInCurrentLang && voiceOptions[0]?.value) {
+      setGenerationVoice(voiceOptions[0].value);
+    }
+  }, [generationVoice, voiceOptions]);
+
+  const handleGenerationLangChange = (nextLang) => {
+    const currentGender = selectedVoice?.gender || findVoiceOption(generationVoice)?.gender || 'female';
+    const nextVoice = getVoiceForLangAndGender(nextLang, currentGender);
+    setGenerationLang(nextLang);
+    setGenerationVoice(nextVoice?.value || '');
+  };
 
   const handleGenerateOne = (item) => {
     dispatch(actions.updateTestAudio({
@@ -182,31 +202,26 @@ export default function TestCaseManager() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <label className="space-y-1">
-              <span className="block text-xs text-gray-400">音色</span>
-              <select
-                value={generationVoice}
-                onChange={(event) => {
-                  const nextVoice = event.target.value;
-                  const next = VOICE_OPTIONS.find((voice) => voice.value === nextVoice);
-                  setGenerationVoice(nextVoice);
-                  if (next?.lang) setGenerationLang(next.lang);
-                }}
-                className="min-w-[240px] px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary"
-              >
-                {VOICE_OPTIONS.map((voice) => (
-                  <option key={voice.value} value={voice.value}>{voice.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1">
               <span className="block text-xs text-gray-400">语言</span>
               <select
                 value={generationLang}
-                onChange={(event) => setGenerationLang(event.target.value)}
+                onChange={(event) => handleGenerationLangChange(event.target.value)}
                 className="min-w-[160px] px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary"
               >
                 {LANG_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="block text-xs text-gray-400">音色</span>
+              <select
+                value={generationVoice}
+                onChange={(event) => setGenerationVoice(event.target.value)}
+                className="min-w-[240px] px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary"
+              >
+                {voiceOptions.map((voice) => (
+                  <option key={voice.value} value={voice.value}>{voice.label}</option>
                 ))}
               </select>
             </label>
@@ -218,11 +233,6 @@ export default function TestCaseManager() {
           <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300">
             {LANG_OPTIONS.find((item) => item.value === generationConfig.lang)?.label || generationConfig.lang}
           </span>
-          {hasLanguageMismatch && (
-            <span className="px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-200">
-              当前音色与语言不完全匹配，仍允许生成
-            </span>
-          )}
         </div>
       </div>
 

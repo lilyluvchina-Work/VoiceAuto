@@ -7,6 +7,7 @@ import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { generateId } from '../utils/formatters';
 import { getDefaultLangfuseEnvironmentKey } from '../modules/langfuse/services/langfuseService';
 import { sanitizePersistedVoiceAutoState } from './stateSanitizer';
+import { normalizeVoiceConfigByLang } from '../constants';
 
 const STORAGE_KEY = 'voiceauto_state';
 const DEFAULT_LANGFUSE_ENV_KEY = getDefaultLangfuseEnvironmentKey();
@@ -59,16 +60,12 @@ const initialState = {
   },
 
   // 音频配置（默认值）
-  defaultVoiceConfig: {
-    voice: 'zh_female_shuangkuaisisi_moon_bigtts',
-    voiceType: 'zh_female_shuangkuaisisi_moon_bigtts',
-    voiceName: '爽快思思',
+  defaultVoiceConfig: normalizeVoiceConfigByLang({
     lang: 'zh-CN',
-    provider: 'doubao-v3',
     dialect: '普通话',
     volume: 100,
     rate: 1.0
-  },
+  }),
 
   // 测试音频列表
   testAudios: [],
@@ -253,7 +250,7 @@ function testReducer(state, action) {
     case ActionTypes.SET_VOICE_CONFIG:
       return {
         ...state,
-        defaultVoiceConfig: { ...state.defaultVoiceConfig, ...action.payload }
+        defaultVoiceConfig: normalizeVoiceConfigByLang({ ...state.defaultVoiceConfig, ...action.payload })
       };
 
     case ActionTypes.ADD_TEST_AUDIO:
@@ -556,10 +553,10 @@ export function TestProvider({ children }) {
               20000
             )
           },
-          defaultVoiceConfig: {
+          defaultVoiceConfig: normalizeVoiceConfigByLang({
             ...init.defaultVoiceConfig,
             ...parsed.defaultVoiceConfig
-          },
+          }),
           testAudios: parsed.testAudios || [],
           testOptions: {
             ...init.testOptions,

@@ -88,7 +88,7 @@ class TTSService {
         accessKeyId: secureConfig.accessKeyId || secureConfig.appId || '',
         secretAccessKey: secureConfig.secretAccessKey || secureConfig.accessToken || '',
         cluster: secureConfig.cluster || 'volcano_tts',
-        defaultVoiceType: secureConfig.defaultVoiceType || 'zh_female_roumei_moon_bigtts',
+        defaultVoiceType: secureConfig.defaultVoiceType || 'zh_female_wanwanxiaohe_moon_bigtts',
         uid: secureConfig.uid || 'voiceauto-web',
         sampleRate: Number(secureConfig.sampleRate || 24000)
       };
@@ -102,7 +102,7 @@ class TTSService {
       accessKeyId: import.meta.env.VITE_DOUBAO_ACCESS_KEY_ID || import.meta.env.VITE_DOUBAO_APP_ID || '',
       secretAccessKey: import.meta.env.VITE_DOUBAO_SECRET_ACCESS_KEY || import.meta.env.VITE_DOUBAO_ACCESS_TOKEN || '',
       cluster: import.meta.env.VITE_DOUBAO_CLUSTER || 'volcano_tts',
-      defaultVoiceType: import.meta.env.VITE_DOUBAO_VOICE_TYPE || 'zh_female_roumei_moon_bigtts',
+      defaultVoiceType: import.meta.env.VITE_DOUBAO_VOICE_TYPE || 'zh_female_wanwanxiaohe_moon_bigtts',
       uid: import.meta.env.VITE_DOUBAO_UID || 'voiceauto-web',
       sampleRate: Number(import.meta.env.VITE_DOUBAO_SAMPLE_RATE || 24000)
     };

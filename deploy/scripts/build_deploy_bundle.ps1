@@ -23,7 +23,7 @@ Write-Host "[4/5] Copying reusable deployment assets"
 New-Item -ItemType Directory -Force -Path (Join-Path $bundleDir "deploy") | Out-Null
 Copy-Item -Path (Join-Path $projectRoot "deploy\nginx") -Destination (Join-Path $bundleDir "deploy") -Recurse -Force
 Copy-Item -Path (Join-Path $projectRoot "deploy\docker") -Destination (Join-Path $bundleDir "deploy") -Recurse -Force
-Copy-Item -Path (Join-Path $projectRoot "docx\SERVER_DEPLOYMENT_GUIDE.md") -Destination $bundleDir -Force
+Copy-Item -Path (Join-Path $projectRoot "docs\deployment\server-deployment-guide.md") -Destination $bundleDir -Force
 
 Write-Host "[5/5] Bundle ready"
 Write-Host "Output: $bundleDir"

@@ -1,8 +1,9 @@
-import { VOICE_OPTIONS } from '../constants/index.js';
-
-function stripVoiceLabel(label) {
-  return String(label || '').split('（')[0].trim();
-}
+import {
+  findVoiceOption,
+  getVoiceForLangAndGender,
+  normalizeVoiceConfigByLang,
+  VOICE_OPTIONS,
+} from '../constants/index.js';
 
 export function buildGeneratedAudioConfig({
   voiceValue,
@@ -10,19 +11,18 @@ export function buildGeneratedAudioConfig({
   volume = 100,
   rate = 1,
 } = {}) {
-  const selected = VOICE_OPTIONS.find((voice) => (
-    voice.value === voiceValue
-      || voice.voiceType === voiceValue
-      || voice.legacyValue === voiceValue
-  ));
-  const resolvedVoice = selected?.value || voiceValue || VOICE_OPTIONS[0]?.value || '';
-  return {
-    voice: resolvedVoice,
-    voiceType: selected?.voiceType || resolvedVoice,
-    voiceName: selected ? stripVoiceLabel(selected.label) : resolvedVoice,
-    lang: lang || selected?.lang || 'zh-CN',
-    provider: selected?.provider || 'doubao-v3',
+  const selected = findVoiceOption(voiceValue);
+  const languageVoice = getVoiceForLangAndGender(
+    lang || selected?.lang || 'zh-CN',
+    selected?.gender || 'female'
+  );
+
+  return normalizeVoiceConfigByLang({
+    voice: languageVoice?.value || selected?.value || VOICE_OPTIONS[0]?.value || '',
+    voiceType: languageVoice?.voiceType || selected?.voiceType || '',
+    lang: languageVoice?.lang || lang || selected?.lang || 'zh-CN',
+    gender: languageVoice?.gender || selected?.gender || 'female',
     volume: Number(volume) || 100,
     rate: Number(rate) || 1,
-  };
+  });
 }

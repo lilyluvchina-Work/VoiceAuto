@@ -104,7 +104,7 @@ try {
 
   const response = await request(server, 'POST', '/api/tts/doubao-v3', {
     text: 'Turn on the living room light.',
-    voiceType: 'zh_female_shuangkuaisisi_moon_bigtts',
+    voiceType: 'zh_female_wanwanxiaohe_moon_bigtts',
     lang: 'en-US',
     rate: 2.5,
     volume: 250,
@@ -120,7 +120,7 @@ try {
   assert.equal('X-Api-App-Key' in doubaoCalls[0].options.headers, false);
   assert.equal('X-Api-Key' in doubaoCalls[0].options.headers, false);
   assert.equal(doubaoCalls[0].options.headers['X-Api-Resource-Id'], 'seed-tts-2.0');
-  assert.equal(doubaoCalls[0].body.req_params.speaker, 'zh_female_vv_uranus_bigtts');
+  assert.equal(doubaoCalls[0].body.req_params.speaker, 'zh_female_wanwanxiaohe_moon_bigtts');
   assert.equal(doubaoCalls[0].body.req_params.speed_ratio, 2);
   assert.equal(doubaoCalls[0].body.req_params.volume_ratio, 2);
 
