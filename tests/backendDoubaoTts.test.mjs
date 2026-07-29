@@ -120,7 +120,7 @@ try {
   assert.equal('X-Api-App-Key' in doubaoCalls[0].options.headers, false);
   assert.equal('X-Api-Key' in doubaoCalls[0].options.headers, false);
   assert.equal(doubaoCalls[0].options.headers['X-Api-Resource-Id'], 'seed-tts-2.0');
-  assert.equal(doubaoCalls[0].body.req_params.speaker, 'zh_female_wanwanxiaohe_moon_bigtts');
+  assert.equal(doubaoCalls[0].body.req_params.speaker, 'zh_female_vv_uranus_bigtts');
   assert.equal(doubaoCalls[0].body.req_params.speed_ratio, 2);
   assert.equal(doubaoCalls[0].body.req_params.volume_ratio, 2);
 

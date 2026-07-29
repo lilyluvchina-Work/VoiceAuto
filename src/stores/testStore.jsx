@@ -751,12 +751,14 @@ export function TestProvider({ children }) {
         audioUrl,
         ...rest
       } = audio;
+      const isTemporaryGeneratedAudio = typeof audioUrl === 'string' && audioUrl.startsWith('blob:');
 
       return {
         ...rest,
+        audioStatus: isTemporaryGeneratedAudio ? 'not_generated' : rest.audioStatus,
         // Blob/File 不能可靠持久化；文件音频 URL 刷新后也可能失效
         audioBlob: null,
-        audioUrl: audio.source === 'file' ? null : (audioUrl || null),
+        audioUrl: audio.source === 'file' || isTemporaryGeneratedAudio ? null : (audioUrl || null),
       };
     });
 

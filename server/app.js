@@ -13,6 +13,22 @@ import {
   readAppConfig,
   saveAppConfig,
 } from './configRepository.js';
+import { synthesizeDoubaoV3 } from './doubaoTtsService.js';
+import {
+  createGenerationRecord,
+  createTestAudio,
+  getTestAudio,
+  listTestAudios,
+  markTestAudioFailed,
+  markTestAudioGenerating,
+  softDeleteTestAudio,
+  updateTestAudioSuccess,
+} from './testAudioRepository.js';
+import {
+  deleteTestAudioFile,
+  getReadableTestAudioFile,
+  saveTestAudioFile,
+} from './testAudioStorage.js';
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -133,6 +149,78 @@ async function resolveSessionUser(req, pool, sessionStore) {
 
 function hasPermission(user, permission) {
   return Boolean(user?.permissions?.includes(permission));
+}
+
+function getRequestNumber(value, fallback = null) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function normalizeTestAudioInput(input = {}, previous = null) {
+  const textContent = String(
+    input.textContent ?? input.text ?? previous?.textContent ?? ''
+  ).trim();
+  const voiceCode = String(
+    input.voiceCode ?? input.voiceType ?? previous?.voiceCode ?? ''
+  ).trim();
+  const language = String(
+    input.language ?? input.lang ?? previous?.language ?? 'zh-CN'
+  ).trim();
+  const audioFormat = String(
+    input.audioFormat ?? previous?.audioFormat ?? 'mp3'
+  ).trim().toLowerCase();
+  const name = String(
+    input.name ?? previous?.name ?? textContent.slice(0, 40) ?? ''
+  ).trim();
+  const speed = getRequestNumber(input.speed ?? input.rate, previous?.speed ?? 1);
+  const pitch = getRequestNumber(input.pitch, previous?.pitch ?? 1);
+  const volume = getRequestNumber(input.volume, previous?.volume ?? 1);
+  const sampleRate = getRequestNumber(input.sampleRate, previous?.sampleRate ?? null);
+  const generationParams = {
+    ...(previous?.generationParams || {}),
+    ...(input.generationParams || {}),
+    name,
+    textContent,
+    voiceCode,
+    language,
+    speed,
+    pitch,
+    volume,
+    audioFormat,
+    sampleRate,
+  };
+
+  return {
+    name,
+    textContent,
+    voiceCode,
+    language,
+    speed,
+    pitch,
+    volume,
+    audioFormat,
+    sampleRate,
+    generationParams,
+  };
+}
+
+function sendStream(res, status, stream, contentType, headers = {}) {
+  res.writeHead(status, {
+    'Content-Type': contentType,
+    ...headers,
+  });
+  stream.pipe(res);
+}
+
+function sendError(res, error, fallbackStatus = 500) {
+  sendJson(res, error?.status || fallbackStatus, {
+    success: false,
+    message: error?.message || '服务异常',
+    ...(error?.providerStatus ? { providerStatus: error.providerStatus } : {}),
+    ...(error?.providerCode ? { providerCode: error.providerCode } : {}),
+    ...(error?.logId ? { logId: error.logId } : {}),
+  });
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -418,6 +506,218 @@ export function createApp(options) {
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/api/test-audios') {
+        const currentUser = await resolveSessionUser(req, pool, sessionStore);
+        if (!currentUser) {
+          sendJson(res, 401, { success: false, message: '未登录' });
+          return;
+        }
+        const audios = await listTestAudios(pool);
+        sendJson(res, 200, { success: true, audios });
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/test-audios') {
+        const currentUser = await resolveSessionUser(req, pool, sessionStore);
+        if (!currentUser) {
+          sendJson(res, 401, { success: false, message: '未登录' });
+          return;
+        }
+        if (!hasPermission(currentUser, 'test_execute')) {
+          sendJson(res, 403, { success: false, message: '无测试音频生成权限' });
+          return;
+        }
+
+        const body = await readJson(req);
+        const input = normalizeTestAudioInput(body);
+        if (!input.name || !input.textContent) {
+          sendJson(res, 400, { success: false, message: '请填写音频名称和合成文本' });
+          return;
+        }
+        if (!input.voiceCode) {
+          sendJson(res, 400, { success: false, message: '请选择音色' });
+          return;
+        }
+
+        const created = await createTestAudio(pool, input, currentUser.id);
+        try {
+          const generated = await synthesizeDoubaoV3(pool, {
+            text: input.textContent,
+            voiceType: input.voiceCode,
+            lang: input.language,
+            rate: input.speed,
+            volume: input.volume,
+            audioFormat: input.audioFormat,
+            sampleRate: input.sampleRate,
+          });
+          const savedFile = await saveTestAudioFile(created.id, generated.buffer, {
+            audioFormat: input.audioFormat,
+            contentType: generated.contentType,
+          });
+          const audio = await updateTestAudioSuccess(pool, created.id, {
+            ...input,
+            ...savedFile,
+            sampleRate: input.sampleRate || generated.sampleRate,
+            durationMs: null,
+          });
+          await createGenerationRecord(pool, {
+            testAudioId: created.id,
+            newFilePath: savedFile.filePath,
+            params: input.generationParams,
+            status: 'success',
+          });
+          sendJson(res, 201, { success: true, audio });
+        } catch (error) {
+          await markTestAudioFailed(pool, created.id, error?.message || '测试音频生成失败').catch(() => {});
+          await createGenerationRecord(pool, {
+            testAudioId: created.id,
+            params: input.generationParams,
+            status: 'failed',
+            errorMessage: error?.message || '测试音频生成失败',
+          }).catch(() => {});
+          sendError(res, error, 500);
+        }
+        return;
+      }
+
+      const testAudioMatch = url.pathname.match(/^\/api\/test-audios\/([^/]+)$/);
+      if (testAudioMatch && req.method === 'GET') {
+        const currentUser = await resolveSessionUser(req, pool, sessionStore);
+        if (!currentUser) {
+          sendJson(res, 401, { success: false, message: '未登录' });
+          return;
+        }
+        const audio = await getTestAudio(pool, decodeURIComponent(testAudioMatch[1]));
+        if (!audio) {
+          sendJson(res, 404, { success: false, message: '测试音频不存在' });
+          return;
+        }
+        sendJson(res, 200, { success: true, audio });
+        return;
+      }
+
+      if (testAudioMatch && req.method === 'DELETE') {
+        const currentUser = await resolveSessionUser(req, pool, sessionStore);
+        if (!currentUser) {
+          sendJson(res, 401, { success: false, message: '未登录' });
+          return;
+        }
+        if (!hasPermission(currentUser, 'test_execute')) {
+          sendJson(res, 403, { success: false, message: '无测试音频删除权限' });
+          return;
+        }
+        const existing = await getTestAudio(pool, decodeURIComponent(testAudioMatch[1]));
+        if (!existing) {
+          sendJson(res, 404, { success: false, message: '测试音频不存在' });
+          return;
+        }
+        const deleted = await softDeleteTestAudio(pool, existing.id);
+        await deleteTestAudioFile(existing.filePath).catch(() => {});
+        sendJson(res, 200, { success: true, audio: deleted });
+        return;
+      }
+
+      const testAudioPlayMatch = url.pathname.match(/^\/api\/test-audios\/([^/]+)\/play$/);
+      if (testAudioPlayMatch && req.method === 'GET') {
+        const currentUser = await resolveSessionUser(req, pool, sessionStore);
+        if (!currentUser) {
+          sendJson(res, 401, { success: false, message: '未登录' });
+          return;
+        }
+        const audio = await getTestAudio(pool, decodeURIComponent(testAudioPlayMatch[1]));
+        if (!audio || audio.status !== 'success' || !audio.filePath) {
+          sendJson(res, 404, { success: false, message: '测试音频文件不存在' });
+          return;
+        }
+        try {
+          const file = await getReadableTestAudioFile(audio.filePath);
+          sendStream(res, 200, file.stream, file.contentType, {
+            'Content-Length': file.size,
+            'Cache-Control': 'private, max-age=3600',
+          });
+        } catch (error) {
+          sendError(res, error, 404);
+        }
+        return;
+      }
+
+      const testAudioRegenerateMatch = url.pathname.match(/^\/api\/test-audios\/([^/]+)\/regenerate$/);
+      if (testAudioRegenerateMatch && req.method === 'POST') {
+        const currentUser = await resolveSessionUser(req, pool, sessionStore);
+        if (!currentUser) {
+          sendJson(res, 401, { success: false, message: '未登录' });
+          return;
+        }
+        if (!hasPermission(currentUser, 'test_execute')) {
+          sendJson(res, 403, { success: false, message: '无测试音频生成权限' });
+          return;
+        }
+
+        const existing = await getTestAudio(pool, decodeURIComponent(testAudioRegenerateMatch[1]));
+        if (!existing) {
+          sendJson(res, 404, { success: false, message: '测试音频不存在' });
+          return;
+        }
+        if (existing.status === 'generating') {
+          sendJson(res, 409, { success: false, message: '测试音频正在生成中，请稍后再试' });
+          return;
+        }
+
+        const body = await readJson(req);
+        const input = normalizeTestAudioInput(body.mode === 'use_original_params' ? {} : body, existing);
+        const locked = await markTestAudioGenerating(pool, existing.id);
+        if (!locked) {
+          sendJson(res, 409, { success: false, message: '测试音频正在生成中，请稍后再试' });
+          return;
+        }
+
+        try {
+          const generated = await synthesizeDoubaoV3(pool, {
+            text: input.textContent,
+            voiceType: input.voiceCode,
+            lang: input.language,
+            rate: input.speed,
+            volume: input.volume,
+            audioFormat: input.audioFormat,
+            sampleRate: input.sampleRate,
+          });
+          const savedFile = await saveTestAudioFile(existing.id, generated.buffer, {
+            audioFormat: input.audioFormat,
+            contentType: generated.contentType,
+          });
+          const audio = await updateTestAudioSuccess(pool, existing.id, {
+            ...input,
+            ...savedFile,
+            sampleRate: input.sampleRate || generated.sampleRate,
+            durationMs: null,
+          });
+          await createGenerationRecord(pool, {
+            testAudioId: existing.id,
+            oldFilePath: existing.filePath,
+            newFilePath: savedFile.filePath,
+            params: input.generationParams,
+            status: 'success',
+          });
+          if (existing.filePath && existing.filePath !== savedFile.filePath) {
+            await deleteTestAudioFile(existing.filePath).catch(() => {});
+          }
+          sendJson(res, 200, { success: true, audio });
+        } catch (error) {
+          await markTestAudioFailed(pool, existing.id, error?.message || '测试音频重新生成失败', {
+            keepSuccess: existing.status === 'success',
+          }).catch(() => {});
+          await createGenerationRecord(pool, {
+            testAudioId: existing.id,
+            oldFilePath: existing.filePath,
+            params: input.generationParams,
+            status: 'failed',
+            errorMessage: error?.message || '测试音频重新生成失败',
+          }).catch(() => {});
+          sendError(res, error, 500);
+        }
+        return;
+      }
+
       if (req.method === 'POST' && url.pathname === '/api/tts/doubao-v3') {
         const currentUser = await resolveSessionUser(req, pool, sessionStore);
         if (!currentUser) {
@@ -426,115 +726,25 @@ export function createApp(options) {
         }
 
         const body = await readJson(req);
-        const text = String(body.text || '').trim();
-        const voiceType = String(body.voiceType || '').trim();
-        if (!text) {
-          sendJson(res, 400, { success: false, message: 'TTS 文本为空' });
-          return;
-        }
-        if (!voiceType) {
-          sendJson(res, 400, { success: false, message: '豆包 V3 TTS 音色未配置' });
-          return;
-        }
-
-        const savedConfig = await readAppConfig(pool, 'doubaoTts');
-        const doubaoConfig = getDoubaoV3Config(savedConfig);
-        if (!hasDoubaoAuth(doubaoConfig)) {
-          sendJson(res, 400, { success: false, message: '豆包 V3 APP ID 或 Access Token 未配置' });
-          return;
-        }
-        if (!isDoubaoAppId(doubaoConfig.apiKeyId)) {
-          sendJson(res, 400, {
-            success: false,
-            message: '豆包 V3 APP ID 配置不正确：请填写豆包语音控制台“服务接口认证信息”中的数字 APP ID，不是方舟 API Key ID',
+        try {
+          const generated = await synthesizeDoubaoV3(pool, {
+            text: body.text,
+            voiceType: body.voiceType,
+            lang: body.lang,
+            rate: body.rate,
+            volume: body.volume,
+            audioFormat: 'mp3',
           });
-          return;
+          sendBuffer(
+            res,
+            200,
+            generated.buffer,
+            generated.contentType || 'audio/mpeg',
+            generated.logId ? { 'X-Tt-Logid': generated.logId } : {}
+          );
+        } catch (error) {
+          sendError(res, error, 500);
         }
-        if (!doubaoConfig.resourceId) {
-          sendJson(res, 400, { success: false, message: '豆包 V3 Resource ID 未配置' });
-          return;
-        }
-
-        const requestId = randomUUID();
-        const resolvedVoiceType = normalizeDoubaoVoiceType(doubaoConfig.resourceId, voiceType);
-        const speedRatio = clampNumber(body.rate, 0.5, 2, 1);
-        const volumeRatio = clampNumber(Number(body.volume || 100) / 100, 0.1, 2, 1);
-        const response = await fetch(doubaoConfig.url, {
-          method: 'POST',
-          headers: {
-            ...buildDoubaoAuthHeaders(doubaoConfig),
-            'X-Api-Resource-Id': doubaoConfig.resourceId,
-            'X-Api-Request-Id': requestId,
-            'Content-Type': 'application/json',
-            Connection: 'keep-alive',
-          },
-          body: JSON.stringify({
-            user: {
-              uid: doubaoConfig.uid,
-            },
-            req_params: {
-              text,
-              speaker: resolvedVoiceType,
-              audio_params: {
-                format: 'mp3',
-                sample_rate: doubaoConfig.sampleRate,
-              },
-              speed_ratio: speedRatio,
-              volume_ratio: volumeRatio,
-              language: body.lang || undefined,
-            },
-          }),
-        });
-
-        const logId = response.headers.get('x-tt-logid') || response.headers.get('x-tt-log-id') || '';
-        if (!response.ok) {
-          const responseText = await response.text();
-          sendJson(res, 502, {
-            success: false,
-            message: parseDoubaoErrorMessage(responseText) || '豆包 V3 TTS 请求失败',
-            providerStatus: response.status || 0,
-            logId,
-          });
-          return;
-        }
-
-        const contentType = response.headers.get('content-type') || '';
-        if (/^audio\/|application\/octet-stream/i.test(contentType)) {
-          const audioBuffer = Buffer.from(await response.arrayBuffer());
-          if (!audioBuffer.length) {
-            sendJson(res, 502, {
-              success: false,
-              message: '豆包 V3 TTS 返回空音频',
-              logId,
-            });
-            return;
-          }
-          sendBuffer(res, 200, audioBuffer, contentType.split(';')[0] || 'audio/mpeg', logId ? { 'X-Tt-Logid': logId } : {});
-          return;
-        }
-
-        const responseText = await response.text();
-        const parsedResponse = parseDoubaoJsonLine(responseText);
-        if (parsedResponse && Number(parsedResponse.code || 0) !== 0) {
-          sendJson(res, 502, {
-            success: false,
-            message: parsedResponse.message || '豆包 V3 TTS 请求失败',
-            providerCode: Number(parsedResponse.code || 0),
-            logId,
-          });
-          return;
-        }
-        const audioBuffers = extractDoubaoAudioBuffers(responseText);
-        if (!audioBuffers.length) {
-          sendJson(res, 502, {
-            success: false,
-            message: '豆包 V3 TTS 未返回音频片段',
-            logId,
-          });
-          return;
-        }
-
-        sendBuffer(res, 200, Buffer.concat(audioBuffers), 'audio/mpeg', logId ? { 'X-Tt-Logid': logId } : {});
         return;
       }
 

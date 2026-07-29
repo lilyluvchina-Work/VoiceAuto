@@ -68,3 +68,35 @@ assert.equal(spoken.config.voiceName, '湾湾小何');
 assert.equal(spoken.config.voice, 'zh-CN:zh_female_wanwanxiaohe_moon_bigtts');
 assert.equal(spoken.config.volume, 90);
 assert.equal(spoken.config.rate, 1.1);
+
+let createdAudio = null;
+globalThis.Audio = class MockAudio {
+  constructor(src) {
+    this.src = src;
+    this.volume = 0;
+    this.playbackRate = 1;
+    createdAudio = this;
+  }
+
+  play() {
+    this.onplaying?.();
+    this.onended?.();
+    return Promise.resolve();
+  }
+};
+
+await playAudioItem(
+  {
+    id: 'generated-audio',
+    audioUrl: 'blob:test-audio',
+    text: '临时音频',
+    config: {
+      volume: 150,
+      rate: 1.25,
+    },
+  },
+  ttsService
+);
+
+assert.equal(createdAudio.volume, 1);
+assert.equal(createdAudio.playbackRate, 1.25);

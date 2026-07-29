@@ -47,6 +47,21 @@
 
 ## 优化记录
 
+### 2026-07-29
+
+1. 测试音频生成与保存流程调整。
+   - “生成测试音频”调整为只生成浏览器临时音频，用于当前页面播放，不自动写入服务端存储目录。
+   - 单条用例生成成功后展示“保存音频”，点击后才导出音频文件。
+   - 新增“全部保存音频”按钮，支持一键导出全部已生成音频，并按功能目录归档。
+   - Chrome / Edge 支持选择本地目录并创建功能目录子文件夹；Firefox / Safari 自动下载包含功能目录结构的 `.zip` 文件。
+   - 刷新页面后临时 `Blob URL` 会失效，持久化状态会自动回退为未生成，避免出现“已生成但无法播放”。
+   - 修复播放生成音频时音量超过浏览器 `[0, 1]` 范围导致播放失败的问题。
+   - 影响文件：`src/components/TestCaseManager.jsx`、`src/services/testAudioApi.js`、`src/utils/audioHelpers.js`、`src/stores/testStore.jsx`、`tests/audioHelpers.test.mjs`。
+2. 测试音频文档同步。
+   - 更新用户使用指引，补充单条保存、全部保存、功能目录归档和浏览器兼容说明。
+   - 更新测试音频存储与重生成方案，区分“当前临时生成 + 手动导出”与“后续服务端持久化”两类方案。
+   - 影响文件：`docs/product/product-use-guide.md`、`docs/deployment/test-audio-storage-and-regeneration-plan.md`。
+
 ### 2026-07-27
 
 1. 豆包 V3 TTS 配置口径统一。

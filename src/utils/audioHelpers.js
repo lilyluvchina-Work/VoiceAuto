@@ -7,6 +7,13 @@ const VALID_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 
 const VALID_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a'];
 const VOICE_CONFIG_FIELDS = ['voice', 'voiceType', 'voiceName', 'provider'];
 
+function normalizeMediaVolume(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 1;
+  const ratio = numeric > 1 ? numeric / 100 : numeric;
+  return Math.max(0, Math.min(1, ratio));
+}
+
 /**
  * 获取音频时长
  * @param {string} src - 音频源 URL 或 Blob URL
@@ -96,10 +103,10 @@ export function playAudioItem(audio, ttsService, fallbackConfig = {}, options = 
   };
   const resolvedConfig = normalizeVoiceConfigByLang(config);
 
-  if (audio.source === 'file' && audio.audioUrl) {
+  if (audio.audioUrl) {
     return new Promise((resolve, reject) => {
       const audioEl = new Audio(audio.audioUrl);
-      audioEl.volume = (resolvedConfig.volume || 100) / 100;
+      audioEl.volume = normalizeMediaVolume(resolvedConfig.volume ?? 100);
       audioEl.playbackRate = resolvedConfig.rate || 1.0;
       audioEl.onplaying = () => options.onStart?.();
       audioEl.onended = resolve;

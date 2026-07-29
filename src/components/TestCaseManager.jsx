@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import JSZip from 'jszip';
 import TapdImportWizard from './TapdImportWizard';
 import { useTest, actions } from '../stores/testStore';
 import {
@@ -13,6 +14,10 @@ import {
 } from '../constants';
 import { buildGeneratedAudioConfig } from '../utils/testCaseAudioConfig';
 import { isGeneratedTestAudio } from '../utils/testAudioStatus';
+import {
+  fetchStoredTestAudioBlob,
+  synthesizeTestAudioBlob,
+} from '../services/testAudioApi';
 
 function isTextImportedCase(item) {
   return item?.source === 'text' || item?.importSource === 'text_file' || item?.importSource === 'manual_text';
@@ -30,6 +35,138 @@ function sortTextImportedFirst(items) {
   });
 }
 
+function sanitizeFilename(value) {
+  return String(value || '测试音频')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80) || '测试音频';
+}
+
+function sanitizePathSegment(value) {
+  return sanitizeFilename(value || '未分类') || '未分类';
+}
+
+function createUniqueFilename(filename, usedNames) {
+  if (!usedNames.has(filename)) {
+    usedNames.add(filename);
+    return filename;
+  }
+
+  const dotIndex = filename.lastIndexOf('.');
+  const name = dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
+  const extension = dotIndex > 0 ? filename.slice(dotIndex) : '';
+  let index = 2;
+  let next = `${name}_${index}${extension}`;
+  while (usedNames.has(next)) {
+    index += 1;
+    next = `${name}_${index}${extension}`;
+  }
+  usedNames.add(next);
+  return next;
+}
+
+function getAudioFilename(item) {
+  const extension = String(item.audioFormat || 'mp3').replace(/^\./, '') || 'mp3';
+  const baseName = item.caseTitle || item.text || item.id;
+  return `${sanitizeFilename(baseName)}.${extension}`;
+}
+
+function getGeneratedAudioUrl(item) {
+  if (item?.audioUrl) return item.audioUrl;
+  return '';
+}
+
+async function saveBlobWithPicker(blob, filename) {
+  const downloadBlob = () => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  if (typeof window.showSaveFilePicker === 'function' && window.isSecureContext) {
+    try {
+      const extension = filename.includes('.') ? filename.split('.').pop() : 'mp3';
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{
+          description: '音频文件',
+          accept: {
+            [blob.type || 'audio/mpeg']: [`.${extension}`],
+          },
+        }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw error;
+      }
+      downloadBlob();
+      return;
+    }
+  }
+
+  downloadBlob();
+}
+
+async function saveGeneratedAudiosToDirectory(items) {
+  const rootHandle = await window.showDirectoryPicker({
+    mode: 'readwrite',
+  });
+  const usedNamesByDirectory = new Map();
+
+  for (const item of items) {
+    const directoryName = sanitizePathSegment(resolveTestCaseDirectory(item));
+    const directoryHandle = await rootHandle.getDirectoryHandle(directoryName, { create: true });
+    const usedNames = usedNamesByDirectory.get(directoryName) || new Set();
+    usedNamesByDirectory.set(directoryName, usedNames);
+
+    const filename = createUniqueFilename(getAudioFilename(item), usedNames);
+    const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(item.audioBlob || await fetchStoredTestAudioBlob(getGeneratedAudioUrl(item)));
+    await writable.close();
+  }
+}
+
+async function saveGeneratedAudiosAsZip(items) {
+  const zip = new JSZip();
+  const usedNamesByDirectory = new Map();
+
+  for (const item of items) {
+    const directoryName = sanitizePathSegment(resolveTestCaseDirectory(item));
+    const usedNames = usedNamesByDirectory.get(directoryName) || new Set();
+    usedNamesByDirectory.set(directoryName, usedNames);
+    const filename = createUniqueFilename(getAudioFilename(item), usedNames);
+    const blob = item.audioBlob || await fetchStoredTestAudioBlob(getGeneratedAudioUrl(item));
+    zip.folder(directoryName).file(filename, blob);
+  }
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  await saveBlobWithPicker(zipBlob, `测试音频_${new Date().toISOString().slice(0, 10)}.zip`);
+}
+
+function getSaveAudioTitle() {
+  if (typeof window.showSaveFilePicker === 'function' && window.isSecureContext) {
+    return '保存音频，可选择文件夹和文件名';
+  }
+  return '当前浏览器会保存到默认下载目录';
+}
+
+function getSaveAudioDisabledTitle(item) {
+  if (!isGeneratedTestAudio(item)) return '请先生成测试音频';
+  if (!getGeneratedAudioUrl(item)) return '当前音频已失效，请重新生成后再保存';
+  return getSaveAudioTitle();
+}
+
 export default function TestCaseManager() {
   const { state, dispatch } = useTest();
   const [showWizard, setShowWizard] = useState(false);
@@ -39,6 +176,9 @@ export default function TestCaseManager() {
   const [generationVoice, setGenerationVoice] = useState(
     getVoiceForLangAndGender(initialGenerationLang, state?.defaultVoiceConfig?.gender || 'female')?.value || ''
   );
+  const [generatingIds, setGeneratingIds] = useState(() => new Set());
+  const [savingIds, setSavingIds] = useState(() => new Set());
+  const [isSavingAll, setIsSavingAll] = useState(false);
 
   const sortedCases = React.useMemo(() => {
     return sortTestCasesByDirectoryOrder(state.testAudios);
@@ -70,6 +210,12 @@ export default function TestCaseManager() {
 
   const totalGenerated = React.useMemo(() => {
     return state.testAudios.filter(isGeneratedTestAudio).length;
+  }, [state.testAudios]);
+
+  const savableGeneratedAudios = React.useMemo(() => {
+    return sortTestCasesByDirectoryOrder(
+      state.testAudios.filter((item) => isGeneratedTestAudio(item) && getGeneratedAudioUrl(item))
+    );
   }, [state.testAudios]);
 
   const handleClearCases = () => {
@@ -114,45 +260,135 @@ export default function TestCaseManager() {
     setGenerationVoice(nextVoice?.value || '');
   };
 
-  const handleGenerateOne = (item) => {
-    dispatch(actions.updateTestAudio({
-      id: item.id,
-      audioStatus: 'generated',
+  const buildLocalGeneratedPatch = (item, patch = {}) => ({
+    id: item.id,
+    audioStatus: 'generated',
+    source: item.source || 'tts',
+    config: {
+      ...(item.config || {}),
+      ...generationConfig,
+    },
+    ...patch,
+  });
+
+  const createGenerationRequest = (item) => ({
+    name: item.caseTitle || item.text?.slice(0, 40) || '测试音频',
+    textContent: item.text,
+    voiceCode: generationConfig.voiceType || generationConfig.voice,
+    language: generationConfig.lang,
+    speed: generationConfig.rate,
+    pitch: generationConfig.pitch || 1,
+    volume: generationConfig.volume,
+    audioFormat: 'mp3',
+    generationParams: {
+      localCaseId: item.id,
+      module: item.module,
+      directory: resolveTestCaseDirectory(item),
       source: item.source || 'tts',
-      config: {
-        ...(item.config || {}),
-        ...generationConfig,
-      },
+      voiceName: generationConfig.voiceName,
+      provider: generationConfig.provider,
+    },
+  });
+
+  const applyGeneratedAudio = (item, blob) => {
+    if (item.audioUrl?.startsWith?.('blob:')) {
+      URL.revokeObjectURL(item.audioUrl);
+    }
+    const audioUrl = URL.createObjectURL(blob);
+    dispatch(actions.updateTestAudio({
+      ...buildLocalGeneratedPatch(item, {
+        serverAudioId: null,
+        audioBlob: blob,
+        audioUrl,
+        duration: 0,
+        fileSize: blob.size,
+        audioFormat: blob.type?.includes('wav') ? 'wav' : 'mp3',
+        generatedAt: Date.now(),
+        storageError: '',
+      }),
     }));
   };
 
-  const handleGenerateByGroup = (groupName) => {
-    const items = sortTestCasesByDirectoryOrder(sortedCases, { directory: groupName });
-    items.forEach((item) => {
-      dispatch(actions.updateTestAudio({
-        id: item.id,
-        audioStatus: 'generated',
-        source: item.source || 'tts',
-        config: {
-          ...(item.config || {}),
-          ...generationConfig,
-        },
-      }));
-    });
+  const handleGenerateOne = async (item) => {
+    setGeneratingIds((current) => new Set(current).add(item.id));
+    try {
+      const request = createGenerationRequest(item);
+      const blob = await synthesizeTestAudioBlob(request);
+      applyGeneratedAudio(item, blob);
+    } catch (error) {
+      console.warn('Test audio generation failed:', error);
+      dispatch(actions.updateTestAudio(buildLocalGeneratedPatch(item, {
+        audioStatus: 'not_generated',
+        audioBlob: null,
+        audioUrl: null,
+        storageError: error?.message || '音频生成失败',
+      })));
+    } finally {
+      setGeneratingIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
   };
 
-  const handleGenerateAll = () => {
-    sortedCases.forEach((item) => {
-      dispatch(actions.updateTestAudio({
-        id: item.id,
-        audioStatus: 'generated',
-        source: item.source || 'tts',
-        config: {
-          ...(item.config || {}),
-          ...generationConfig,
-        },
-      }));
-    });
+  const handleGenerateByGroup = async (groupName) => {
+    const items = sortTestCasesByDirectoryOrder(sortedCases, { directory: groupName });
+    for (const item of items) {
+      await handleGenerateOne(item);
+    }
+  };
+
+  const handleGenerateAll = async () => {
+    for (const item of sortedCases) {
+      await handleGenerateOne(item);
+    }
+  };
+
+  const handleSaveAudio = async (item) => {
+    const audioUrl = getGeneratedAudioUrl(item);
+    if (!audioUrl) {
+      alert('当前用例没有可保存的音频，请先生成测试音频');
+      return;
+    }
+
+    setSavingIds((current) => new Set(current).add(item.id));
+    try {
+      const blob = item.audioBlob || await fetchStoredTestAudioBlob(audioUrl);
+      await saveBlobWithPicker(blob, getAudioFilename(item));
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        alert(error?.message || '保存音频失败');
+      }
+    } finally {
+      setSavingIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  };
+
+  const handleSaveAllAudios = async () => {
+    if (savableGeneratedAudios.length === 0) {
+      alert('当前没有可保存的已生成音频');
+      return;
+    }
+
+    setIsSavingAll(true);
+    try {
+      if (typeof window.showDirectoryPicker === 'function' && window.isSecureContext) {
+        await saveGeneratedAudiosToDirectory(savableGeneratedAudios);
+      } else {
+        await saveGeneratedAudiosAsZip(savableGeneratedAudios);
+      }
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        alert(error?.message || '批量保存音频失败');
+      }
+    } finally {
+      setIsSavingAll(false);
+    }
   };
 
   return (
@@ -173,10 +409,20 @@ export default function TestCaseManager() {
           </span>
           <button
             onClick={handleGenerateAll}
-            disabled={state.testAudios.length === 0}
+            disabled={state.testAudios.length === 0 || generatingIds.size > 0}
             className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-medium transition-colors text-sm whitespace-nowrap"
           >
-            <span>⚡</span> 全部生成测试音频
+            <span>⚡</span> {generatingIds.size > 0 ? `生成中 ${generatingIds.size}` : '全部生成测试音频'}
+          </button>
+          <button
+            onClick={handleSaveAllAudios}
+            disabled={savableGeneratedAudios.length === 0 || isSavingAll}
+            title={typeof window.showDirectoryPicker === 'function' && window.isSecureContext
+              ? '选择目录后按功能目录保存全部音频'
+              : '当前浏览器会下载包含功能目录的 zip 文件'}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-medium transition-colors text-sm whitespace-nowrap"
+          >
+            <span>💾</span> {isSavingAll ? '保存中...' : `全部保存音频 (${savableGeneratedAudios.length})`}
           </button>
           <button
             onClick={handleClearCases}
@@ -275,6 +521,9 @@ export default function TestCaseManager() {
                 ? '文本导入'
                 : (item.source === 'tts' ? 'TTS' : '音频文件');
               const generated = isGeneratedTestAudio(item);
+              const isGenerating = generatingIds.has(item.id);
+              const isSaving = savingIds.has(item.id);
+              const canSaveAudio = Boolean(getGeneratedAudioUrl(item));
               const directoryName = resolveTestCaseDirectory(item);
 
               return (
@@ -308,10 +557,21 @@ export default function TestCaseManager() {
                       </span>
                       <button
                         onClick={() => handleGenerateOne(item)}
+                        disabled={isGenerating}
                         className="px-2 py-1 bg-primary hover:bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 rounded text-xs transition-colors"
                       >
-                        {generated ? '重新生成测试音频' : '生成测试音频'}
+                        {isGenerating ? '生成中...' : generated ? '重新生成测试音频' : '生成测试音频'}
                       </button>
+                      {generated ? (
+                        <button
+                          onClick={() => handleSaveAudio(item)}
+                          disabled={isSaving || !canSaveAudio}
+                          title={getSaveAudioDisabledTitle(item)}
+                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-xs transition-colors"
+                        >
+                          {isSaving ? '保存中...' : '保存音频'}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
 
@@ -322,6 +582,8 @@ export default function TestCaseManager() {
                     <span>模块：{item.module || directoryName}</span>
                     {generated && item.config?.voiceName ? <span>音色：{item.config.voiceName}</span> : null}
                     {generated && item.config?.lang ? <span>语言：{item.config.lang}</span> : null}
+                    {generated && item.fileSize ? <span>临时音频：{Math.ceil(item.fileSize / 1024)} KB</span> : null}
+                    {item.storageError ? <span className="text-amber-300">保存提示：{item.storageError}</span> : null}
                     {item.workspaceName ? <span>项目：{item.workspaceName}</span> : null}
                     {item.tapdCaseId ? <span>用例ID：{item.tapdCaseId}</span> : null}
                     {item.tapdTestPlanName ? <span>计划：{item.tapdTestPlanName}</span> : null}
