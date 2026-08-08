@@ -2,6 +2,8 @@
  * 语音与语言配置常量
  */
 
+export const APP_VERSION = 'v1.1.1';
+
 export function stripVoiceLabel(label) {
   return String(label || '').split('（')[0].trim();
 }

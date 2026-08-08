@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></p:bgPr></p:bg>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="12192000" cy="6858000"/><a:chOff x="0" y="0"/><a:chExt cx="12192000" cy="6858000"/></a:xfrm></p:grpSpPr>
+      <p:sp>
+    <p:nvSpPr><p:cNvPr id="2" name="top-rule"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="361950"/><a:ext cx="11391900" cy="38100"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="111827"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="111827"/></a:solidFill></a:ln></p:spPr>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="3" name="eyebrow"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="666750"/><a:ext cx="4953000" cy="381000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2400" b="1"><a:solidFill><a:srgbClr val="3D8DFF"/></a:solidFill></a:rPr><a:t>语音自动化测试平台｜向上汇报</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="4" name="title"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="1695450"/><a:ext cx="8286750" cy="1809750"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="5800" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>VoiceAuto</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="5800" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>把语音测试从手工串联变成可复用流程</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="5" name="subtitle"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="4762500"/><a:ext cx="6477000" cy="857250"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2400"><a:solidFill><a:srgbClr val="374151"/></a:solidFill></a:rPr><a:t>围绕“测试用例 -&gt; 音频执行 -&gt; 日志回收 -&gt; 结果报告”闭环，统一承载语音助手回归、链路诊断和版本提测汇报。</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="6" name="value-band"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="7810500" y="1638300"/><a:ext cx="3333750" cy="2857500"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="EAF6FE"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="EAF6FE"/></a:solidFill></a:ln></p:spPr>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="7" name="value-1"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="8143875" y="1952625"/><a:ext cx="2667000" cy="476250"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2800" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>01  用例资产化</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="8" name="value-2"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="8143875" y="2714625"/><a:ext cx="2667000" cy="476250"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2800" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>02  执行自动化</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="9" name="value-3"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="8143875" y="3476625"/><a:ext cx="2667000" cy="476250"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2800" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>03  报告结构化</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="10" name="page-1"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="11144250" y="6305550"/><a:ext cx="666750" cy="266700"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="1400"><a:solidFill><a:srgbClr val="4B5563"/></a:solidFill></a:rPr><a:t>01</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sld>

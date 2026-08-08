@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict';
+import * as XLSX from 'xlsx';
+import {
+  buildSummaryReportPayload,
+  buildSummaryReportText,
+  buildSummaryReportWorkbook,
+} from '../src/utils/summaryReportBuilder.js';
+
+const report = buildSummaryReportPayload({
+  sessionRows: [
+    {
+      case_id: 'CASE-1',
+      actual_input_text: '查询余额',
+      hit_agent: 'BalanceAgent',
+      log_status: 'complete',
+    },
+  ],
+  testAudios: [
+    {
+      id: 'audio-1',
+      caseId: 'CASE-1',
+      text: '查询余额',
+      targetAgent: 'BalanceAgent',
+    },
+  ],
+  envLabel: 'UAT',
+  envKey: 'UAT',
+  range: { fromDate: '2026-08-04', fromTime: '10:00:00', toDate: '2026-08-04', toTime: '10:10:00' },
+  testReport: {
+    runId: 'run-1',
+    bugFoundVersion: 'v1.1.1',
+    cases: [
+      { caseId: 'CASE-1', audioId: 'audio-1', targetText: '查询余额' },
+    ],
+  },
+});
+
+assert.equal(report.bugFoundVersion, 'v1.1.1');
+
+const markdown = buildSummaryReportText(report);
+assert.match(markdown, /\|\s*发现版本\s*\|\s*v1\.1\.1\s*\|/);
+
+const workbook = buildSummaryReportWorkbook(report);
+assert.deepEqual(workbook.SheetNames, ['汇报看板', '环境信息']);
+const dashboardRows = XLSX.utils.sheet_to_json(workbook.Sheets['汇报看板'], { header: 1, defval: '' });
+assert.ok(dashboardRows.flat().includes('发现版本：v1.1.1'));

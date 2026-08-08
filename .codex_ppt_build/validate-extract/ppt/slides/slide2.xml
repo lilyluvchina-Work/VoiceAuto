@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></p:bgPr></p:bg>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="12192000" cy="6858000"/><a:chOff x="0" y="0"/><a:chExt cx="12192000" cy="6858000"/></a:xfrm></p:grpSpPr>
+      <p:sp>
+    <p:nvSpPr><p:cNvPr id="2" name="title"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="400050"/><a:ext cx="10572750" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="4000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>它覆盖语音交互测试的关键工作面</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="3" name="subtitle"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="1047750"/><a:ext cx="8858250" cy="514350"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2200"><a:solidFill><a:srgbClr val="374151"/></a:solidFill></a:rPr><a:t>从测试准备到结果汇报，减少跨工具搬运，让问题定位有日志、有录音、有结构化结论。</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="4" name="flow-bg"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="1809750"/><a:ext cx="11391900" cy="1190625"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="F3F4F6"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="F3F4F6"/></a:solidFill></a:ln></p:spPr>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="5" name="step1"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="666750" y="2095500"/><a:ext cx="1381125" cy="552450"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>用例导入</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>TAPD / 文本 / 文件</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:cxnSp>
+    <p:nvCxnSpPr><p:cNvPr id="6" name="arrow1"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>
+    <p:spPr><a:xfrm><a:off x="2143125" y="2400300"/><a:ext cx="571500" cy="0"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="19050"><a:solidFill><a:srgbClr val="3D8DFF"/></a:solidFill><a:tailEnd type="triangle"/></a:ln></p:spPr>
+  </p:cxnSp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="7" name="step2"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="2857500" y="2095500"/><a:ext cx="1381125" cy="552450"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>音频生成</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>豆包 TTS / Web Speech</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:cxnSp>
+    <p:nvCxnSpPr><p:cNvPr id="8" name="arrow2"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>
+    <p:spPr><a:xfrm><a:off x="4333875" y="2400300"/><a:ext cx="571500" cy="0"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="19050"><a:solidFill><a:srgbClr val="3D8DFF"/></a:solidFill><a:tailEnd type="triangle"/></a:ln></p:spPr>
+  </p:cxnSp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="9" name="step3"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="5048250" y="2095500"/><a:ext cx="1381125" cy="552450"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>自动执行</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>唤醒 / ASR / 播放</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:cxnSp>
+    <p:nvCxnSpPr><p:cNvPr id="10" name="arrow3"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>
+    <p:spPr><a:xfrm><a:off x="6524625" y="2400300"/><a:ext cx="571500" cy="0"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="19050"><a:solidFill><a:srgbClr val="3D8DFF"/></a:solidFill><a:tailEnd type="triangle"/></a:ln></p:spPr>
+  </p:cxnSp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="11" name="step4"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="7239000" y="2095500"/><a:ext cx="1381125" cy="552450"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>日志回收</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>Langfuse / ADB</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:cxnSp>
+    <p:nvCxnSpPr><p:cNvPr id="12" name="arrow4"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>
+    <p:spPr><a:xfrm><a:off x="8715375" y="2400300"/><a:ext cx="571500" cy="0"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="19050"><a:solidFill><a:srgbClr val="3D8DFF"/></a:solidFill><a:tailEnd type="triangle"/></a:ln></p:spPr>
+  </p:cxnSp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="13" name="step5"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="9429750" y="2095500"/><a:ext cx="1809750" cy="552450"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>报告闭环</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>看板 / Excel / Bug</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="14" name="left-title"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="3619500"/><a:ext cx="3714750" cy="381000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2800" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>可承担的测试工作</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="15" name="left-body"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="4114800"/><a:ext cx="4762500" cy="1295400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="111827"/></a:solidFill></a:rPr><a:t>• 版本回归：批量播放用例，记录每轮成功率与失败明细</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="111827"/></a:solidFill></a:rPr><a:t>• 链路验证：唤醒、ASR 输入、Speaker 播报收录分阶段判断</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="111827"/></a:solidFill></a:rPr><a:t>• 路由评估：目标 Agent 与实际命中 Agent 对齐分析</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="111827"/></a:solidFill></a:rPr><a:t>• 多环境排查：UAT / TEST / PROD 日志拉取与筛选</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="16" name="right-panel"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="6477000" y="3619500"/><a:ext cx="4476750" cy="1428750"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="EAF6FE"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="EAF6FE"/></a:solidFill></a:ln></p:spPr>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="17" name="right-title"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="6743700" y="3905250"/><a:ext cx="3714750" cy="323850"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2800" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>对团队的直接价值</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="18" name="right-body"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="6743700" y="4400550"/><a:ext cx="3733800" cy="552450"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2200"><a:solidFill><a:srgbClr val="111827"/></a:solidFill></a:rPr><a:t>把“听一遍、翻日志、手写结论”的工作沉淀成标准流程，便于复测、追溯和向上同步。</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="19" name="page-2"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="11144250" y="6305550"/><a:ext cx="666750" cy="266700"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="1400"><a:solidFill><a:srgbClr val="4B5563"/></a:solidFill></a:rPr><a:t>02</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sld>

@@ -111,6 +111,25 @@ try {
   assert.equal(loaded.status, 200);
   assert.equal(loaded.body.config.workspaceId, '61252348');
   assert.equal(loaded.body.config.apiPassword, 'secret-password');
+
+  const savedMiniMax = await request(server, 'PUT', '/api/configs/minimax', {
+    config: {
+      configName: 'MiniMax 评测模型',
+      baseUrl: 'https://api.minimax.io/v1',
+      apiKey: 'sk-minimax-db-secret',
+      model: 'MiniMax-M2.7',
+      enabled: true,
+    },
+  }, cookie);
+  assert.equal(savedMiniMax.status, 200);
+  assert.equal(savedMiniMax.body.success, true);
+  assert.equal(savedMiniMax.body.config.configured, true);
+  assert.equal(savedMiniMax.body.config.apiKey, 'sk-minimax-db-secret');
+
+  const loadedMiniMax = await request(server, 'GET', '/api/configs/minimax', null, cookie);
+  assert.equal(loadedMiniMax.status, 200);
+  assert.equal(loadedMiniMax.body.config.model, 'MiniMax-M2.7');
+  assert.equal(loadedMiniMax.body.config.apiKey, 'sk-minimax-db-secret');
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

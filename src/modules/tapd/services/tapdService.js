@@ -6,6 +6,9 @@
 
 const BASE = '/tapd-api';
 const BATCH_SIZE = 50; // 每批查询用例数
+const DEFAULT_BUG_PRIORITY = 'high';
+const DEFAULT_BUG_PRIORITY_LABEL = '高';
+const DEFAULT_BUG_SEVERITY = 'normal';
 const TARGET_AGENT_ALIASES = ['目标Agent', '目标agent', '预期Agent', '期望Agent', '目标智能体', 'Agent', 'target_agent', 'TargetAgent', 'Target Agent'];
 const TARGET_TEXT_ALIASES = ['目标文本', '目标语句', '测试文本', '输入文本', 'target_text', 'TargetText', 'Target Text'];
 const SORT_FIELD_CANDIDATES = [
@@ -200,6 +203,37 @@ function formatTapdApiError(info) {
     return JSON.stringify(info);
   }
   return String(info);
+}
+
+function escapeHtmlText(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeHtmlAttribute(value) {
+  return escapeHtmlText(value);
+}
+
+function formatBugDescriptionLineForTapd(line) {
+  const text = String(line || '');
+  const logUrlMatch = text.match(/^【日志链接】\s*(https?:\/\/\S+)\s*$/i);
+  if (!logUrlMatch) return escapeHtmlText(text);
+
+  const url = logUrlMatch[1];
+  const safeUrl = escapeHtmlAttribute(url);
+  return `【日志链接】 <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${escapeHtmlText(url)}</a>`;
+}
+
+function formatBugDescriptionForTapd(value) {
+  return String(value || '')
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => formatBugDescriptionLineForTapd(line))
+    .join('<br />');
 }
 
 function stripHtmlTags(value) {
@@ -783,9 +817,11 @@ export async function fetchCaseDetails(workspaceId, caseIds, apiUser, apiPasswor
  * 在 TAPD 项目下创建 Bug
  * @returns {{ bugId: string, title: string }}
  */
-export async function createTapdBug(workspaceId, title, description, apiUser, apiPassword) {
+export async function createTapdBug(workspaceId, title, description, apiUser, apiPassword, options = {}) {
   const normalizedWorkspaceId = normalizeInput(workspaceId);
   const normalizedTitle = normalizeInput(title);
+  const currentOwner = normalizeInput(options.currentOwner || options.current_owner);
+  const versionReport = normalizeInput(options.versionReport || options.version_report || options.bugFoundVersion);
   if (!normalizedWorkspaceId) {
     throw new Error('workspace_id is required');
   }
@@ -798,7 +834,12 @@ export async function createTapdBug(workspaceId, title, description, apiUser, ap
     {
       workspace_id: normalizedWorkspaceId,
       title: normalizedTitle,
-      description: String(description || '').trim(),
+      description: formatBugDescriptionForTapd(description),
+      priority: DEFAULT_BUG_PRIORITY,
+      priority_label: DEFAULT_BUG_PRIORITY_LABEL,
+      severity: DEFAULT_BUG_SEVERITY,
+      current_owner: currentOwner,
+      version_report: versionReport,
     },
     apiUser,
     apiPassword

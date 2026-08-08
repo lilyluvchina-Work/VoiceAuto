@@ -1,0 +1,381 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/if3hwt",
+    "id": "if3hwt",
+    "slide": 10,
+    "layoutId": "7237508e-8169-43a0-9f6e-6b3bd08189d2",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "7e5ac8f1-093b-4d9e-9118-37a29c623765",
+    "masterLayoutName": "Master",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "Microsoft YaHei, Helvetica Neue, Arial, sans-serif"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "7237508e-8169-43a0-9f6e-6b3bd08189d2",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "7e5ac8f1-093b-4d9e-9118-37a29c623765",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "7e5ac8f1-093b-4d9e-9118-37a29c623765",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ja5sju1o",
+      "id": "1",
+      "bbox": [
+        41.33,
+        41.18,
+        240,
+        68.15
+      ],
+      "geometry": "rect",
+      "text": "落地方式",
+      "textPreview": "落地方式",
+      "resolvedFontSize": 32,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 32,
+        "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+        "color": "#000000",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "落地方式"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "落地方式",
+          "resolvedTextStyle": {
+            "fontSize": 32,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "落地方式",
+              "fontSize": 32,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4by9cf29",
+      "id": "2",
+      "bbox": [
+        41.33,
+        158,
+        1040,
+        330
+      ],
+      "geometry": "rect",
+      "text": "用 VoiceAuto\n把语音测试变成\n可执行、可记录、可复盘的流程",
+      "textPreview": "用 VoiceAuto | 把语音测试变成 | 可执行、可记录、可复盘的流程",
+      "resolvedFontSize": 66,
+      "resolvedTextStyle": {
+        "anchor": 3,
+        "fontSize": 66,
+        "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+        "color": "#000000",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "bottom",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "用 VoiceAuto"
+          },
+          {
+            "index": 2,
+            "text": "把语音测试变成"
+          },
+          {
+            "index": 3,
+            "text": "可执行、可记录、可复盘的流程"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "用 VoiceAuto",
+          "resolvedTextStyle": {
+            "fontSize": 66,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "用 VoiceAuto",
+              "fontSize": 66,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "把语音测试变成",
+          "resolvedTextStyle": {
+            "fontSize": 66,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "把语音测试变成",
+              "fontSize": 66,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 3,
+          "text": "可执行、可记录、可复盘的流程",
+          "resolvedTextStyle": {
+            "fontSize": 66,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "可执行、可记录、可复盘的流程",
+              "fontSize": 66,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5c7alkju",
+      "id": "3",
+      "bbox": [
+        41.33,
+        522.13,
+        760,
+        113.41
+      ],
+      "geometry": "rect",
+      "text": "建议先用于日常冒烟和版本回归，再逐步接入 TAPD、Langfuse 与自主监测链路。",
+      "textPreview": "建议先用于日常冒烟和版本回归，再逐步接入 TAPD、Langfuse 与自主监测链路。",
+      "resolvedFontSize": 28,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 28,
+        "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+        "color": "#000000",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "建议先用于日常冒烟和版本回归，再逐步接入"
+          },
+          {
+            "index": 2,
+            "text": "TAPD、Langfuse 与自主监测链路。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "建议先用于日常冒烟和版本回归，再逐步接入 TAPD、Langfuse 与自主监测链路。",
+          "resolvedTextStyle": {
+            "fontSize": 28,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "建议先用于日常冒烟和版本回归，再逐步接入 TAPD、Langfuse 与自主监测链路。",
+              "fontSize": 28,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6dgrepkf",
+      "id": "4",
+      "bbox": [
+        1184.18,
+        659.24,
+        54.48,
+        25.33
+      ],
+      "geometry": "rect",
+      "text": "10",
+      "textPreview": "10",
+      "resolvedFontSize": 13.33,
+      "resolvedTextStyle": {
+        "anchor": 3,
+        "fontSize": 13.33,
+        "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+        "color": "#000000",
+        "alignment": "right",
+        "verticalAlignment": "bottom",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "10"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "10",
+          "resolvedTextStyle": {
+            "fontSize": 13.33,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "10",
+              "fontSize": 13.33,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "alignment": "right"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

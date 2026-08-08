@@ -14,6 +14,8 @@ import SummaryReport from './components/SummaryReport';
 import ConfigCenter from './components/ConfigCenter';
 import { AuthGate, useAuth } from './components/AuthGate';
 import { getDefaultLangfuseEnvironmentKey } from './modules/langfuse/services/langfuseService';
+import { APP_VERSION } from './constants';
+import { recordToolUsage } from './utils/toolUsageStore';
 
 // Logo SVG
 const Logo = () => (
@@ -54,6 +56,7 @@ function AppContent() {
   const [activeMode, setActiveMode] = useState(MODES.cases);
   const [pendingLangfuseJump, setPendingLangfuseJump] = useState(false);
   const autoJumpTimerRef = useRef(null);
+  const recordedUsageIdsRef = useRef(new Set());
   const isTesting = state.playback.isPlaying || state.playback.isPaused;
   const shouldAutoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
   const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || getDefaultLangfuseEnvironmentKey();
@@ -65,6 +68,12 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    const onOpenConfig = () => setActiveMode(MODES.config);
+    window.addEventListener('voiceauto:open-config-type', onOpenConfig);
+    return () => window.removeEventListener('voiceauto:open-config-type', onOpenConfig);
+  }, []);
+
+  useEffect(() => {
     if (!autoJumpTimerRef.current) return;
     if (!shouldAutoFetchLangfuseLogs || state.playback.status === 'playing') {
       window.clearTimeout(autoJumpTimerRef.current);
@@ -72,6 +81,28 @@ function AppContent() {
       setPendingLangfuseJump(false);
     }
   }, [shouldAutoFetchLangfuseLogs, state.playback.status]);
+
+  useEffect(() => {
+    const startTime = state.report?.startTime;
+    const endTime = state.report?.endTime;
+    const loginAccount = auth?.currentUser?.loginAccount;
+    if (!startTime || !endTime || !loginAccount) return;
+
+    const usageId = [
+      state.report?.runId || 'run',
+      loginAccount,
+      startTime,
+      endTime,
+    ].join('|');
+    if (recordedUsageIdsRef.current.has(usageId)) return;
+    const record = recordToolUsage({
+      runId: state.report?.runId,
+      startTime,
+      endTime,
+      user: auth.currentUser,
+    });
+    if (record) recordedUsageIdsRef.current.add(usageId);
+  }, [auth?.currentUser, state.report?.endTime, state.report?.runId, state.report?.startTime]);
 
   const handleTestComplete = () => {
     if (autoJumpTimerRef.current) {
@@ -194,7 +225,7 @@ function AppContent() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-white">VoiceAuto</h1>
-                <p className="text-xs text-gray-400">语音自动化测试平台</p>
+                <p className="text-xs text-gray-400">语音自动化测试平台 · 版本号：{APP_VERSION}</p>
               </div>
             </div>
 
@@ -252,7 +283,7 @@ function AppContent() {
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex items-center justify-between text-sm text-gray-500">
             <div>
-              VoiceAuto v1.0 - 语音自动化测试平台
+              VoiceAuto - 语音自动化测试平台 · 版本号：{APP_VERSION}
             </div>
             <div className="flex items-center gap-4">
               {renderFooterModeText()}

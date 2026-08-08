@@ -23,6 +23,7 @@ export const CONFIG_TYPES = {
   TAPD: 'tapd',
   DINGTALK: 'dingtalk',
   DOUBAO_TTS: 'doubaoTts',
+  MINIMAX: 'minimax',
   SERVER: 'server',
   DATABASE: 'database',
 };
@@ -84,6 +85,21 @@ export const CONFIG_SCHEMAS = {
       apiKeyId: '',
       apiKeySecret: '',
       secretKey: '',
+    },
+  },
+  [CONFIG_TYPES.MINIMAX]: {
+    label: 'MiniMax 大模型配置',
+    required: ['apiKey'],
+    sensitive: ['apiKey'],
+    defaults: {
+      configName: 'MiniMax 评测模型',
+      baseUrl: 'https://api.minimax.io/v1',
+      apiKey: '',
+      model: 'MiniMax-M2.7',
+      temperature: 1,
+      maxCompletionTokens: 2048,
+      timeout: 60000,
+      enabled: false,
     },
   },
   [CONFIG_TYPES.SERVER]: {

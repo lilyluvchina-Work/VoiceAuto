@@ -1,0 +1,532 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/c8qjk1",
+    "id": "c8qjk1",
+    "slide": 8,
+    "layoutId": "7237508e-8169-43a0-9f6e-6b3bd08189d2",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "7e5ac8f1-093b-4d9e-9118-37a29c623765",
+    "masterLayoutName": "Master",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "Microsoft YaHei, Helvetica Neue, Arial, sans-serif"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "7237508e-8169-43a0-9f6e-6b3bd08189d2",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "7e5ac8f1-093b-4d9e-9118-37a29c623765",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "7e5ac8f1-093b-4d9e-9118-37a29c623765",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6dwn25o3",
+      "id": "1",
+      "bbox": [
+        41.33,
+        36.12,
+        1197.33,
+        109.97
+      ],
+      "geometry": "rect",
+      "text": "输出物覆盖复盘、交接和系统对接",
+      "textPreview": "输出物覆盖复盘、交接和系统对接",
+      "resolvedFontSize": 38.67,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 38.67,
+        "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+        "color": "#000000",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "输出物覆盖复盘、交接和系统对接"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "输出物覆盖复盘、交接和系统对接",
+          "resolvedTextStyle": {
+            "fontSize": 38.67,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "输出物覆盖复盘、交接和系统对接",
+              "fontSize": 38.67,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "chart",
+      "scope": "slide",
+      "aid": "ch/hsbyxs3a",
+      "id": "2",
+      "bbox": [
+        42.91,
+        130.67,
+        537.97,
+        492.39
+      ],
+      "chartType": "bar"
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8ze54f69",
+      "id": "3",
+      "bbox": [
+        657.68,
+        41.33,
+        580.99,
+        172
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#F2F2F2",
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ja5orqps",
+      "id": "4",
+      "bbox": [
+        688.89,
+        72.3,
+        523.56,
+        110.07
+      ],
+      "geometry": "rect",
+      "text": "过程记录\n展开每条用例，查看阶段状态、录音、相似度与诊断字段。",
+      "textPreview": "过程记录 | 展开每条用例，查看阶段状态、录音、相似度与诊断字段。",
+      "resolvedFontSize": 26,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 26,
+        "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+        "color": "#000000",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "过程记录"
+          },
+          {
+            "index": 2,
+            "text": "展开每条用例，查看阶段状态、录音、相似"
+          },
+          {
+            "index": 3,
+            "text": "度与诊断字段。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "过程记录",
+          "resolvedTextStyle": {
+            "fontSize": 26,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "过程记录",
+              "fontSize": 26,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "展开每条用例，查看阶段状态、录音、相似度与诊断字段。",
+          "resolvedTextStyle": {
+            "fontSize": 26,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "展开每条用例，查看阶段状态、录音、相似度与诊断字段。",
+              "fontSize": 26,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/y9wnylo7",
+      "id": "5",
+      "bbox": [
+        657.68,
+        249.33,
+        580.99,
+        172
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#F2F2F2",
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/lcn6t07i",
+      "id": "6",
+      "bbox": [
+        688.89,
+        280.3,
+        523.56,
+        110.07
+      ],
+      "geometry": "rect",
+      "text": "结构化报告\n支持 JSON、CSV、Markdown、HTML、Excel。",
+      "textPreview": "结构化报告 | 支持 JSON、CSV、Markdown、HTML、Excel。",
+      "resolvedFontSize": 26,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 26,
+        "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+        "color": "#000000",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "结构化报告"
+          },
+          {
+            "index": 2,
+            "text": "支持"
+          },
+          {
+            "index": 3,
+            "text": "JSON、CSV、Markdown、HTML、Excel。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "结构化报告",
+          "resolvedTextStyle": {
+            "fontSize": 26,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "结构化报告",
+              "fontSize": 26,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "支持 JSON、CSV、Markdown、HTML、Excel。",
+          "resolvedTextStyle": {
+            "fontSize": 26,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "支持 JSON、CSV、Markdown、HTML、Excel。",
+              "fontSize": 26,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/kbe50v6d",
+      "id": "7",
+      "bbox": [
+        657.68,
+        457.33,
+        580.99,
+        172
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#F2F2F2",
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/36po3upw",
+      "id": "8",
+      "bbox": [
+        688.89,
+        488.3,
+        523.56,
+        110.07
+      ],
+      "geometry": "rect",
+      "text": "日志提取\nTraces 与 Observations 可导出 Excel / JSON。",
+      "textPreview": "日志提取 | Traces 与 Observations 可导出 Excel / JSON。",
+      "resolvedFontSize": 26,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 26,
+        "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+        "color": "#000000",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "日志提取"
+          },
+          {
+            "index": 2,
+            "text": "Traces 与 Observations 可导出 Excel / JSON。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "日志提取",
+          "resolvedTextStyle": {
+            "fontSize": 26,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "日志提取",
+              "fontSize": 26,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "Traces 与 Observations 可导出 Excel / JSON。",
+          "resolvedTextStyle": {
+            "fontSize": 26,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Traces 与 Observations 可导出 Excel / JSON。",
+              "fontSize": 26,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/i5g7apob",
+      "id": "9",
+      "bbox": [
+        1184.18,
+        659.24,
+        54.48,
+        25.33
+      ],
+      "geometry": "rect",
+      "text": "8",
+      "textPreview": "8",
+      "resolvedFontSize": 13.33,
+      "resolvedTextStyle": {
+        "anchor": 3,
+        "fontSize": 13.33,
+        "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+        "color": "#000000",
+        "alignment": "right",
+        "verticalAlignment": "bottom",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "8"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "8",
+          "resolvedTextStyle": {
+            "fontSize": 13.33,
+            "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+            "color": "#000000",
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "8",
+              "fontSize": 13.33,
+              "typeface": "Microsoft YaHei, Helvetica Neue, Arial, sans-serif",
+              "color": "#000000",
+              "alignment": "right"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

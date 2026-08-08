@@ -1,0 +1,127 @@
+{"kind":"deck","id":"pr/nw855u","name":"Deck"}
+{"kind":"layout","layoutId":"7e5ac8f1-093b-4d9e-9118-37a29c623765","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"7237508e-8169-43a0-9f6e-6b3bd08189d2","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/t0shej","slide":1,"title":"VoiceAuto","textShapes":4}
+{"kind":"textbox","id":"sh/ahsfel4r","slide":1,"text":"VoiceAuto","textPreview":"VoiceAuto","textChars":9,"textLines":1,"bbox":[41.33,41.18,598.67,68.15]}
+{"kind":"textbox","id":"sh/xkje9gni","slide":1,"text":"语音自动化\n测试平台","textPreview":"语音自动化 | 测试平台","textChars":10,"textLines":2,"bbox":[41.33,182.55,992,261.57]}
+{"kind":"textbox","id":"sh/wjaxgbmx","slide":1,"text":"从用例导入、语音生成、自动执行到日志分析与报告导出的闭环工具","textPreview":"从用例导入、语音生成、自动执行到日志分析与报告导出的闭环工具","textChars":30,"textLines":1,"bbox":[41.33,497.87,760,113.41]}
+{"kind":"textbox","id":"sh/nehw365g","slide":1,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"notes","id":"nt/t0shej","slide":1,"text":"[Sources]\nREADME.md: VoiceAuto 项目功能特性与技术栈。\ndocs/product/product-introduction.md: 产品概述、目标用户与核心价值。"}
+{"kind":"slide","id":"sl/z2swzh","slide":2,"title":"这套工具解决的是语音测试从执行到追踪的完整闭环","textShapes":14}
+{"kind":"textbox","id":"sh/ed0fy54b","slide":2,"text":"这套工具解决的是语音测试从执行到追踪的完整闭环","textPreview":"这套工具解决的是语音测试从执行到追踪的完整闭环","textChars":23,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"shape","id":"sh/10ry9knm","slide":2,"bbox":[41.33,218.37,1197.34,58]}
+{"kind":"shape","id":"sh/0fix0fmh","slide":2,"bbox":[133.56,218.37,0.5,58]}
+{"kind":"textbox","id":"sh/rapw3q5k","slide":2,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[53.33,231.37,60,32]}
+{"kind":"textbox","id":"sh/q9gful4z","slide":2,"text":"先把测试用例统一导入、归类、生成可播放音频","textPreview":"先把测试用例统一导入、归类、生成可播放音频","textChars":21,"textLines":1,"bbox":[151.56,230.37,1060,34]}
+{"kind":"shape","id":"sh/dc7e50nq","slide":2,"bbox":[41.33,276.37,1197.34,58]}
+{"kind":"shape","id":"sh/cbyxwvm5","slide":2,"bbox":[133.56,276.37,0.5,58]}
+{"kind":"textbox","id":"sh/36pwzq5o","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[53.33,289.37,60,32]}
+{"kind":"textbox","id":"sh/25wfql43","slide":2,"text":"再按唤醒词、音色、循环次数、模块范围配置执行策略","textPreview":"再按唤醒词、音色、循环次数、模块范围配置执行策略","textChars":24,"textLines":1,"bbox":[151.56,288.37,1060,34]}
+{"kind":"shape","id":"sh/8ru98bit","slide":2,"bbox":[41.33,334.37,1197.34,58]}
+{"kind":"shape","id":"sh/ts3ahgje","slide":2,"bbox":[133.56,334.37,0.5,58]}
+{"kind":"textbox","id":"sh/6pcr610n","slide":2,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[53.33,347.37,60,32]}
+{"kind":"textbox","id":"sh/7qlsf618","slide":2,"text":"执行中实时记录唤醒、ASR、Speaker 响应等关键链路","textPreview":"执行中实时记录唤醒、ASR、Speaker 响应等关键链路","textChars":29,"textLines":1,"bbox":[151.56,346.37,1060,34]}
+{"kind":"shape","id":"sh/knu94bix","slide":2,"bbox":[41.33,392.37,1197.34,58]}
+{"kind":"shape","id":"sh/lo3adwj2","slide":2,"bbox":[133.56,392.37,0.5,58]}
+{"kind":"textbox","id":"sh/ylsr210r","slide":2,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[53.33,405.37,60,32]}
+{"kind":"textbox","id":"sh/jm1sb61c","slide":2,"text":"完成后自动沉淀过程记录、结构化报告和 Langfuse 日志","textPreview":"完成后自动沉淀过程记录、结构化报告和 Langfuse 日志","textChars":30,"textLines":1,"bbox":[151.56,404.37,1060,34]}
+{"kind":"shape","id":"sh/4jetgvi1","slide":2,"bbox":[41.33,450.37,1197.34,58]}
+{"kind":"shape","id":"sh/5knap0zm","slide":2,"bbox":[133.56,450.37,0.5,58]}
+{"kind":"textbox","id":"sh/dgjat0rq","slide":2,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[53.33,463.37,60,32]}
+{"kind":"textbox","id":"sh/cfa90va5","slide":2,"text":"配置、账号、TAPD、钉钉、TTS 等能力集中维护","textPreview":"配置、账号、TAPD、钉钉、TTS 等能力集中维护","textChars":25,"textLines":1,"bbox":[151.56,462.37,1060,34]}
+{"kind":"shape","id":"sh/re1srq9k","slide":2,"bbox":[41.33,508.37,1197.34,58]}
+{"kind":"shape","id":"sh/qdsrylsz","slide":2,"bbox":[133.56,508.37,0.5,58]}
+{"kind":"textbox","id":"sh/pcjapgre","slide":2,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[53.33,521.37,60,32]}
+{"kind":"textbox","id":"sh/4ba9wba9","slide":2,"text":"部署与排障资产进入项目目录，便于交接和复用","textPreview":"部署与排障资产进入项目目录，便于交接和复用","textChars":21,"textLines":1,"bbox":[151.56,520.37,1060,34]}
+{"kind":"textbox","id":"sh/3a1snq9o","slide":2,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"notes","id":"nt/z2swzh","slide":2,"text":"[Sources]\ndocs/product/product-introduction.md: 功能范围与业务流程。\ndocs/product/product-use-guide.md: 用户页面入口和完整测试步骤。"}
+{"kind":"slide","id":"sl/9cu2az","slide":3,"title":"核心价值是让语音测试更快、更可追溯、更容易定位问题","textShapes":9}
+{"kind":"textbox","id":"sh/exgjqxgv","slide":3,"text":"核心价值是让语音测试更快、更可追溯、更容易定位问题","textPreview":"核心价值是让语音测试更快、更可追溯、更容易定位问题","textChars":25,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"textbox","id":"sh/107i1cfm","slide":3,"text":"面向测试工程师、语音产品研发、需要批量验证语音文案的产品人员。","textPreview":"面向测试工程师、语音产品研发、需要批量验证语音文案的产品人员。","textChars":31,"textLines":1,"bbox":[41.33,180.83,620,90.83]}
+{"kind":"textbox","id":"sh/0zy1s7e1","slide":3,"text":"平台把人工重复播放、手工统计、日志检索和报告整理集中到一条流程里，降低重复劳动，也让每次测试结果有据可查。","textPreview":"平台把人工重复播放、手工统计、日志检索和报告整理集中到一条流程里，降低重复劳动，也让每次测试结果有据可查。","textChars":53,"textLines":1,"bbox":[41.33,313.94,600,260]}
+{"kind":"shape","id":"sh/n2p03mxc","slide":3,"bbox":[788.21,316.44,22.32,22.31]}
+{"kind":"textbox","id":"sh/m1gjuhw7","slide":3,"text":"批量执行","textPreview":"批量执行","textChars":4,"textLines":1,"bbox":[828,312.94,410.67,57.61]}
+{"kind":"shape","id":"sh/94r25wfi","slide":3,"bbox":[788.21,380.44,22.32,22.31]}
+{"kind":"textbox","id":"sh/o3y1wrex","slide":3,"text":"过程留痕","textPreview":"过程留痕","textChars":4,"textLines":1,"bbox":[828,376.94,410.67,57.61]}
+{"kind":"shape","id":"sh/bq9k7mxo","slide":3,"bbox":[788.21,444.44,22.32,22.31]}
+{"kind":"textbox","id":"sh/ap0jyhw3","slide":3,"text":"自动判定","textPreview":"自动判定","textChars":4,"textLines":1,"bbox":[828,440.94,410.67,57.61]}
+{"kind":"shape","id":"sh/4fatcre5","slide":3,"bbox":[788.21,508.44,22.32,22.31]}
+{"kind":"textbox","id":"sh/5gja5wvq","slide":3,"text":"日志联动","textPreview":"日志联动","textChars":4,"textLines":1,"bbox":[828,504.94,410.67,57.61]}
+{"kind":"shape","id":"sh/id8bahwf","slide":3,"bbox":[788.21,572.44,22.32,22.31]}
+{"kind":"textbox","id":"sh/3e1s3md0","slide":3,"text":"报告导出","textPreview":"报告导出","textChars":4,"textLines":1,"bbox":[828,568.94,410.67,57.61]}
+{"kind":"textbox","id":"sh/s3atgreh","slide":3,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"notes","id":"nt/9cu2az","slide":3,"text":"[Sources]\ndocs/product/product-introduction.md: 目标用户与核心价值。\nREADME.md: 功能特性概览。"}
+{"kind":"slide","id":"sl/zksvc1","slide":4,"title":"功能能力覆盖测试准备、执行控制、过程记录和结果分析","textShapes":6}
+{"kind":"textbox","id":"sh/076907ah","slide":4,"text":"功能能力覆盖测试准备、执行控制、过程记录和结果分析","textPreview":"功能能力覆盖测试准备、执行控制、过程记录和结果分析","textChars":25,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"textbox","id":"sh/z6x872tw","slide":4,"text":"用例准备\n支持文本、音频文件、手动输入与 TAPD 接口导入，并按功能模块归类。","textPreview":"用例准备 | 支持文本、音频文件、手动输入与 TAPD 接口导入，并按功能模块归类。","textChars":40,"textLines":2,"bbox":[41.33,213.33,581.33,172.5]}
+{"kind":"textbox","id":"sh/e5o7yxsb","slide":4,"text":"语音生成\n提供豆包 V3 TTS 后端代理和 Web Speech 回退，支持音色、语种、音量、倍速配置。","textPreview":"语音生成 | 提供豆包 V3 TTS 后端代理和 Web Speech 回退，支持音色、语种、音量、倍速配置。","textChars":53,"textLines":2,"bbox":[656.86,213.33,581.33,172.5]}
+{"kind":"textbox","id":"sh/d4fq5sb6","slide":4,"text":"自动执行\n播放控制台支持开始、暂停、继续、停止、重置、循环次数和模块范围选择。","textPreview":"自动执行 | 播放控制台支持开始、暂停、继续、停止、重置、循环次数和模块范围选择。","textChars":39,"textLines":2,"bbox":[41.33,421.73,581.33,172.5]}
+{"kind":"textbox","id":"sh/c36pwnal","slide":4,"text":"结果沉淀\n输出过程记录、JSON/CSV/文本报告、Excel 过程数据和总结报告。","textPreview":"结果沉淀 | 输出过程记录、JSON/CSV/文本报告、Excel 过程数据和总结报告。","textChars":42,"textLines":2,"bbox":[656.86,421.73,581.33,172.5]}
+{"kind":"textbox","id":"sh/r2x832t0","slide":4,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"notes","id":"nt/zksvc1","slide":4,"text":"[Sources]\ndocs/product/product-introduction.md: 4.1 语音测试模式、4.4 总结报告模式。\ndocs/product/product-use-guide.md: 测试用例准备、音频生成、执行和导出说明。"}
+{"kind":"slide","id":"sl/z0pwya","slide":5,"title":"标准测试流程从准备到归档分为四个阶段","textShapes":10}
+{"kind":"textbox","id":"sh/p4bmxoni","slide":5,"text":"标准测试流程从准备到归档分为四个阶段","textPreview":"标准测试流程从准备到归档分为四个阶段","textChars":18,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"shape","id":"sh/2h0329or","slide":5,"bbox":[35.46,354.2,1285.61,0.03]}
+{"kind":"shape","id":"sh/n2t4ve5c","slide":5,"bbox":[35.46,348.58,11.24,11.24]}
+{"kind":"textbox","id":"sh/c72l8j69","slide":5,"text":"准备","textPreview":"准备","textChars":2,"textLines":1,"bbox":[41.33,298.51,169.33,27.55]}
+{"kind":"textbox","id":"sh/x8bm1one","slide":5,"text":"导入用例\n生成测试音频","textPreview":"导入用例 | 生成测试音频","textChars":11,"textLines":2,"bbox":[41.33,401.33,250,166.54]}
+{"kind":"shape","id":"sh/a5k36to3","slide":5,"bbox":[335.46,348.58,11.24,11.24]}
+{"kind":"textbox","id":"sh/b6t4ze5o","slide":5,"text":"配置","textPreview":"配置","textChars":2,"textLines":1,"bbox":[341.33,298.51,169.33,27.55]}
+{"kind":"textbox","id":"sh/sbilwz6p","slide":5,"text":"设置唤醒词\n音色与循环策略","textPreview":"设置唤醒词 | 音色与循环策略","textChars":13,"textLines":2,"bbox":[341.33,401.33,250,166.54]}
+{"kind":"shape","id":"sh/dcrmp47a","slide":5,"bbox":[635.46,348.58,11.24,11.24]}
+{"kind":"textbox","id":"sh/h8fq5one","slide":5,"text":"执行","textPreview":"执行","textChars":2,"textLines":1,"bbox":[641.33,298.51,169.33,27.55]}
+{"kind":"textbox","id":"sh/w76pcj6t","slide":5,"text":"启动播放队列\n监测关键链路","textPreview":"启动播放队列 | 监测关键链路","textChars":13,"textLines":2,"bbox":[641.33,401.33,250,166.54]}
+{"kind":"shape","id":"sh/vmx83e58","slide":5,"bbox":[935.46,348.58,11.24,11.24]}
+{"kind":"textbox","id":"sh/ulo7a9on","slide":5,"text":"沉淀","textPreview":"沉淀","textChars":2,"textLines":1,"bbox":[941.33,298.51,169.33,27.55]}
+{"kind":"textbox","id":"sh/5czq9ona","slide":5,"text":"导出报告\n拉取日志与复盘","textPreview":"导出报告 | 拉取日志与复盘","textChars":12,"textLines":2,"bbox":[941.33,401.33,250,166.54]}
+{"kind":"textbox","id":"sh/4b6pgj6p","slide":5,"text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"notes","id":"nt/z0pwya","slide":5,"text":"[Sources]\ndocs/product/product-use-guide.md: 一次完整测试的六步流程。\ndocs/product/product-introduction.md: 5.1 语音测试流程。"}
+{"kind":"slide","id":"sl/nrpi18","slide":6,"title":"自主监测把固定等待升级为事件驱动的链路判定","textShapes":6}
+{"kind":"textbox","id":"sh/4r69knut","slide":6,"text":"自主监测把固定等待升级为事件驱动的链路判定","textPreview":"自主监测把固定等待升级为事件驱动的链路判定","textChars":21,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"textbox","id":"sh/3qx8bit8","slide":6,"text":"唤醒监测\n通过 ADB 日志识别 WakeupSuccess，异常时支持自检与恢复。","textPreview":"唤醒监测 | 通过 ADB 日志识别 WakeupSuccess，异常时支持自检与恢复。","textChars":42,"textLines":2,"bbox":[41.33,213.33,581.33,172.5]}
+{"kind":"textbox","id":"sh/ip4ridcn","slide":6,"text":"ASR 输入监测\n跟踪 ASR 生命周期，提取实际识别文本并给出相似度诊断。","textPreview":"ASR 输入监测 | 跟踪 ASR 生命周期，提取实际识别文本并给出相似度诊断。","textChars":38,"textLines":2,"bbox":[656.86,213.33,581.33,172.5]}
+{"kind":"textbox","id":"sh/hovq98bi","slide":6,"text":"Speaker 响应监测\n录制播报音频，结合 VAD/TTS 状态判断是否完成响应。","textPreview":"Speaker 响应监测 | 录制播报音频，结合 VAD/TTS 状态判断是否完成响应。","textChars":42,"textLines":2,"bbox":[41.33,421.73,581.33,172.5]}
+{"kind":"textbox","id":"sh/gnm9g3ux","slide":6,"text":"过程记录\n每条用例记录唤醒、播放、ASR、Speaker 音频收录五项结果。","textPreview":"过程记录 | 每条用例记录唤醒、播放、ASR、Speaker 音频收录五项结果。","textChars":38,"textLines":2,"bbox":[656.86,421.73,581.33,172.5]}
+{"kind":"textbox","id":"sh/vmd87itc","slide":6,"text":"6","textPreview":"6","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"notes","id":"nt/nrpi18","slide":6,"text":"[Sources]\ndocs/product/product-introduction.md: 自主监测配置与过程记录口径。\ndocs/changelog/feature-optimization.md: 自主监测链路自检、恢复和三阶段闭环记录。"}
+{"kind":"slide","id":"sl/zagtfh","slide":7,"title":"外部系统联动让测试计划、日志和通知进入同一工作台","textShapes":6}
+{"kind":"textbox","id":"sh/ml87el8v","slide":7,"text":"外部系统联动让测试计划、日志和通知进入同一工作台","textPreview":"外部系统联动让测试计划、日志和通知进入同一工作台","textChars":24,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"textbox","id":"sh/9ozq9076","slide":7,"text":"配置中心\n账号、TAPD、Langfuse、钉钉、豆包 TTS 参数统一入库维护。","textPreview":"配置中心 | 账号、TAPD、Langfuse、钉钉、豆包 TTS 参数统一入库维护。","textChars":41,"textLines":2,"bbox":[41.33,213.33,581.33,172.5]}
+{"kind":"textbox","id":"sh/onq9gvq1","slide":7,"text":"TAPD 导入\n通过接口读取测试计划、用例详情和目录结构，保持模块口径一致。","textPreview":"TAPD 导入 | 通过接口读取测试计划、用例详情和目录结构，保持模块口径一致。","textChars":38,"textLines":2,"bbox":[656.86,213.33,581.33,172.5]}
+{"kind":"textbox","id":"sh/bq18bapc","slide":7,"text":"Langfuse 日志\n支持 UAT、TEST、PROD 等多环境分页拉取、筛选和导出。","textPreview":"Langfuse 日志 | 支持 UAT、TEST、PROD 等多环境分页拉取、筛选和导出。","textChars":44,"textLines":2,"bbox":[41.33,421.73,581.33,172.5]}
+{"kind":"textbox","id":"sh/apsri5or","slide":7,"text":"部署资产\nNginx、Docker、部署脚本和代理配置放在项目内，便于上线交接。","textPreview":"部署资产 | Nginx、Docker、部署脚本和代理配置放在项目内，便于上线交接。","textChars":40,"textLines":2,"bbox":[656.86,421.73,581.33,172.5]}
+{"kind":"textbox","id":"sh/xsjqdk7i","slide":7,"text":"7","textPreview":"7","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"notes","id":"nt/zagtfh","slide":7,"text":"[Sources]\ndocs/product/product-introduction.md: 配置中心、TAPD、Langfuse、部署与环境配置。\ndocs/architecture/product-architecture.md: TAPD 导入架构、部署资产架构。"}
+{"kind":"slide","id":"sl/c8qjk1","slide":8,"title":"输出物覆盖复盘、交接和系统对接","textShapes":5}
+{"kind":"textbox","id":"sh/6dwn25o3","slide":8,"text":"输出物覆盖复盘、交接和系统对接","textPreview":"输出物覆盖复盘、交接和系统对接","textChars":15,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"shape","id":"sh/8ze54f69","slide":8,"bbox":[657.68,41.33,580.99,172]}
+{"kind":"textbox","id":"sh/ja5orqps","slide":8,"text":"过程记录\n展开每条用例，查看阶段状态、录音、相似度与诊断字段。","textPreview":"过程记录 | 展开每条用例，查看阶段状态、录音、相似度与诊断字段。","textChars":31,"textLines":2,"bbox":[688.89,72.3,523.56,110.07]}
+{"kind":"shape","id":"sh/y9wnylo7","slide":8,"bbox":[657.68,249.33,580.99,172]}
+{"kind":"textbox","id":"sh/lcn6t07i","slide":8,"text":"结构化报告\n支持 JSON、CSV、Markdown、HTML、Excel。","textPreview":"结构化报告 | 支持 JSON、CSV、Markdown、HTML、Excel。","textChars":38,"textLines":2,"bbox":[688.89,280.3,523.56,110.07]}
+{"kind":"shape","id":"sh/kbe50v6d","slide":8,"bbox":[657.68,457.33,580.99,172]}
+{"kind":"textbox","id":"sh/36po3upw","slide":8,"text":"日志提取\nTraces 与 Observations 可导出 Excel / JSON。","textPreview":"日志提取 | Traces 与 Observations 可导出 Excel / JSON。","textChars":44,"textLines":2,"bbox":[688.89,488.3,523.56,110.07]}
+{"kind":"textbox","id":"sh/i5g7apob","slide":8,"text":"8","textPreview":"8","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"chart","id":"ch/hsbyxs3a","slide":8,"name":"","chartType":"bar","bbox":[42.91,130.67,537.97,492.39]}
+{"kind":"notes","id":"nt/c8qjk1","slide":8,"text":"[Sources]\ndocs/product/product-introduction.md: 测试过程记录与报告、Langfuse 日志获取、总结报告模式。\nREADME.md: 测试报告与结构化报告功能特性。"}
+{"kind":"slide","id":"sl/kzd5y9","slide":9,"title":"技术架构保持轻量，但为扩展和恢复留出清晰边界","textShapes":10}
+{"kind":"textbox","id":"sh/i5ozahkj","slide":9,"text":"技术架构保持轻量，但为扩展和恢复留出清晰边界","textPreview":"技术架构保持轻量，但为扩展和恢复留出清晰边界","textChars":22,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"shape","id":"sh/58zilc3a","slide":9,"bbox":[80,170,1120,78]}
+{"kind":"textbox","id":"sh/47qhcr2p","slide":9,"text":"视图层","textPreview":"视图层","textChars":3,"textLines":1,"bbox":[110,188,220,40]}
+{"kind":"textbox","id":"sh/v2xgf2ls","slide":9,"text":"Components 负责页面展示、交互输入和结果反馈。","textPreview":"Components 负责页面展示、交互输入和结果反馈。","textChars":28,"textLines":1,"bbox":[350,188,800,40]}
+{"kind":"shape","id":"sh/a1oz6xkn","slide":9,"bbox":[80,280,1120,78]}
+{"kind":"textbox","id":"sh/x4fihc3y","slide":9,"text":"业务编排层","textPreview":"业务编排层","textChars":5,"textLines":1,"bbox":[110,298,220,40]}
+{"kind":"textbox","id":"sh/w36h872d","slide":9,"text":"Hooks + Store 统一测试执行、播放和状态管理。","textPreview":"Hooks + Store 统一测试执行、播放和状态管理。","textChars":29,"textLines":1,"bbox":[350,298,800,40]}
+{"kind":"shape","id":"sh/fy10r6lc","slide":9,"bbox":[80,390,1120,78]}
+{"kind":"textbox","id":"sh/ex8zi1kr","slide":9,"text":"服务层","textPreview":"服务层","textChars":3,"textLines":1,"bbox":[110,408,220,40]}
+{"kind":"textbox","id":"sh/k7ax8v69","slide":9,"text":"TTS、TAPD、Langfuse、ADB、通知等外部能力封装。","textPreview":"TTS、TAPD、Langfuse、ADB、通知等外部能力封装。","textChars":32,"textLines":1,"bbox":[350,408,800,40]}
+{"kind":"shape","id":"sh/58jy10ne","slide":9,"bbox":[80,500,1120,78]}
+{"kind":"textbox","id":"sh/ilsf6lo3","slide":9,"text":"工具层","textPreview":"工具层","textChars":3,"textLines":1,"bbox":[110,518,220,40]}
+{"kind":"textbox","id":"sh/jm1gzq5o","slide":9,"text":"报告生成、日志分析、Excel 导出、文本解析等纯函数逻辑。","textPreview":"报告生成、日志分析、Excel 导出、文本解析等纯函数逻辑。","textChars":30,"textLines":1,"bbox":[350,518,800,40]}
+{"kind":"textbox","id":"sh/wjax4b6x","slide":9,"text":"9","textPreview":"9","textChars":1,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"notes","id":"nt/kzd5y9","slide":9,"text":"[Sources]\ndocs/architecture/product-architecture.md: 总体分层、运行时主链路、状态与持久化架构。\nREADME.md: 技术栈说明。"}
+{"kind":"slide","id":"sl/if3hwt","slide":10,"title":"落地方式","textShapes":4}
+{"kind":"textbox","id":"sh/ja5sju1o","slide":10,"text":"落地方式","textPreview":"落地方式","textChars":4,"textLines":1,"bbox":[41.33,41.18,240,68.15]}
+{"kind":"textbox","id":"sh/4by9cf29","slide":10,"text":"用 VoiceAuto\n把语音测试变成\n可执行、可记录、可复盘的流程","textPreview":"用 VoiceAuto | 把语音测试变成 | 可执行、可记录、可复盘的流程","textChars":34,"textLines":3,"bbox":[41.33,158,1040,330]}
+{"kind":"textbox","id":"sh/5c7alkju","slide":10,"text":"建议先用于日常冒烟和版本回归，再逐步接入 TAPD、Langfuse 与自主监测链路。","textPreview":"建议先用于日常冒烟和版本回归，再逐步接入 TAPD、Langfuse 与自主监测链路。","textChars":43,"textLines":1,"bbox":[41.33,522.13,760,113.41]}
+{"kind":"textbox","id":"sh/6dgrepkf","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"notes","id":"nt/if3hwt","slide":10,"text":"[Sources]\ndocs/product/product-use-guide.md: 常见使用场景和使用建议。\ndocs/product/product-introduction.md: 迭代建议与验收标准。"}

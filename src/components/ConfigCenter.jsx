@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   CONFIG_SCHEMAS,
   CONFIG_TYPES,
-  getAllConfigStatuses,
   getOperationLogs,
   maskSensitiveValue,
   readConfig,
@@ -16,6 +15,11 @@ import { getLoginLogs, hasPermission, PERMISSIONS } from '../modules/config/auth
 import { createUserAccount } from '../modules/config/userApi';
 import { refreshLangfuseEnvironments } from '../modules/langfuse/services/langfuseService';
 import { useAuth } from './AuthGate';
+import {
+  getToolUsageRecords,
+  summarizeToolUsageByUser,
+  TOOL_USAGE_UPDATED_EVENT,
+} from '../utils/toolUsageStore';
 
 const FIELD_LABELS = {
   configName: '配置名称',
@@ -36,8 +40,12 @@ const FIELD_LABELS = {
   timeout: '超时时间(ms)',
   webhook: 'Webhook',
   accessToken: 'Access Token',
+  apiKey: 'API Key',
   apiKeyId: 'APP ID',
   apiKeySecret: 'Access Token',
+  model: '模型',
+  temperature: '温度',
+  maxCompletionTokens: '最大输出 Tokens',
   secret: 'Secret',
   proxyPath: '代理路径',
   groupName: '群名称',
@@ -81,6 +89,7 @@ const CONFIG_TABS = [
   CONFIG_TYPES.TAPD,
   CONFIG_TYPES.DINGTALK,
   CONFIG_TYPES.DOUBAO_TTS,
+  CONFIG_TYPES.MINIMAX,
   CONFIG_TYPES.SERVER,
 ];
 const USER_MANAGEMENT_TAB = 'userManagement';
@@ -90,6 +99,7 @@ const FIELD_ORDER = {
   [CONFIG_TYPES.TAPD]: ['configName', 'baseUrl', 'workspaceId', 'companyId', 'tapdProjectId', 'apiUser', 'apiPassword', 'defaultTestPlanId', 'timeout', 'debugDirectoryMapping', 'enabled'],
   [CONFIG_TYPES.DINGTALK]: ['groupName', 'proxyPath', 'webhook', 'accessToken', 'secret', 'enabled'],
   [CONFIG_TYPES.DOUBAO_TTS]: ['apiKeyId', 'apiKeySecret', 'secretKey', 'resourceId'],
+  [CONFIG_TYPES.MINIMAX]: ['configName', 'baseUrl', 'apiKey', 'model', 'temperature', 'maxCompletionTokens', 'timeout', 'enabled'],
   [CONFIG_TYPES.DATABASE]: ['type', 'host', 'port', 'databaseName', 'username', 'password', 'poolSize', 'sslConfig', 'backupStrategy', 'retentionDays', 'enabled'],
   [CONFIG_TYPES.SERVER]: ['serverName', 'host', 'os', 'servicePort', 'deployPath', 'sshPort', 'sshUser', 'sshPassword', 'sshPrivateKey', 'logPath', 'storagePath', 'adbPath', 'adbDeviceId', 'chromePath', 'startCommand', 'serviceStatus', 'enabled'],
 };
@@ -121,23 +131,19 @@ function buildConfigSubmitPayload(type, form, storedConfig) {
   }, {});
 }
 
-function ConfigStatusStrip({ refreshKey }) {
-  const statuses = useMemo(() => (
-    getAllConfigStatuses().filter((item) => item.type !== CONFIG_TYPES.DATABASE)
-  ), [refreshKey]);
+function ConfigSaveMessage({ type, message }) {
+  if (!message) return null;
+  const isSuccess = type === 'success';
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
-      {statuses.map((item) => (
-        <div key={item.type} className="rounded-lg border border-gray-700 bg-dark p-3">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-gray-400">{item.label}</p>
-            <span className={`h-2 w-2 rounded-full ${item.complete ? 'bg-emerald-400' : 'bg-yellow-400'}`} />
-          </div>
-          <p className={`mt-2 text-sm font-semibold ${item.complete ? 'text-emerald-300' : 'text-yellow-300'}`}>
-            {item.complete ? '已完成' : '待补充'}
-          </p>
-        </div>
-      ))}
+    <div
+      role="status"
+      className={`rounded-lg border px-3 py-2 text-sm ${
+        isSuccess
+          ? 'border-emerald-700/70 bg-emerald-950/35 text-emerald-200'
+          : 'border-red-800/70 bg-red-950/35 text-red-200'
+      }`}
+    >
+      {message}
     </div>
   );
 }
@@ -330,6 +336,7 @@ function LangfuseConfigForm({ onSaved, canManage }) {
   const [storedConfig, setStoredConfig] = useState(() => readConfig(CONFIG_TYPES.LANGFUSE));
   const [form, setForm] = useState(() => buildLangfuseEditableForm(storedConfig));
   const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('');
   const [loading, setLoading] = useState(true);
   const previewEnvironments = buildLangfusePreviewEnvironments(storedConfig, form);
 
@@ -343,7 +350,10 @@ function LangfuseConfigForm({ onSaved, canManage }) {
         setForm(buildLangfuseEditableForm(config));
       })
       .catch((error) => {
-        if (mounted) setMessage(error.message || '配置加载失败');
+        if (mounted) {
+          setMessageType('error');
+          setMessage(error.message || '配置加载失败');
+        }
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -384,15 +394,24 @@ function LangfuseConfigForm({ onSaved, canManage }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!canManage) {
+      setMessageType('error');
       setMessage('当前账号无配置修改权限');
       return;
     }
-    const saved = await saveDatabaseConfig(CONFIG_TYPES.LANGFUSE, buildLangfuseSubmitPayload(form, storedConfig));
-    setStoredConfig(saved);
-    setForm(buildLangfuseEditableForm(saved));
-    refreshLangfuseEnvironments();
-    setMessage('配置已保存');
-    onSaved();
+    setMessage('');
+    setMessageType('');
+    try {
+      const saved = await saveDatabaseConfig(CONFIG_TYPES.LANGFUSE, buildLangfuseSubmitPayload(form, storedConfig));
+      setStoredConfig(saved);
+      setForm(buildLangfuseEditableForm(saved));
+      refreshLangfuseEnvironments();
+      setMessageType('success');
+      setMessage('保存成功，配置已写入数据库');
+      onSaved();
+    } catch (error) {
+      setMessageType('error');
+      setMessage(error.message || '配置保存失败');
+    }
   };
 
   return (
@@ -431,7 +450,7 @@ function LangfuseConfigForm({ onSaved, canManage }) {
       />
 
       {loading && <p className="text-sm text-gray-400">正在从数据库加载配置...</p>}
-      {message && <p className="text-sm text-emerald-300">{message}</p>}
+      <ConfigSaveMessage type={messageType} message={message} />
     </form>
   );
 }
@@ -445,6 +464,7 @@ function ConfigForm({ type, onSaved, canManage }) {
   const [storedConfig, setStoredConfig] = useState(() => readConfig(type));
   const [form, setForm] = useState(() => buildEditableFormFields(type, storedConfig));
   const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('');
   const [loading, setLoading] = useState(true);
   const sensitiveFields = new Set(schema.sensitive);
   const requiredFields = new Set(schema.required);
@@ -467,7 +487,10 @@ function ConfigForm({ type, onSaved, canManage }) {
         setForm(buildEditableFormFields(type, config));
       })
       .catch((error) => {
-        if (mounted) setMessage(error.message || '配置加载失败');
+        if (mounted) {
+          setMessageType('error');
+          setMessage(error.message || '配置加载失败');
+        }
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -480,14 +503,23 @@ function ConfigForm({ type, onSaved, canManage }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!canManage) {
+      setMessageType('error');
       setMessage('当前账号无配置修改权限');
       return;
     }
-    const saved = await saveDatabaseConfig(type, buildConfigSubmitPayload(type, form, storedConfig));
-    setStoredConfig(saved);
-    setForm(buildEditableFormFields(type, saved));
-    setMessage('配置已保存');
-    onSaved();
+    setMessage('');
+    setMessageType('');
+    try {
+      const saved = await saveDatabaseConfig(type, buildConfigSubmitPayload(type, form, storedConfig));
+      setStoredConfig(saved);
+      setForm(buildEditableFormFields(type, saved));
+      setMessageType('success');
+      setMessage('保存成功，配置已写入数据库');
+      onSaved();
+    } catch (error) {
+      setMessageType('error');
+      setMessage(error.message || '配置保存失败');
+    }
   };
 
   return (
@@ -554,7 +586,7 @@ function ConfigForm({ type, onSaved, canManage }) {
       </div>
       )}
 
-      {message && <p className="text-sm text-emerald-300">{message}</p>}
+      <ConfigSaveMessage type={messageType} message={message} />
     </form>
   );
 }
@@ -591,6 +623,73 @@ function OperationLogPanel({ refreshKey }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ToolUsagePanel({ refreshKey }) {
+  const records = useMemo(() => getToolUsageRecords(), [refreshKey]);
+  const summaryRows = useMemo(() => summarizeToolUsageByUser(records), [records]);
+  const recentRecords = records.slice(0, 8);
+
+  return (
+    <section className="rounded-lg border border-gray-700 bg-dark p-5 space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-200">工具使用时长</h3>
+          <p className="text-xs text-gray-500 mt-1">按登录用户统计测试开始到测试结束的使用时长</p>
+        </div>
+        <span className="text-xs text-gray-500">共 {records.length} 次测试记录</span>
+      </div>
+
+      {summaryRows.length === 0 ? (
+        <p className="text-xs text-gray-500">暂无工具使用记录</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-[760px] w-full text-xs">
+            <thead className="bg-gray-950/70 text-gray-400">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">用户</th>
+                <th className="px-3 py-2 text-left font-medium">登录账号</th>
+                <th className="px-3 py-2 text-right font-medium">测试次数</th>
+                <th className="px-3 py-2 text-right font-medium">累计使用时长</th>
+                <th className="px-3 py-2 text-left font-medium">最近开始时间</th>
+                <th className="px-3 py-2 text-left font-medium">最近结束时间</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {summaryRows.map((item) => (
+                <tr key={item.loginAccount} className="hover:bg-gray-900/60">
+                  <td className="px-3 py-2 text-gray-200">{item.userName}</td>
+                  <td className="px-3 py-2 text-gray-300">{item.loginAccount}</td>
+                  <td className="px-3 py-2 text-right text-gray-300">{item.runCount}</td>
+                  <td className="px-3 py-2 text-right text-emerald-300 font-semibold">{item.totalDurationText}</td>
+                  <td className="px-3 py-2 text-gray-400">{item.lastStartTimeText}</td>
+                  <td className="px-3 py-2 text-gray-400">{item.lastEndTimeText}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {recentRecords.length > 0 && (
+        <div className="border-t border-gray-800 pt-4">
+          <h4 className="text-xs font-semibold text-gray-300 mb-2">最近记录</h4>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+            {recentRecords.map((record) => (
+              <div key={record.id} className="rounded-lg bg-gray-900 px-3 py-2 text-xs flex items-center justify-between gap-3">
+                <span className="text-gray-300">
+                  {record.userName} · {record.loginAccount}
+                </span>
+                <span className="text-gray-500">
+                  {record.startTimeText} - {record.durationText}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -714,16 +813,28 @@ export default function ConfigCenter() {
   const canManage = hasPermission(auth?.currentUser, PERMISSIONS.CONFIG_MANAGE);
   const canManageUsers = hasPermission(auth?.currentUser, PERMISSIONS.USER_MANAGE);
 
+  useEffect(() => {
+    const onToolUsageUpdated = () => refresh();
+    window.addEventListener(TOOL_USAGE_UPDATED_EVENT, onToolUsageUpdated);
+    return () => window.removeEventListener(TOOL_USAGE_UPDATED_EVENT, onToolUsageUpdated);
+  }, []);
+
+  useEffect(() => {
+    const onOpenConfigType = (event) => {
+      const requestedType = event?.detail?.type;
+      if (CONFIG_SCHEMAS[requestedType]) setActiveType(requestedType);
+    };
+    window.addEventListener('voiceauto:open-config-type', onOpenConfigType);
+    return () => window.removeEventListener('voiceauto:open-config-type', onOpenConfigType);
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-xl font-semibold text-white">配置中心</h2>
-          <p className="text-xs text-gray-400 mt-1">敏感字段默认脱敏展示</p>
         </div>
       </div>
-
-      <ConfigStatusStrip refreshKey={refreshKey} />
 
       <div className="flex flex-wrap gap-2">
         {CONFIG_TABS.map((type) => (
@@ -756,6 +867,7 @@ export default function ConfigCenter() {
       ) : (
         <ConfigForm key={`${activeType}-${refreshKey}`} type={activeType} onSaved={refresh} canManage={canManage} />
       )}
+      <ToolUsagePanel refreshKey={refreshKey} />
       <OperationLogPanel refreshKey={refreshKey} />
     </div>
   );

@@ -14,156 +14,56 @@ import {
 } from '../modules/langfuse/services/langfuseService';
 import { getLangfuseEnvStyle } from './langfuseEnvStyles';
 import { exportToExcel, exportSessionExcel, buildSessionRows, downloadJSON } from '../modules/langfuse/utils/excelExporter';
-import { createTapdBug } from '../modules/tapd/services/tapdService';
 import { useTest, actions } from '../stores/testStore';
 import { notifyDingTalk } from '../services/dingTalkService';
-import { CONFIG_TYPES, readConfig as readSecureConfig } from '../modules/config/secureConfigStore';
 import {
   SUMMARY_REPORT_EVENT,
   SUMMARY_REPORT_STORAGE_KEY,
   buildSummaryReportPayload,
 } from '../utils/summaryReportBuilder';
+import {
+  resolveBugFoundVersion,
+  resolveDeveloperOwner,
+  submitTapdBugsBySessionRows,
+} from '../utils/tapdBugSubmission';
 
 const LANGFUSE_PAGE_STORAGE_KEY = 'voiceauto_langfuse_page_state';
-
-function loadTapdConfig() {
-  return readSecureConfig(CONFIG_TYPES.TAPD, { includeSecrets: true });
-}
 
 function normalizeLine(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function normalizeComparable(value) {
-  return normalizeLine(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+function resolveTraceId(row) {
+  return normalizeLine(row?.traceID || row?.traceId || row?.trace_id || row?.id);
 }
 
-function clipText(value, max = 120) {
-  const normalized = normalizeLine(value);
-  if (!normalized) return '';
-  return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized;
-}
-
-function splitErrorMessages(raw) {
-  const text = String(raw || '').trim();
-  if (!text) return [];
-
-  const pieces = text
-    .split(/\r?\n+/)
-    .map((item) => normalizeLine(item))
-    .filter(Boolean);
-
-  return Array.from(new Set(pieces));
-}
-
-function resolveAudioCaseId(audio) {
-  const explicit = normalizeLine(audio?.caseId || audio?.case_id || audio?.testCaseId || audio?.tapdCaseAudioId);
+function resolveRowLogUrl(row, envKey) {
+  const explicit = normalizeLine(row?.logUrl || row?.log_url || row?.日志链接 || row?.traceUrl || row?.trace_url);
   if (explicit) return explicit;
-  const tapdCaseId = normalizeLine(audio?.tapdCaseId);
-  const humanIndex = normalizeLine(audio?.humanIndex);
-  if (tapdCaseId && humanIndex) return `${tapdCaseId}_${humanIndex}`;
-  return tapdCaseId;
+
+  const traceId = resolveTraceId(row);
+  const baseUrl = normalizeLine(ENVIRONMENTS[envKey]?.baseUrl).replace(/\/+$/, '');
+  const projectId = normalizeLine(ENVIRONMENTS[envKey]?.projectId);
+  if (!traceId || !baseUrl) return '-';
+  if (projectId) return `${baseUrl}/project/${encodeURIComponent(projectId)}/traces/${encodeURIComponent(traceId)}`;
+  return `${baseUrl}/trace/${encodeURIComponent(traceId)}`;
 }
 
-function resolveAudioBySessionRow(testAudios, row) {
-  const audios = Array.isArray(testAudios) ? testAudios : [];
-  const rowCaseId = normalizeLine(row?.case_id || row?.caseId || row?.test_case_id || row?.testCaseId);
-  if (rowCaseId) {
-    const byCaseId = audios.find((audio) => resolveAudioCaseId(audio) === rowCaseId);
-    if (byCaseId) return byCaseId;
-  }
-
-  const rowAudioFile = normalizeLine(row?.audio_file || row?.audioFile);
-  if (rowAudioFile) {
-    const byAudioFile = audios.find((audio) => normalizeLine(audio?.audioFile) === rowAudioFile);
-    if (byAudioFile) return byAudioFile;
-  }
-
-  const normalizedInput = normalizeComparable(row?.InputText || row?.actual_input_text || row?.输入);
-  if (!normalizedInput) return null;
-  return audios.find((item) => normalizeComparable(item?.text) === normalizedInput) || null;
+function withLogUrls(rows, envKey) {
+  return (rows || []).map((row) => ({
+    ...row,
+    logUrl: resolveRowLogUrl(row, envKey),
+    日志链接: resolveRowLogUrl(row, envKey),
+  }));
 }
 
-function resolveCaseNameByAudio(audio) {
-  return normalizeLine(audio?.caseTitle || audio?.name || audio?.tapdCaseTitle || '');
-}
-
-function buildBugTitle(caseName, humanText, errorMessage) {
-  const title = [
-    caseName || '未命名用例',
-    `Human:${clipText(humanText || '（空）', 60)}`,
-    clipText(errorMessage || '未知错误', 80),
-  ].join(' | ');
-  return title.length > 255 ? `${title.slice(0, 252)}...` : title;
-}
-
-async function submitTapdBugsBySessionRows(sessionRows, testAudios) {
-  const rowsWithErrors = (sessionRows || []).filter((row) => String(row?.error || '').trim());
-  if (rowsWithErrors.length === 0) {
-    return { skipped: true, reason: 'no-error', total: 0, created: 0, failed: 0 };
+function loadSummaryReportSnapshot() {
+  try {
+    const raw = localStorage.getItem(SUMMARY_REPORT_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
   }
-
-  const cfg = loadTapdConfig();
-  const apiUser = normalizeLine(cfg.apiUser);
-  const apiPassword = normalizeLine(cfg.apiPassword);
-  const workspaceId = normalizeLine(cfg.workspaceId);
-  if (!apiUser || !apiPassword || !workspaceId) {
-    return {
-      skipped: true,
-      reason: 'missing-config',
-      total: rowsWithErrors.length,
-      created: 0,
-      failed: rowsWithErrors.length,
-    };
-  }
-
-  const pendingBugs = [];
-  for (const row of rowsWithErrors) {
-    const humanText = String(row?.InputText || '').trim();
-    const matchedAudio = resolveAudioBySessionRow(testAudios, row);
-    const caseName = resolveCaseNameByAudio(matchedAudio);
-    const errorMessages = splitErrorMessages(row.error);
-    for (const message of errorMessages) {
-      const title = buildBugTitle(caseName, humanText, message);
-      const description = [
-        `SessionID: ${String(row?.sessionID || '').trim()}`,
-        `CaseName: ${caseName || '未命名用例'}`,
-        `Human: ${humanText || '（空）'}`,
-        `Error: ${message}`,
-        `ErrorDetails: ${String(row?.error || '').trim() || message}`,
-        `Summary: ${String(row?.异常信息 || '').trim() || 'N/A'}`,
-        `OutputContent: ${clipText(row?.['output.content'] || '', 500) || 'N/A'}`,
-      ].join('\n');
-      pendingBugs.push({ title, description, dedupeKey: `${title}##${message}` });
-    }
-  }
-
-  const dedupedBugs = [];
-  const seen = new Set();
-  for (const item of pendingBugs) {
-    if (seen.has(item.dedupeKey)) continue;
-    seen.add(item.dedupeKey);
-    dedupedBugs.push(item);
-  }
-
-  let created = 0;
-  let failed = 0;
-  for (const bug of dedupedBugs) {
-    try {
-      await createTapdBug(workspaceId, bug.title, bug.description, apiUser, apiPassword);
-      created++;
-    } catch {
-      failed++;
-    }
-  }
-
-  return {
-    skipped: false,
-    reason: '',
-    total: dedupedBugs.length,
-    created,
-    failed,
-  };
 }
 
 /* ─── 工具函数 ─── */
@@ -798,8 +698,25 @@ export default function LangfuseFetcher() {
       applyProcessedResult(result);
       setStatus('done');
 
-      const fetchedSessionRows = buildSessionRows(result.traces, result.observations);
-      const bugSubmitResult = await submitTapdBugsBySessionRows(fetchedSessionRows, state.testAudios);
+      const fetchedSessionRows = withLogUrls(buildSessionRows(result.traces, result.observations), fetchEnvKey);
+      const summaryReportSnapshot = loadSummaryReportSnapshot();
+      const bugSubmitResult = await submitTapdBugsBySessionRows(fetchedSessionRows, state.testAudios, {
+        developerOwner: resolveDeveloperOwner({
+          summaryReport: summaryReportSnapshot,
+          runtimeReport: state.report,
+        }),
+        bugFoundVersion: resolveBugFoundVersion({
+          summaryReport: summaryReportSnapshot,
+          runtimeReport: state.report,
+        }),
+        taskName: state.report?.taskName
+          || state.report?.testTaskName
+          || state.report?.tapdTestPlanName
+          || state.report?.runId
+          || '-',
+        envLabel: ENVIRONMENTS[fetchEnvKey]?.label,
+        envKey: fetchEnvKey,
+      });
       if (!bugSubmitResult.skipped && bugSubmitResult.total > 0) {
         setError(`TAPD Bug 提交完成：共 ${bugSubmitResult.total} 条，成功 ${bugSubmitResult.created} 条，失败 ${bugSubmitResult.failed} 条`);
       }

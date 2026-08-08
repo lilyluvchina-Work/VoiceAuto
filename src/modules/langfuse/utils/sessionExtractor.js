@@ -310,6 +310,83 @@ function resolveAgentCodeFromObservation(obs) {
   ).trim();
 }
 
+function pushUniqueAgentCode(list, seen, value) {
+  const agentCode = String(value || '').trim();
+  if (!agentCode || seen.has(agentCode)) return;
+  seen.add(agentCode);
+  list.push(agentCode);
+}
+
+function collectAgentCodesFromRouterResult(value, list = [], seen = new Set()) {
+  const parsed = parseIfString(value);
+  if (parsed == null || parsed === '') return list;
+
+  if (typeof parsed === 'string' || typeof parsed === 'number') {
+    String(parsed)
+      .split(/\s*(?:\/|,|，|;|；|\|)\s*/)
+      .forEach((item) => pushUniqueAgentCode(list, seen, item));
+    return list;
+  }
+
+  if (Array.isArray(parsed)) {
+    parsed.forEach((item) => collectAgentCodesFromRouterResult(item, list, seen));
+    return list;
+  }
+
+  if (typeof parsed !== 'object') return list;
+
+  const directAgent = parsed.agent_code
+    ?? parsed.agentCode
+    ?? parsed.AgentCode
+    ?? parsed.agent
+    ?? parsed.agent_name
+    ?? parsed.agentName
+    ?? parsed.name;
+  if (directAgent != null) pushUniqueAgentCode(list, seen, directAgent);
+
+  [
+    'agents',
+    'agent_list',
+    'agentList',
+    'selected_agents',
+    'selectedAgents',
+    'route_agents',
+    'routeAgents',
+    'results',
+    'result',
+    'candidates',
+  ].forEach((field) => {
+    if (parsed[field] != null) collectAgentCodesFromRouterResult(parsed[field], list, seen);
+  });
+
+  return list;
+}
+
+function isRouterResultObservation(obs) {
+  return nameIncludes(obs, '[router_result]') || nameIncludes(obs, 'router_result');
+}
+
+function resolveRouterResultContent(obs) {
+  const outputData = parseIfString(obs?.output_data ?? obs?.outputData ?? obs?.output);
+  if (outputData == null) return '';
+  if (typeof outputData === 'object' && !Array.isArray(outputData) && 'content' in outputData) {
+    return outputData.content;
+  }
+  return '';
+}
+
+function resolveRouterResultAgents(sortedObs) {
+  for (let i = (sortedObs || []).length - 1; i >= 0; i -= 1) {
+    const obs = sortedObs[i];
+    const routerResult = isRouterResultObservation(obs)
+      ? (resolveRouterResultContent(obs) || resolveObservationValue(obs, ['router_result', 'routerResult']))
+      : resolveObservationValue(obs, ['router_result', 'routerResult']);
+    const agents = collectAgentCodesFromRouterResult(routerResult);
+    if (agents.length > 0) return agents;
+  }
+  return [];
+}
+
 function resolveInputTextFromInputTextObservation(obs) {
   const outputData = parseIfString(obs?.output_data ?? obs?.outputData ?? obs?.output);
   return resolveErrorContent(outputData);
@@ -354,6 +431,11 @@ function isBusinessAgent(agentCode) {
 }
 
 function resolveHitAgent(sortedObs) {
+  const routerResultAgents = resolveRouterResultAgents(sortedObs);
+  if (routerResultAgents.length > 0) {
+    return { agent: routerResultAgents.join(' / '), source: 'router_result', confidence: 'high' };
+  }
+
   const fullAnswer = findLatestObservation(sortedObs, (obs) => isFullAnswerObservation(obs));
   if (fullAnswer) {
     const agentCode = resolveAgentCodeFromObservation(fullAnswer);
@@ -406,6 +488,9 @@ function resolveHitSubAgent(sortedObs) {
 }
 
 function resolveAgentCandidates(sortedObs) {
+  const routerResultAgents = resolveRouterResultAgents(sortedObs);
+  if (routerResultAgents.length > 0) return routerResultAgents;
+
   const candidates = [];
   const seen = new Set();
 

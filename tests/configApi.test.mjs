@@ -46,6 +46,29 @@ globalThis.fetch = async (url, options = {}) => {
       json: async () => ({ success: true, config }),
     };
   }
+  if (url === '/api/configs/minimax' && (!options.method || options.method === 'GET')) {
+    const config = savedConfigs.get('minimax');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, config: config || { type: 'minimax', configured: false } }),
+    };
+  }
+  if (url === '/api/configs/minimax' && options.method === 'PUT') {
+    const body = JSON.parse(options.body);
+    const config = {
+      type: 'minimax',
+      configured: true,
+      version: 1,
+      ...body.config,
+    };
+    savedConfigs.set('minimax', config);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, config }),
+    };
+  }
   throw new Error(`unexpected fetch ${url}`);
 };
 
@@ -67,3 +90,20 @@ const runtimeConfig = readConfig(CONFIG_TYPES.TAPD, { includeSecrets: true });
 assert.equal(runtimeConfig.apiPassword, 'updated-password');
 assert.equal(fetchCalls.some((call) => call.options.method === 'PUT'), true);
 assert.equal(localStorageCalls.some(([method]) => method === 'setItem'), false);
+
+const minimaxSaved = await saveDatabaseConfig(CONFIG_TYPES.MINIMAX, {
+  configName: 'MiniMax 评测模型',
+  baseUrl: 'https://api.minimax.io/v1',
+  apiKey: 'sk-minimax-db-secret',
+  model: 'MiniMax-M2.7',
+  temperature: 1,
+  maxCompletionTokens: 2048,
+  timeout: 60000,
+  enabled: true,
+});
+assert.equal(minimaxSaved.apiKey, 'sk-min****cret');
+assert.equal(savedConfigs.get('minimax').apiKey, 'sk-minimax-db-secret');
+
+const minimaxLoaded = await loadDatabaseConfig(CONFIG_TYPES.MINIMAX);
+assert.equal(minimaxLoaded.apiKey, 'sk-minimax-db-secret');
+assert.equal(minimaxLoaded.enabled, true);

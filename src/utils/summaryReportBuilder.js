@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { getLangfuseEnvironmentMap } from '../modules/config/secureConfigStore.js';
 
 export const SUMMARY_REPORT_STORAGE_KEY = 'voiceauto_summary_report_v1';
 export const SUMMARY_REPORT_EVENT = 'voiceauto-summary-report-updated';
@@ -307,8 +308,78 @@ function resolveActualInput(row) {
   return valueOrSlash(firstPresent(row, ['actual_input_text', 'InputText', 'actualInputText', 'input_text', 'inputText']));
 }
 
+function parseMaybeJson(value) {
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (!text) return '';
+  if (!(text.startsWith('{') || text.startsWith('['))) return text;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function pushUniqueAgentCode(list, seen, value) {
+  const agentCode = normalizeLine(value);
+  if (!agentCode || seen.has(agentCode)) return;
+  seen.add(agentCode);
+  list.push(agentCode);
+}
+
+function collectAgentCodesFromRouterResult(value, list = [], seen = new Set()) {
+  const parsed = parseMaybeJson(value);
+  if (parsed == null || parsed === '') return list;
+
+  if (typeof parsed === 'string' || typeof parsed === 'number') {
+    String(parsed)
+      .split(/\s*(?:\/|,|，|;|；|\|)\s*/)
+      .forEach((item) => pushUniqueAgentCode(list, seen, item));
+    return list;
+  }
+
+  if (Array.isArray(parsed)) {
+    parsed.forEach((item) => collectAgentCodesFromRouterResult(item, list, seen));
+    return list;
+  }
+
+  if (typeof parsed !== 'object') return list;
+
+  const directAgent = parsed.agent_code
+    ?? parsed.agentCode
+    ?? parsed.AgentCode
+    ?? parsed.agent
+    ?? parsed.agent_name
+    ?? parsed.agentName
+    ?? parsed.name;
+  if (directAgent != null) pushUniqueAgentCode(list, seen, directAgent);
+
+  [
+    'agents',
+    'agent_list',
+    'agentList',
+    'selected_agents',
+    'selectedAgents',
+    'route_agents',
+    'routeAgents',
+    'results',
+    'result',
+    'candidates',
+  ].forEach((field) => {
+    if (parsed[field] != null) collectAgentCodesFromRouterResult(parsed[field], list, seen);
+  });
+
+  return list;
+}
+
+function resolveRouterResultAgentString(row) {
+  const routerResult = firstPresent(row, ['router_result', 'routerResult', 'RouterResult', 'router.result']);
+  const agents = collectAgentCodesFromRouterResult(routerResult);
+  return agents.length ? agents.join(' / ') : '';
+}
+
 function resolveHitAgent(row) {
-  return valueOrSlash(firstPresent(row, [
+  return valueOrSlash(resolveRouterResultAgentString(row) || firstPresent(row, [
     'hit_agent',
     'hitAgent',
     'final_agent',
@@ -325,12 +396,42 @@ function resolveHitSubAgent(row) {
   return valueOrSlash(firstPresent(row, ['hit_sub_agent', 'hitSubAgent', 'sub_agent', 'subAgent']));
 }
 
+function agentMatchesTarget(targetAgent, actualAgent) {
+  const normalizedTarget = normalizeLine(targetAgent);
+  const normalizedActual = normalizeLine(actualAgent);
+  return Boolean(normalizedTarget && normalizedActual && normalizedTarget === normalizedActual);
+}
+
 function resolveLogOutput(row) {
   return valueOrSlash(firstPresent(row, ['response_text', 'output.content']));
 }
 
 function resolveLogError(row) {
   return valueOrSlash(firstPresent(row, ['error_message', 'error']));
+}
+
+function resolveTraceId(row) {
+  return firstPresent(row, ['traceID', 'traceId', 'trace_id', 'id']);
+}
+
+function resolveLogUrl(row, envKey) {
+  const explicit = firstPresent(row, ['logUrl', 'log_url', '日志链接', 'traceUrl', 'trace_url']);
+  if (explicit) return explicit;
+
+  const traceId = resolveTraceId(row);
+  if (!traceId) return '-';
+
+  try {
+    const env = getLangfuseEnvironmentMap()?.[envKey];
+    const baseUrl = rawValue(env?.baseUrl).replace(/\/+$/, '');
+    const projectId = rawValue(env?.projectId);
+    if (baseUrl && projectId) return `${baseUrl}/project/${encodeURIComponent(projectId)}/traces/${encodeURIComponent(traceId)}`;
+    if (baseUrl) return `${baseUrl}/trace/${encodeURIComponent(traceId)}`;
+  } catch {
+    // Config is optional for imported or historical reports.
+  }
+
+  return '-';
 }
 
 function resolveExecutionRecord(records, audio, audioIndex, caseId) {
@@ -581,6 +682,24 @@ function getTestOwners(testAudios) {
   return owners;
 }
 
+function resolveDeveloperOwnerFromReport(testReport) {
+  return valueOrSlash(
+    testReport?.developerOwner
+    || testReport?.devOwner
+    || testReport?.currentOwner
+    || testReport?.current_owner
+  );
+}
+
+function resolveBugFoundVersionFromReport(testReport) {
+  return valueOrSlash(
+    testReport?.bugFoundVersion
+    || testReport?.versionReport
+    || testReport?.version_report
+    || testReport?.foundVersion
+  );
+}
+
 function formatTime(value) {
   if (!value) return MISSING;
   try {
@@ -680,6 +799,8 @@ export function buildSummaryReportText(report) {
     ['日志时间范围', safeReport.rangeText],
     ['测试时间', safeReport.testTime],
     ['测试负责人', safeReport.testOwner],
+    ['开发负责人', safeReport.developerOwner],
+    ['发现版本', safeReport.bugFoundVersion],
     ['导入的测试计划', Array.isArray(safeReport.importedPlans) && safeReport.importedPlans.length ? safeReport.importedPlans.join('、') : MISSING],
     ['用例总数', safeReport.totalCases],
     ['用例执行数量', safeReport.executedCases],
@@ -743,6 +864,7 @@ export function buildSummaryReportText(report) {
     item.textMatchStatus,
     item.matchMethod,
     item.logStatus,
+    item.logUrl || '-',
     item.vadDuration,
     item.asrDuration,
     item.ttsDuration,
@@ -789,6 +911,7 @@ export function buildSummaryReportText(report) {
       '文本匹配状态',
       '匹配方式',
       '日志状态',
+      '日志链接',
       'VadDuration',
       'ASRDuration',
       'TTSDuration',
@@ -847,6 +970,8 @@ export function buildSummaryReportHtml(report) {
     ['日志时间范围', safeReport.rangeText],
     ['测试时间', safeReport.testTime],
     ['测试负责人', safeReport.testOwner],
+    ['开发负责人', safeReport.developerOwner],
+    ['发现版本', safeReport.bugFoundVersion],
     ['导入的测试计划', Array.isArray(safeReport.importedPlans) && safeReport.importedPlans.length ? safeReport.importedPlans.join('、') : MISSING],
     ['用例总数', safeReport.totalCases],
     ['用例执行数量', safeReport.executedCases],
@@ -907,6 +1032,7 @@ export function buildSummaryReportHtml(report) {
     item.textMatchStatus,
     item.matchMethod,
     item.logStatus,
+    item.logUrl || '-',
     item.vadDuration,
     item.asrDuration,
     item.ttsDuration,
@@ -973,6 +1099,7 @@ export function buildSummaryReportHtml(report) {
       '文本匹配状态',
       '匹配方式',
       '日志状态',
+      '日志链接',
       'VadDuration',
       'ASRDuration',
       'TTSDuration',
@@ -1060,16 +1187,35 @@ function buildConclusionSummary(report, failedCount) {
   return '本次测试已完成，请结合执行通过率、Agent 命中率和模块统计判断是否满足发布要求。';
 }
 
-function buildDashboardSheet(report, modules, errorRows) {
+function isDashboardFailureRow(item = {}) {
+  return item.testPassed === false
+    || valueOrSlash(item.agentMatched) === '不一致'
+    || valueOrSlash(item.testResult) === '不通过'
+    || valueOrSlash(item.logError) !== MISSING
+    || valueOrSlash(item.logSummary) !== MISSING;
+}
+
+function buildDashboardSheet(report, modules, errorRows, reportTableRows) {
   const failedCount = Number(report?.failedCases) || Math.max(0, errorRows.length - 1);
   const dashboardModules = modules.slice(0, 12);
-  const failureSectionRow = 13 + dashboardModules.length;
+  const moduleSectionRow = 10;
+  const moduleHeaderRow = moduleSectionRow + 1;
+  const failureSectionRow = moduleHeaderRow + dashboardModules.length + 2;
   const failureHeaderRow = failureSectionRow + 1;
+  const reportTableSectionRow = failureHeaderRow + Math.min(Math.max(0, errorRows.length - 1), 10) + 2;
+  const reportTableHeaderRow = reportTableSectionRow + 1;
   const dashboardRows = [
-    ['VoiceAuto 测试报告', '', '', '', '', ''],
-    [`生成时间：${valueOrSlash(report?.generatedAtText)}`, `测试环境：${valueOrSlash(report?.testEnvironment)}`, `测试批次：${valueOrSlash(report?.runId)}`, '', '', ''],
-    ['', '', '', '', '', ''],
-    ['核心指标', '', '', '', '', ''],
+    ['VoiceAuto 测试报告', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    [
+      `生成时间：${valueOrSlash(report?.generatedAtText)}`,
+      `测试环境：${valueOrSlash(report?.testEnvironment)}`,
+      `测试批次：${valueOrSlash(report?.runId)}`,
+      `发现版本：${valueOrSlash(report?.bugFoundVersion)}`,
+      `开发负责人：${valueOrSlash(report?.developerOwner)}`,
+      `测试负责人：${valueOrSlash(report?.testOwner)}`,
+    ],
+    ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['核心指标', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
     ['用例总数', '执行数量', '执行率', '通过率', 'Agent命中率', '整体平均耗时'],
     [
       valueOrSlash(report?.totalCases),
@@ -1079,11 +1225,11 @@ function buildDashboardSheet(report, modules, errorRows) {
       valueOrSlash(report?.overallAgentHitRate),
       valueOrSlash(report?.overallAvgResponseText || formatMs(report?.overallAvgResponseMs)),
     ],
-    ['', '', '', '', '', ''],
-    ['结论摘要', '', '', '', '', ''],
-    [buildConclusionSummary(report, failedCount), '', '', '', '', ''],
-    ['', '', '', '', '', ''],
-    ['功能模块统计', '', '', '', '', ''],
+    ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['结论摘要', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    [buildConclusionSummary(report, failedCount), '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['功能模块统计', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
     ['功能模块', '用例数', 'Agent命中率', '平均耗时', '', ''],
     ...dashboardModules.map((item) => [
       valueOrSlash(item.module),
@@ -1093,24 +1239,29 @@ function buildDashboardSheet(report, modules, errorRows) {
       '',
       '',
     ]),
-    ['', '', '', '', '', ''],
-    ['失败/错误摘要', '', '', '', '', ''],
-    ['序号', '用例ID', '用例名称', '结论', '错误信息', '异常信息'],
-    ...errorRows.slice(1, 11).map((row) => row.slice(0, 6)),
+    ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['失败/错误摘要', '', '', '', '', '', ''],
+    ['序号', '用例ID', '用例名称', '结论', '错误信息', '异常信息', '日志链接'],
+    ...errorRows.slice(1, 11).map((row) => row.slice(0, 7)),
+    ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['报告表格', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ...reportTableRows,
   ];
-  const ws = sheetFromRows(dashboardRows, [18, 18, 20, 18, 18, 56], {
+  const ws = sheetFromRows(dashboardRows, [18, 18, 28, 28, 36, 18, 18, 18, 16, 12, 14, 24, 12, 14, 14, 14, 12, 56, 12, 12, 12, 12], {
     titleRows: [0],
-    sectionRows: [3, 7, 10, failureSectionRow],
-    headerRows: [4, 11, failureHeaderRow],
-    importantColumns: [2, 3, 4, 5],
+    sectionRows: [3, 7, moduleSectionRow, failureSectionRow, reportTableSectionRow],
+    headerRows: [4, moduleHeaderRow, failureHeaderRow, reportTableHeaderRow],
+    importantColumns: [3, 4, 5, 6, 8, 9, 10, 11, 17],
     merges: [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
-      { s: { r: 3, c: 0 }, e: { r: 3, c: 5 } },
-      { s: { r: 7, c: 0 }, e: { r: 7, c: 5 } },
-      { s: { r: 8, c: 0 }, e: { r: 8, c: 5 } },
-      { s: { r: 10, c: 0 }, e: { r: 10, c: 5 } },
-      { s: { r: failureSectionRow, c: 0 }, e: { r: failureSectionRow, c: 5 } },
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 21 } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: 21 } },
+      { s: { r: 7, c: 0 }, e: { r: 7, c: 21 } },
+      { s: { r: 8, c: 0 }, e: { r: 8, c: 21 } },
+      { s: { r: moduleSectionRow, c: 0 }, e: { r: moduleSectionRow, c: 21 } },
+      { s: { r: failureSectionRow, c: 0 }, e: { r: failureSectionRow, c: 21 } },
+      { s: { r: reportTableSectionRow, c: 0 }, e: { r: reportTableSectionRow, c: 21 } },
     ],
+    freeze: { ySplit: 1 },
   });
   ws['!rows'] = (ws['!rows'] || []).map((row, index) => ({
     ...row,
@@ -1119,7 +1270,7 @@ function buildDashboardSheet(report, modules, errorRows) {
   return ws;
 }
 
-export function exportSummaryReportExcel(report, filename) {
+export function buildSummaryReportWorkbook(report) {
   const safeReport = report || {};
   const params = Array.isArray(safeReport.submissionParams) ? safeReport.submissionParams : [];
   const modules = Array.isArray(safeReport.moduleStats || safeReport.moduleAverages)
@@ -1137,6 +1288,8 @@ export function exportSummaryReportExcel(report, filename) {
     ['日志时间范围', valueOrSlash(safeReport.rangeText)],
     ['测试时间', valueOrSlash(safeReport.testTime)],
     ['测试负责人', valueOrSlash(safeReport.testOwner)],
+    ['开发负责人', valueOrSlash(safeReport.developerOwner)],
+    ['发现版本', valueOrSlash(safeReport.bugFoundVersion)],
     ['导入的测试计划', Array.isArray(safeReport.importedPlans) && safeReport.importedPlans.length ? safeReport.importedPlans.join('、') : MISSING],
     ['用例总数', valueOrSlash(safeReport.totalCases)],
     ['用例执行数量', valueOrSlash(safeReport.executedCases)],
@@ -1172,17 +1325,17 @@ export function exportSummaryReportExcel(report, filename) {
     ]),
   ];
   const errorRows = [
-    ['序号', '用例ID', '用例名称', '结论', '日志状态', '错误信息', '异常信息'],
+    ['序号', '用例ID', '用例名称', '结论', '错误信息', '异常信息', '日志链接'],
     ...cases
-      .filter((item) => valueOrSlash(item.logError) !== MISSING || valueOrSlash(item.logSummary) !== MISSING || item.testPassed === false)
+      .filter(isDashboardFailureRow)
       .map((item, index) => [
         item.index || index + 1,
         valueOrSlash(item.caseId),
         valueOrSlash(item.caseTitle || item.testAudioText),
         valueOrSlash(item.testResult),
-        valueOrSlash(item.logStatus),
         valueOrSlash(item.logError),
         valueOrSlash(item.logSummary),
+        valueOrSlash(item.logUrl || '-'),
       ]),
   ];
   const keyRows = [
@@ -1198,6 +1351,56 @@ export function exportSummaryReportExcel(report, filename) {
       valueOrSlash(item.testResult),
       valueOrSlash(item.responseText || formatMs(item.responseMs)),
       valueOrSlash(item.logError),
+    ]),
+  ];
+  const reportTableRows = [
+    [
+      '序号',
+      '用例ID',
+      '目标文本（测试音频文本）',
+      '实际输入（日志提取的输入）',
+      '输出（output.content）',
+      '目标Agent',
+      '命中Agent',
+      '命中子Agent',
+      'Agent是否命中',
+      '结论',
+      '响应时长',
+      '错误信息',
+      '文本相似度',
+      '文本匹配状态',
+      '匹配方式',
+      '日志状态',
+      '日志链接',
+      'VadDuration',
+      'ASRDuration',
+      'TTSDuration',
+      'LLMDuration',
+      'FirstToken',
+    ],
+    ...cases.map((item, index) => [
+      item.index || index + 1,
+      valueOrSlash(item.caseId),
+      valueOrSlash(item.testAudioText),
+      breakSentencesForExport(item.logInputText),
+      breakSentencesForExport(item.logOutput),
+      valueOrSlash(item.targetAgent),
+      valueOrSlash(item.actualAgent),
+      valueOrSlash(item.actualSubAgent),
+      valueOrSlash(item.agentMatched),
+      valueOrSlash(item.testResult),
+      valueOrSlash(item.responseText || formatMs(item.responseMs)),
+      valueOrSlash(item.logError),
+      valueOrSlash(item.inputSimilarity),
+      valueOrSlash(item.textMatchStatus),
+      valueOrSlash(item.matchMethod),
+      valueOrSlash(item.logStatus),
+      valueOrSlash(item.logUrl || '-'),
+      valueOrSlash(item.vadDuration),
+      valueOrSlash(item.asrDuration),
+      valueOrSlash(item.ttsDuration),
+      valueOrSlash(item.llmDuration),
+      valueOrSlash(item.firstTokenDuration),
     ]),
   ];
   const detailRows = [
@@ -1219,6 +1422,7 @@ export function exportSummaryReportExcel(report, filename) {
       '文本匹配状态',
       '匹配方式',
       '日志状态',
+      '日志链接',
       'VadDuration',
       'ASRDuration',
       'TTSDuration',
@@ -1243,6 +1447,7 @@ export function exportSummaryReportExcel(report, filename) {
       valueOrSlash(item.textMatchStatus),
       valueOrSlash(item.matchMethod),
       valueOrSlash(item.logStatus),
+      valueOrSlash(item.logUrl || '-'),
       valueOrSlash(item.vadDuration),
       valueOrSlash(item.asrDuration),
       valueOrSlash(item.ttsDuration),
@@ -1252,13 +1457,16 @@ export function exportSummaryReportExcel(report, filename) {
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, buildDashboardSheet(safeReport, modules, errorRows), '汇报看板');
-  XLSX.utils.book_append_sheet(wb, sheetFromRows(overviewRows, [24, 90], { importantColumns: [1] }), '报告概览');
-  XLSX.utils.book_append_sheet(wb, sheetFromRows(paramRows, [20, 18, 28, 42], { importantColumns: [0, 1, 3] }), '环境信息');
-  XLSX.utils.book_append_sheet(wb, sheetFromRows(moduleRows, [30, 12, 18, 18], { importantColumns: [2, 3] }), '功能模块统计');
-  XLSX.utils.book_append_sheet(wb, sheetFromRows(errorRows, [8, 22, 46, 12, 16, 90, 70], { importantColumns: [3, 5, 6] }), '错误信息');
-  XLSX.utils.book_append_sheet(wb, sheetFromRows(keyRows, [8, 22, 64, 90, 24, 24, 16, 12, 16, 90], { importantColumns: [2, 3, 4, 5, 6, 7, 8, 9] }), '重点数据');
-  XLSX.utils.book_append_sheet(wb, sheetFromRows(detailRows, [8, 22, 20, 42, 64, 90, 24, 24, 22, 16, 12, 16, 90, 14, 16, 16, 14, 14, 14, 14, 14, 14], { importantColumns: [4, 5, 6, 7, 9, 10, 11, 12] }), '测试明细');
+  XLSX.utils.book_append_sheet(wb, buildDashboardSheet(safeReport, modules, errorRows, reportTableRows), '汇报看板');
+  XLSX.utils.book_append_sheet(wb, sheetFromRows(paramRows, [20, 18, 28, 42], {
+    importantColumns: [0, 1, 3],
+    freeze: { ySplit: 1 },
+  }), '环境信息');
+  return wb;
+}
+
+export function exportSummaryReportExcel(report, filename) {
+  const wb = buildSummaryReportWorkbook(report);
   XLSX.writeFile(wb, filename);
 }
 
@@ -1316,10 +1524,9 @@ export function buildSummaryReportPayload({
     const targetAgent = resolveTargetAgent(audio);
     const actualAgent = resolveHitAgent(row);
     const actualSubAgent = resolveHitSubAgent(row);
-    const hasComparableAgent = targetAgent !== MISSING && (actualAgent !== MISSING || actualSubAgent !== MISSING);
+    const hasComparableAgent = targetAgent !== MISSING && actualAgent !== MISSING;
     const agentMatched = hasComparableAgent
-      ? normalizeComparable(targetAgent) === normalizeComparable(actualAgent)
-        || normalizeComparable(targetAgent) === normalizeComparable(actualSubAgent)
+      ? agentMatchesTarget(targetAgent, actualAgent)
       : null;
     const logStatus = valueOrSlash(row?.log_status);
     const testPassed = logStatus !== 'error' && agentMatched === true;
@@ -1374,6 +1581,7 @@ export function buildSummaryReportPayload({
       logError: resolveLogError(row),
       logSummary: valueOrSlash(row?.异常信息),
       logStatus,
+      logUrl: resolveLogUrl(row, envKey),
       agentSource: valueOrSlash(row?.agent_source),
       agentConfidence: valueOrSlash(row?.agent_confidence),
       agentCandidates: valueOrSlash(row?.agent_candidates),
@@ -1417,6 +1625,8 @@ export function buildSummaryReportPayload({
     rangeText,
     testTime,
     testOwner: testOwners.length ? testOwners.join('、') : MISSING,
+    developerOwner: resolveDeveloperOwnerFromReport(testReport),
+    bugFoundVersion: resolveBugFoundVersionFromReport(testReport),
     importedPlans,
     totalCases,
     executedCases,

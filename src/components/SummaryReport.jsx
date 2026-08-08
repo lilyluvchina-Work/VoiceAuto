@@ -10,6 +10,11 @@ import {
   exportSummaryReportExcel,
   normalizeSubmissionParams,
 } from '../utils/summaryReportBuilder';
+import {
+  evaluateReportWithMiniMax,
+  getSavedEvaluationResult,
+  REPORT_EVALUATION_EVENT,
+} from '../services/reportEvaluatorService';
 
 function loadSummaryReport() {
   try {
@@ -79,6 +84,103 @@ function Section({ title, subtitle, children, action }) {
 
 function EmptyState({ children }) {
   return <p className="px-5 py-8 text-sm text-gray-500 text-center">{children}</p>;
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function getEvaluationRunKey(report) {
+  return report?.runId || report?.id || report?.taskName || report?.generatedAtText || '';
+}
+
+function getRiskClass(riskLevel) {
+  if (riskLevel === '高') return 'border-red-700/60 bg-red-950/35 text-red-200';
+  if (riskLevel === '中') return 'border-amber-700/60 bg-amber-950/35 text-amber-200';
+  return 'border-emerald-700/60 bg-emerald-950/35 text-emerald-200';
+}
+
+function EvaluationList({ title, items }) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  return (
+    <div className="rounded-lg border border-gray-800 bg-gray-950/35 p-4">
+      <h4 className="text-xs font-semibold text-gray-300 mb-3">{title}</h4>
+      {list.length === 0 ? (
+        <p className="text-xs text-gray-500">暂无</p>
+      ) : (
+        <ol className="space-y-2 text-sm text-gray-200 list-decimal list-inside">
+          {list.map((item, index) => (
+            <li key={`${title}-${index}`} className="leading-6">{item}</li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function LargeModelEvaluationPanel({ evaluation, evaluating, error, onEvaluate }) {
+  return (
+    <Section
+      title="大模型评测结果"
+      subtitle="结合测试用例要求和本次总结报告生成质量评分、风险判断与改进建议"
+      action={(
+        <button
+          type="button"
+          onClick={onEvaluate}
+          disabled={evaluating}
+          className="px-3 py-1.5 bg-primary hover:bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 rounded-md text-xs text-white transition-colors"
+        >
+          {evaluating ? '评测中...' : (evaluation ? '重新评测' : '开始评测')}
+        </button>
+      )}
+    >
+      <div className="p-5 space-y-4">
+        {error ? (
+          <div className="rounded-lg border border-red-800/70 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+            {error}
+          </div>
+        ) : null}
+
+        {!evaluation ? (
+          <EmptyState>暂无大模型评测结果</EmptyState>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-lg border border-gray-800 bg-gray-950/35 p-4">
+                <p className="text-xs text-gray-500 mb-2">质量评分</p>
+                <p className="text-3xl font-semibold text-white">{evaluation.qualityScore ?? '-'}<span className="text-sm text-gray-500 ml-1">分</span></p>
+              </div>
+              <div className={`rounded-lg border p-4 ${getRiskClass(evaluation.riskLevel)}`}>
+                <p className="text-xs opacity-80 mb-2">风险等级</p>
+                <p className="text-2xl font-semibold">{evaluation.riskLevel || '-'}</p>
+              </div>
+              <div className="rounded-lg border border-gray-800 bg-gray-950/35 p-4">
+                <p className="text-xs text-gray-500 mb-2">发布建议</p>
+                <p className="text-xl font-semibold text-blue-100">{evaluation.releaseSuggestion || '-'}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-800 bg-gray-950/35 p-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+                <h4 className="text-xs font-semibold text-gray-300">评测总结</h4>
+                {evaluation.evaluatedAt ? (
+                  <span className="text-xs text-gray-500">评测时间：{formatDateTime(evaluation.evaluatedAt)}</span>
+                ) : null}
+              </div>
+              <p className="text-sm text-gray-200 leading-7 whitespace-pre-wrap">{evaluation.summary || '暂无'}</p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <EvaluationList title="主要问题" items={evaluation.mainProblems} />
+              <EvaluationList title="优化建议" items={evaluation.suggestions} />
+            </div>
+          </>
+        )}
+      </div>
+    </Section>
+  );
 }
 
 function downloadTextFile(content, filename, type) {
@@ -204,6 +306,7 @@ const reportTableColumns = [
   { label: '文本匹配状态', key: 'textMatchStatus', className: 'w-[120px] text-gray-300 whitespace-nowrap' },
   { label: '匹配方式', key: 'matchMethod', className: 'w-[120px] text-gray-300 whitespace-nowrap' },
   { label: '日志状态', key: 'logStatus', className: 'w-[110px] text-gray-300 whitespace-nowrap' },
+  { label: '日志链接', key: 'logUrl', className: 'w-[110px] text-gray-300 whitespace-nowrap' },
   { label: 'VadDuration', key: 'vadDuration', className: 'w-[110px] text-gray-300 whitespace-nowrap' },
   { label: 'ASRDuration', key: 'asrDuration', className: 'w-[110px] text-gray-300 whitespace-nowrap' },
   { label: 'TTSDuration', key: 'ttsDuration', className: 'w-[110px] text-gray-300 whitespace-nowrap' },
@@ -252,12 +355,29 @@ function renderReportCell(item, column) {
   if (column.key === 'responseText') {
     return item.responseText || formatMs(item.responseMs) || '/';
   }
+  if (column.key === 'logUrl') {
+    const value = String(item.logUrl || '').trim();
+    if (!value || value === '-' || value === '/') return '-';
+    return (
+      <a
+        href={value}
+        target="_blank"
+        rel="noreferrer"
+        className="text-blue-300 hover:text-blue-200 underline underline-offset-2"
+      >
+        查看日志
+      </a>
+    );
+  }
   const value = item[column.key];
   return value ?? '/';
 }
 
 export default function SummaryReport() {
   const [report, setReport] = useState(() => loadSummaryReport());
+  const [evaluation, setEvaluation] = useState(null);
+  const [evaluationError, setEvaluationError] = useState('');
+  const [evaluating, setEvaluating] = useState(false);
   const paramFileInputRef = useRef(null);
 
   useEffect(() => {
@@ -272,6 +392,24 @@ export default function SummaryReport() {
     window.addEventListener(SUMMARY_REPORT_EVENT, onUpdate);
     return () => window.removeEventListener(SUMMARY_REPORT_EVENT, onUpdate);
   }, []);
+
+  useEffect(() => {
+    const runKey = getEvaluationRunKey(report);
+    setEvaluation(runKey ? getSavedEvaluationResult(runKey) : null);
+    setEvaluationError('');
+  }, [report]);
+
+  useEffect(() => {
+    const onEvaluationUpdate = (event) => {
+      const runKey = getEvaluationRunKey(report);
+      if (!runKey || event?.detail?.runId !== runKey) return;
+      setEvaluation(event.detail);
+      setEvaluationError('');
+    };
+
+    window.addEventListener(REPORT_EVALUATION_EVENT, onEvaluationUpdate);
+    return () => window.removeEventListener(REPORT_EVALUATION_EVENT, onEvaluationUpdate);
+  }, [report]);
 
   const moduleRows = useMemo(() => report?.moduleStats || report?.moduleAverages || [], [report]);
   const submissionParams = useMemo(() => normalizeSubmissionParams(report?.submissionParams || []), [report]);
@@ -327,6 +465,19 @@ export default function SummaryReport() {
 
   const handleExportExcel = () => {
     exportSummaryReportExcel(report, `${getExportBaseName()}.xlsx`);
+  };
+
+  const handleEvaluateReport = async () => {
+    if (!report || evaluating) return;
+    setEvaluating(true);
+    setEvaluationError('');
+    const result = await evaluateReportWithMiniMax(report);
+    setEvaluating(false);
+    if (result.success) {
+      setEvaluation(result.evaluation);
+      return;
+    }
+    setEvaluationError(result.error || '大模型评测失败，请稍后重试。');
   };
 
   const handleClearReport = () => {
@@ -463,8 +614,8 @@ export default function SummaryReport() {
         </div>
       </div>
 
-      <Section title="基础信息" subtitle="报告的计划、时间与负责人信息（只读）">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 p-5 text-sm">
+      <Section title="基础信息" subtitle="报告的计划、时间与负责人信息">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 p-5 text-sm">
           <div className="bg-gray-950/35 rounded-lg p-4 border border-gray-800">
             <ReadonlyField
               label="导入的测试计划"
@@ -476,6 +627,20 @@ export default function SummaryReport() {
           </div>
           <div className="bg-gray-950/35 rounded-lg p-4 border border-gray-800">
             <ReadonlyField label="测试负责人" value={report.testOwner || ''} />
+          </div>
+          <div className="bg-gray-950/35 rounded-lg p-4 border border-gray-800">
+            <EditableField
+              label="开发负责人"
+              value={report.developerOwner === '/' ? '' : (report.developerOwner || '')}
+              onChange={(value) => updateReport({ developerOwner: value })}
+            />
+          </div>
+          <div className="bg-gray-950/35 rounded-lg p-4 border border-gray-800">
+            <EditableField
+              label="发现版本"
+              value={report.bugFoundVersion === '/' ? '' : (report.bugFoundVersion || '')}
+              onChange={(value) => updateReport({ bugFoundVersion: value })}
+            />
           </div>
         </div>
       </Section>
@@ -630,7 +795,7 @@ export default function SummaryReport() {
           <EmptyState>暂无报告表格数据</EmptyState>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[2320px] w-full text-xs">
+            <table className="min-w-[2440px] w-full text-xs">
               <thead className="bg-gray-950/60 text-gray-400">
                 <tr>
                   {reportTableColumns.map((column) => (
@@ -658,6 +823,13 @@ export default function SummaryReport() {
           </div>
         )}
       </Section>
+
+      <LargeModelEvaluationPanel
+        evaluation={evaluation}
+        evaluating={evaluating}
+        error={evaluationError}
+        onEvaluate={handleEvaluateReport}
+      />
 
       <Section
         title="报告正文"

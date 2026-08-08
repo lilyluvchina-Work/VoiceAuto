@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></p:bgPr></p:bg>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="12192000" cy="6858000"/><a:chOff x="0" y="0"/><a:chExt cx="12192000" cy="6858000"/></a:xfrm></p:grpSpPr>
+      <p:sp>
+    <p:nvSpPr><p:cNvPr id="2" name="title"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="400050"/><a:ext cx="10572750" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="4000" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>后续迭代重点：从自动执行走向智能质检闭环</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="3" name="subtitle"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="400050" y="1047750"/><a:ext cx="9048750" cy="514350"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2200"><a:solidFill><a:srgbClr val="374151"/></a:solidFill></a:rPr><a:t>围绕“稳定执行、智能分析、质量治理”三条线，让工具支撑更高频、更大规模的语音版本交付。</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:cxnSp>
+    <p:nvCxnSpPr><p:cNvPr id="4" name="road-line"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>
+    <p:spPr><a:xfrm><a:off x="1143000" y="3048000"/><a:ext cx="9715500" cy="0"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="28575"><a:solidFill><a:srgbClr val="B8BCC4"/></a:solidFill><a:tailEnd type="triangle"/></a:ln></p:spPr>
+  </p:cxnSp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="5" name="phase1"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="762000" y="2000250"/><a:ext cx="2857500" cy="2381250"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="F3F4F6"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="F3F4F6"/></a:solidFill></a:ln></p:spPr>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="6" name="phase1-title"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="1047750" y="2238375"/><a:ext cx="2286000" cy="400050"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2800" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>近期：提效固化</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="7" name="phase1-body"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="1047750" y="2857500"/><a:ext cx="2190750" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>• MiniMax 智能评测常态化</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>• 配置中心与报告看板完善</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>• 失败日志链接与导出留档</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="8" name="phase2"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="4667250" y="2000250"/><a:ext cx="2857500" cy="2381250"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="EAF6FE"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="EAF6FE"/></a:solidFill></a:ln></p:spPr>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="9" name="phase2-title"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="4953000" y="2238375"/><a:ext cx="2286000" cy="400050"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2800" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>中期：规模回归</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="10" name="phase2-body"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="4953000" y="2857500"/><a:ext cx="2190750" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>• 定时任务与批量回归</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>• 历史版本趋势对比</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>• CI / 流水线触发测试</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="11" name="phase3"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="8572500" y="2000250"/><a:ext cx="2857500" cy="2381250"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="F3F4F6"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="F3F4F6"/></a:solidFill></a:ln></p:spPr>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="12" name="phase3-title"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="8858250" y="2238375"/><a:ext cx="2286000" cy="400050"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2800" b="1"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>远期：质量治理</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="13" name="phase3-body"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="8858250" y="2857500"/><a:ext cx="2190750" cy="1104900"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>• 异常规则引擎与根因分类</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>• 用例库覆盖率与风险门禁</a:t></a:r></a:p><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:rPr><a:t>• 跨环境质量知识库</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="14" name="close"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="1381125" y="5191125"/><a:ext cx="9239250" cy="514350"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="2800" b="1"><a:solidFill><a:srgbClr val="3D8DFF"/></a:solidFill></a:rPr><a:t>目标是在提测前自动给出“能不能发、风险在哪、证据是什么”的判断依据。</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+<p:sp>
+    <p:nvSpPr><p:cNvPr id="15" name="page-3"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+    <p:spPr><a:xfrm><a:off x="11144250" y="6305550"/><a:ext cx="666750" cy="266700"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>
+    <p:txBody><a:bodyPr wrap="square" anchor="t"><a:spAutoFit/></a:bodyPr><a:lstStyle/><a:p><a:pPr><a:lnSpc><a:spcPct val="108000"/></a:lnSpc></a:pPr><a:r><a:rPr lang="zh-CN" sz="1400"><a:solidFill><a:srgbClr val="4B5563"/></a:solidFill></a:rPr><a:t>03</a:t></a:r></a:p></p:txBody>
+  </p:sp>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sld>
