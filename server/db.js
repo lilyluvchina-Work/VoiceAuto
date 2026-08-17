@@ -8,6 +8,8 @@ export function createPool() {
   return new pg.Pool({
     connectionString,
     max: Number(process.env.DB_POOL_SIZE || 10),
+    connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 5000),
+    query_timeout: Number(process.env.DB_QUERY_TIMEOUT_MS || 5000),
     idleTimeoutMillis: 30000,
   });
 }

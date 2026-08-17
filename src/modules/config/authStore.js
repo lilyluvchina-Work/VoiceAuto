@@ -222,6 +222,10 @@ export async function authenticateUser(loginAccount, password, options = {}) {
       body: { loginAccount, password },
     });
     if (response) {
+      if (!response.ok && response.status === 404 && normalize(response.body?.message).includes('账号不存在')) {
+        const localResult = authenticateLocalUser(loginAccount, password, options);
+        if (localResult.success) return localResult;
+      }
       return response.ok ? response.body : buildRemoteErrorResult(response.body);
     }
   } catch {
@@ -241,7 +245,7 @@ export async function getCurrentUser(options = {}) {
   try {
     const response = await requestJson('/api/auth/profile', options);
     if (response) {
-      return response.ok ? response.body.user : null;
+      return response.ok ? response.body.user : getCurrentLocalUser(options);
     }
   } catch {
     // API 不可用时保留本地开发兜底。

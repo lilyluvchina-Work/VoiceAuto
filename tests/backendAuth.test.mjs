@@ -24,9 +24,12 @@ function createMockPool() {
       if (normalized.includes('FROM user_account') && (params[0] === 'LilyLuv' || params[0] === 7)) {
         return { rows: [users.get('LilyLuv')] };
       }
-      if (normalized.includes('FROM user_account') && params[0] === 'MiaOps') {
-        const user = users.get('MiaOps');
+      if (normalized.includes('FROM user_account') && typeof params[0] === 'string') {
+        const user = users.get(params[0]);
         return { rows: user ? [user] : [] };
+      }
+      if (normalized.includes('FROM user_account') && normalized.includes('ORDER BY created_at DESC')) {
+        return { rows: Array.from(users.values()).filter((user) => user.status !== 'deleted').reverse() };
       }
       if (normalized.startsWith('INSERT INTO user_account')) {
         const [username, loginAccount, passwordHash, passwordSalt, passwordAlgorithm, role, status] = params;
@@ -47,6 +50,34 @@ function createMockPool() {
         return {
           rows: [user],
         };
+      }
+      if (normalized.startsWith('UPDATE user_account SET username')) {
+        const [id, username, loginAccount, role, status, passwordHash, passwordSalt, passwordAlgorithm] = params;
+        const entry = Array.from(users.entries()).find(([, user]) => user.id === id && user.status !== 'deleted');
+        if (!entry) return { rows: [] };
+        const [previousAccount, user] = entry;
+        const updated = {
+          ...user,
+          username,
+          login_account: loginAccount,
+          role,
+          status,
+          password_hash: passwordHash || user.password_hash,
+          password_salt: passwordSalt || user.password_salt,
+          password_algorithm: passwordAlgorithm || user.password_algorithm,
+          updated_at: new Date().toISOString(),
+        };
+        users.delete(previousAccount);
+        users.set(loginAccount, updated);
+        return { rows: [updated] };
+      }
+      if (normalized.startsWith("UPDATE user_account SET status = 'deleted'")) {
+        const entry = Array.from(users.entries()).find(([, user]) => user.id === params[0] && user.status !== 'deleted');
+        if (!entry) return { rows: [] };
+        const [, user] = entry;
+        user.status = 'deleted';
+        user.updated_at = new Date().toISOString();
+        return { rows: [user] };
       }
       return { rows: [] };
     },
@@ -131,6 +162,12 @@ try {
   assert.equal(createUser.body.user.role, 'test_lead');
   assert.equal('passwordHash' in createUser.body.user, false);
 
+  const userList = await request(server, 'GET', '/api/users', null, cookie);
+  assert.equal(userList.status, 200);
+  assert.equal(userList.body.success, true);
+  assert.equal(userList.body.users.some((user) => user.loginAccount === 'MiaOps'), true);
+  assert.equal(userList.body.users.some((user) => 'passwordHash' in user), false);
+
   const newUserLogin = await request(server, 'POST', '/api/auth/login', {
     loginAccount: 'MiaOps',
     password: 'Mia12345',
@@ -138,6 +175,33 @@ try {
   assert.equal(newUserLogin.status, 200);
   assert.equal(newUserLogin.body.user.permissions.includes('test_execute'), true);
   assert.equal(newUserLogin.body.user.permissions.includes('config_manage'), false);
+
+  const updatedUser = await request(server, 'PUT', `/api/users/${createUser.body.user.id}`, {
+    username: 'Mia Operations',
+    loginAccount: 'MiaOps2',
+    password: 'Mia67890',
+    role: 'admin',
+    status: 'enabled',
+  }, cookie);
+  assert.equal(updatedUser.status, 200);
+  assert.equal(updatedUser.body.user.loginAccount, 'MiaOps2');
+  assert.equal(updatedUser.body.user.role, 'admin');
+
+  const updatedUserLogin = await request(server, 'POST', '/api/auth/login', {
+    loginAccount: 'MiaOps2',
+    password: 'Mia67890',
+  });
+  assert.equal(updatedUserLogin.status, 200);
+  assert.equal(updatedUserLogin.body.user.permissions.includes('config_manage'), true);
+
+  const deletedUser = await request(server, 'DELETE', `/api/users/${updatedUser.body.user.id}`, null, cookie);
+  assert.equal(deletedUser.status, 200);
+
+  const deletedUserLogin = await request(server, 'POST', '/api/auth/login', {
+    loginAccount: 'MiaOps2',
+    password: 'Mia67890',
+  });
+  assert.equal(deletedUserLogin.status, 401);
 
   const bad = await request(server, 'POST', '/api/auth/login', {
     loginAccount: 'LilyLuv',

@@ -285,6 +285,7 @@ function summarizeStep(step, logs, testCase) {
     if (status === 'failed') textParts.push('最后一次唤醒结果：失败');
   }
   if (last.message) textParts.push(last.message);
+  if (last.reason) textParts.push(last.reason);
   if (last.matchedKeyword) textParts.push(`命中关键词：${last.matchedKeyword}`);
   if (last.actualAsrText) textParts.push(`ASR：${last.actualAsrText}`);
   if (step.key === 'RESPONSE_AUDIO' && last.responseAsrText) textParts.push(`收录文本：${last.responseAsrText}`);
@@ -329,7 +330,7 @@ function createCaseRecord(testCase, logs) {
     endTime: testCase?.playEndTime || testCase?.playStartTime,
     durationMs: 0,
     message: testCase?.success
-      ? '唤醒、输入与响应链路通过'
+      ? (testCase?.expectsVoiceResponse === false ? '唤醒与输入链路通过；预期无需语音回复，已跳过响应收录' : '唤醒、输入与响应链路通过')
       : (testCase?.failReason || FAILURE_STAGE_TEXT[testCase?.failStage] || '本轮测试未通过'),
     logs: [],
   });
@@ -658,7 +659,11 @@ function RecordCard({ record, defaultExpanded }) {
           <SummaryItem label="唤醒状态" value={testCase?.wakeMatchedKeyword || testCase?.speakerWakeStatus} status={wakeStatus} />
           <SummaryItem label="测试音频" value={testCase?.testAudioPlayStatus} status={audioStatus} />
           <SummaryItem label="ASR 状态" value={testCase?.asrStatus || testCase?.asrMatchResult} status={inputStatus} />
-          <SummaryItem label="Speaker 播报音频收录" value={testCase?.speakerOutputStatus || testCase?.responseSpeakerState} status={responseStatus} />
+          <SummaryItem
+            label="Speaker 播报音频收录"
+            value={testCase?.expectsVoiceResponse === false ? '预期无需语音回复' : (testCase?.speakerOutputStatus || testCase?.responseSpeakerState)}
+            status={responseStatus}
+          />
         </div>
       </div>
 
@@ -669,6 +674,8 @@ function RecordCard({ record, defaultExpanded }) {
               <h4 className="mb-4 text-sm font-semibold text-gray-200">用例信息</h4>
               <div className="grid gap-4">
                 <Field label="测试音频文本" value={testCase?.targetText || testCase?.text} important />
+                <Field label="预期结果" value={testCase?.expectedResult} />
+                <Field label="语音回复要求" value={testCase?.expectsVoiceResponse === false ? '无需语音回复' : '需要语音回复'} />
                 <Field label="ADB 获取到的 ASR 文本" value={testCase?.actualAsrText} important />
                 <AudioField
                   label="Speaker 播报录音"

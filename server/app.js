@@ -5,8 +5,11 @@ import {
   authenticateUser,
   createUserAccount,
   createSession,
+  deleteUserAccount,
   findUserById,
+  listUserAccounts,
   resolveSessionUserId,
+  updateUserAccount,
 } from './authRepository.js';
 import {
   listAppConfigs,
@@ -107,8 +110,26 @@ function classifyServiceError(error) {
   };
 }
 
+const DATABASE_HEALTH_TIMEOUT_MS = Number(process.env.DB_HEALTH_TIMEOUT_MS || 1000);
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function checkDatabase(pool) {
-  await pool.query('SELECT 1');
+  await withTimeout(
+    pool.query('SELECT 1'),
+    DATABASE_HEALTH_TIMEOUT_MS,
+    `database health check timeout after ${DATABASE_HEALTH_TIMEOUT_MS}ms`
+  );
   return { success: true, message: '数据库连接正常' };
 }
 
@@ -149,6 +170,10 @@ async function resolveSessionUser(req, pool, sessionStore) {
 
 function hasPermission(user, permission) {
   return Boolean(user?.permissions?.includes(permission));
+}
+
+function isAdmin(user) {
+  return user?.role === 'admin';
 }
 
 function getRequestNumber(value, fallback = null) {
@@ -437,13 +462,29 @@ export function createApp(options) {
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/api/users') {
+        const currentUser = await resolveSessionUser(req, pool, sessionStore);
+        if (!currentUser) {
+          sendJson(res, 401, { success: false, message: '未登录' });
+          return;
+        }
+        if (!isAdmin(currentUser)) {
+          sendJson(res, 403, { success: false, message: '无账号管理权限' });
+          return;
+        }
+
+        const users = await listUserAccounts(pool);
+        sendJson(res, 200, { success: true, users });
+        return;
+      }
+
       if (req.method === 'POST' && url.pathname === '/api/users') {
         const currentUser = await resolveSessionUser(req, pool, sessionStore);
         if (!currentUser) {
           sendJson(res, 401, { success: false, message: '未登录' });
           return;
         }
-        if (!hasPermission(currentUser, 'user_manage')) {
+        if (!isAdmin(currentUser)) {
           sendJson(res, 403, { success: false, message: '无账号管理权限' });
           return;
         }
@@ -451,6 +492,44 @@ export function createApp(options) {
         const body = await readJson(req);
         const result = await createUserAccount(pool, body);
         sendJson(res, result.success ? 201 : (result.status || 400), result);
+        return;
+      }
+
+      const userMatch = url.pathname.match(/^\/api\/users\/(\d+)$/);
+      if (userMatch && req.method === 'PUT') {
+        const currentUser = await resolveSessionUser(req, pool, sessionStore);
+        if (!currentUser) {
+          sendJson(res, 401, { success: false, message: '未登录' });
+          return;
+        }
+        if (!isAdmin(currentUser)) {
+          sendJson(res, 403, { success: false, message: '无账号管理权限' });
+          return;
+        }
+
+        const body = await readJson(req);
+        const result = await updateUserAccount(pool, userMatch[1], body);
+        sendJson(res, result.success ? 200 : (result.status || 400), result);
+        return;
+      }
+
+      if (userMatch && req.method === 'DELETE') {
+        const currentUser = await resolveSessionUser(req, pool, sessionStore);
+        if (!currentUser) {
+          sendJson(res, 401, { success: false, message: '未登录' });
+          return;
+        }
+        if (!isAdmin(currentUser)) {
+          sendJson(res, 403, { success: false, message: '无账号管理权限' });
+          return;
+        }
+        if (String(currentUser.id) === String(userMatch[1])) {
+          sendJson(res, 400, { success: false, message: '不能删除当前登录账号' });
+          return;
+        }
+
+        const result = await deleteUserAccount(pool, userMatch[1]);
+        sendJson(res, result.success ? 200 : (result.status || 400), result);
         return;
       }
 
@@ -495,7 +574,7 @@ export function createApp(options) {
           sendJson(res, 401, { success: false, message: '未登录' });
           return;
         }
-        if (!hasPermission(currentUser, 'config_manage')) {
+        if (!isAdmin(currentUser)) {
           sendJson(res, 403, { success: false, message: '无配置修改权限' });
           return;
         }

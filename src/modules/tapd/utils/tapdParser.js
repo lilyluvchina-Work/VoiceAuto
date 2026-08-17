@@ -43,6 +43,30 @@ function extractTargetAgent(...sources) {
   return '';
 }
 
+export function shouldExpectVoiceResponse(...sources) {
+  const text = sources.map(stripHtml).filter(Boolean).join(' ');
+  if (!text) return true;
+  if (/(回复|回答|语音|声音|播报|TTS|speaker|response)\s*(可有可无|可选|非必需|不是必需|不强制|可不回复|可以没有|可以无|允许没有|允许无)/i.test(text)) {
+    return false;
+  }
+  if (/(无|没有|未|不)\s*(回复|回答|语音|声音|播报|TTS|speaker|response)\s*(不算|不视为|不是|不认为|无需判定为)\s*(错误|失败|异常|问题|fail|error)/i.test(text)) {
+    return false;
+  }
+  if (/(无|没有|未|不)\s*(回复|回答|语音|声音|播报|TTS|speaker|response)\s*(也)?\s*(正常|通过|成功|ok)/i.test(text)) {
+    return false;
+  }
+  if (/(无需|不需要|无须|不用|不要|不会|不应|无|没有)\s*(语音|声音|播报|回复|回答|TTS|speaker|response)/i.test(text)) {
+    return false;
+  }
+  if (/(语音|声音|播报|回复|回答|TTS|speaker|response)\s*(无需|不需要|无须|不用|不要|不会|不应|无|没有)/i.test(text)) {
+    return false;
+  }
+  if (/no\s+(voice|audio|speech|tts|speaker\s*response|response)/i.test(text)) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * 从 steps 字段中提取所有 Human 语句
  * @param {string} steps - TAPD 用例步骤文本（可能包含 HTML 或纯文本）
@@ -115,6 +139,7 @@ export function tapdCaseToTestAudios(tapdCase, meta, defaultVoiceConfig, generat
   const targetAgentSource = tapdCase.targetAgent
     ? (tapdCase.targetAgentField || 'TAPD自定义字段')
     : (targetAgent ? '步骤/预期结果解析' : '');
+  const expectsVoiceResponse = shouldExpectVoiceResponse(tapdCase.expectation, tapdCase.steps);
 
   if (humanTexts.length === 0) {
     return [{ audio: null, humanTexts: [], skipped: true, reason: '步骤中未识别到 Human 内容', caseTitle: tapdCase.name, tapdCaseId: tapdCase.id }];
@@ -155,6 +180,7 @@ export function tapdCaseToTestAudios(tapdCase, meta, defaultVoiceConfig, generat
         caseTitle: tapdCase.name,
         tapdSteps: tapdCase.steps || '',
         expectedResult: tapdCase.expectation,
+        expectsVoiceResponse,
         targetAgent,
         targetAgentSource,
         targetAgentField: tapdCase.targetAgentField || '',

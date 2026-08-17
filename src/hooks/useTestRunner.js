@@ -13,6 +13,7 @@ import {
   resolveTestCaseDirectory,
   sortTestCasesByDirectoryOrder,
 } from '../utils/testCaseOrdering';
+import { shouldExpectVoiceResponse } from '../modules/tapd/utils/tapdParser';
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const POST_REBOOT_WAKE_RETRY_DELAY_MS = 120000;
@@ -71,6 +72,17 @@ function buildResponseRuntimeConfig(config = {}, item = {}) {
       language: config.language || 'zh-CN'
     }
   };
+}
+
+function resolveExpectsVoiceResponse(audio = {}) {
+  if (audio.expectsVoiceResponse === false || audio.expectVoiceResponse === false) return false;
+  return shouldExpectVoiceResponse(
+    audio.expectedResult,
+    audio.expectation,
+    audio.expectedResponseText,
+    audio.expectedTtsText,
+    audio.tapdSteps
+  );
 }
 
 function waitForAudioStart(getStarted, timeoutMs) {
@@ -719,7 +731,8 @@ export default function useTestRunner({ onTestComplete } = {}) {
         const autonomousInputConfig = testOptions.autonomousInput || {};
         const autonomousInputEnabled = Boolean(autonomousInputConfig.enabled);
         const autonomousResponseConfig = testOptions.autonomousResponse || {};
-        const autonomousResponseEnabled = Boolean(autonomousResponseConfig.enabled);
+        const expectsVoiceResponse = resolveExpectsVoiceResponse(item.audio);
+        const autonomousResponseEnabled = Boolean(autonomousResponseConfig.enabled && expectsVoiceResponse);
         const asrKeywords = parseListConfig(autonomousInputConfig.asrKeywords);
         const asrStartKeywords = parseListConfig(autonomousInputConfig.asrStartKeywords);
         const asrEndKeywords = parseListConfig(autonomousInputConfig.asrEndKeywords || autonomousInputConfig.asrKeywords);
@@ -1022,21 +1035,21 @@ export default function useTestRunner({ onTestComplete } = {}) {
             failReason = failReason
               || responseResult?.responseFailReason
               || 'Speaker 播报音频收录失败';
-            notifyDingTalk('SPEAKER_RESPONSE_NOT_DETECTED', {
-              state,
-              runId: reportRunIdRef.current,
-              includeVoiceInfo: true,
-              details: [
-                `用例ID：${caseId}`,
-                `目标文本：${item.audio.text || '/'}`,
-                `失败阶段：${failStage}`,
-                `失败原因：${failReason}`,
-              ],
-            });
           }
         } else {
           responseChainPassed = autonomousResponseEnabled ? false : null;
-          if (autonomousResponseEnabled) {
+          if ((testOptions.autonomousResponse || {}).enabled && !expectsVoiceResponse) {
+            responseChainPassed = 'skipped_no_voice_expected';
+            logResponse('response.detect.skipped', {
+              cursor,
+              caseId,
+              targetText: item.audio.text,
+              expectedResult: item.audio.expectedResult || '',
+              reason: '预期结果标识无需语音回复，跳过 Speaker 响应检测',
+              autonomousInputEnabled,
+              inputChainPassed
+            });
+          } else if (autonomousResponseEnabled) {
             logResponse('response.detect.skipped', {
               cursor,
               caseId,
@@ -1055,7 +1068,9 @@ export default function useTestRunner({ onTestComplete } = {}) {
         const wakeDetectPassed = !autonomousWakeEnabled || wakeResult?.speaker_wake_status === 'success';
         const testAudioPassed = Boolean(playEndTime) && failStage !== 'TEST_AUDIO_PLAY';
         const asrPassed = !autonomousInputEnabled || inputChainPassed === true;
-        const speakerAudioPassed = !autonomousResponseEnabled || responseChainPassed === true;
+        const speakerAudioPassed = !Boolean((testOptions.autonomousResponse || {}).enabled)
+          || !expectsVoiceResponse
+          || responseChainPassed === true;
         const finalSuccess = Boolean(
           wakeAudioPassed
           && wakeDetectPassed
@@ -1066,20 +1081,6 @@ export default function useTestRunner({ onTestComplete } = {}) {
         if (!finalSuccess && success) {
           success = false;
           failReason = failReason || '播放唤醒音频、监听唤醒结果、播放测试音频、监听 ASR 输入或 Speaker 播报音频收录未全部成功';
-        }
-        if (!finalSuccess && autonomousInputEnabled && inputChainPassed !== true) {
-          notifyDingTalk('STT_FAILED', {
-            state,
-            runId: reportRunIdRef.current,
-            includeVoiceInfo: true,
-            details: [
-              `用例ID：${caseId}`,
-              `目标文本：${item.audio.text || '/'}`,
-              `ASR状态：${asrResult?.status || asrMatchResult || '/'}`,
-              `识别文本：${asrResult?.actualAsrText || '/'}`,
-              `失败原因：${failReason || asrResult?.message || '识别结果为空或未通过校验'}`,
-            ],
-          });
         }
         completedCases += 1;
         if (finalSuccess) {
@@ -1101,6 +1102,8 @@ export default function useTestRunner({ onTestComplete } = {}) {
           text: item.audio.text,
           targetText: item.audio.text,
           targetAgent: item.audio.targetAgent || item.audio.expectedAgent || '',
+          expectedResult: item.audio.expectedResult || item.audio.expectation || '',
+          expectsVoiceResponse,
           tapdCaseId: item.audio.tapdCaseId || '',
           humanIndex: item.audio.humanIndex || '',
           playStartTime,

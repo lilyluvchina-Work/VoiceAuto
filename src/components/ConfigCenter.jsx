@@ -12,7 +12,12 @@ import {
   buildTapdParameterRows,
 } from '../modules/config/parameterDisplay';
 import { getLoginLogs, hasPermission, PERMISSIONS } from '../modules/config/authStore';
-import { createUserAccount } from '../modules/config/userApi';
+import {
+  createUserAccount,
+  deleteUserAccount,
+  listUserAccounts,
+  updateUserAccount,
+} from '../modules/config/userApi';
 import { refreshLangfuseEnvironments } from '../modules/langfuse/services/langfuseService';
 import { useAuth } from './AuthGate';
 import {
@@ -629,14 +634,14 @@ function OperationLogPanel({ refreshKey }) {
 function ToolUsagePanel({ refreshKey }) {
   const records = useMemo(() => getToolUsageRecords(), [refreshKey]);
   const summaryRows = useMemo(() => summarizeToolUsageByUser(records), [records]);
-  const recentRecords = records.slice(0, 8);
+  const recentRecords = records.slice(0, 12);
 
   return (
     <section className="rounded-lg border border-gray-700 bg-dark p-5 space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h3 className="text-sm font-semibold text-gray-200">工具使用时长</h3>
-          <p className="text-xs text-gray-500 mt-1">按登录用户统计测试开始到测试结束的使用时长</p>
+          <h3 className="text-sm font-semibold text-gray-200">测试信息统计</h3>
+          <p className="text-xs text-gray-500 mt-1">记录每次测试的开始测试、结束测试、测试时长和测试人</p>
         </div>
         <span className="text-xs text-gray-500">共 {records.length} 次测试记录</span>
       </div>
@@ -674,18 +679,30 @@ function ToolUsagePanel({ refreshKey }) {
 
       {recentRecords.length > 0 && (
         <div className="border-t border-gray-800 pt-4">
-          <h4 className="text-xs font-semibold text-gray-300 mb-2">最近记录</h4>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-            {recentRecords.map((record) => (
-              <div key={record.id} className="rounded-lg bg-gray-900 px-3 py-2 text-xs flex items-center justify-between gap-3">
-                <span className="text-gray-300">
-                  {record.userName} · {record.loginAccount}
-                </span>
-                <span className="text-gray-500">
-                  {record.startTimeText} - {record.durationText}
-                </span>
-              </div>
-            ))}
+          <h4 className="text-xs font-semibold text-gray-300 mb-2">测试明细</h4>
+          <div className="overflow-x-auto">
+            <table className="min-w-[760px] w-full text-xs">
+              <thead className="bg-gray-950/70 text-gray-400">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">测试人</th>
+                  <th className="px-3 py-2 text-left font-medium">登录账号</th>
+                  <th className="px-3 py-2 text-left font-medium">开始测试</th>
+                  <th className="px-3 py-2 text-left font-medium">结束测试</th>
+                  <th className="px-3 py-2 text-right font-medium">测试时长</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {recentRecords.map((record) => (
+                  <tr key={record.id} className="hover:bg-gray-900/60">
+                    <td className="px-3 py-2 text-gray-200">{record.userName}</td>
+                    <td className="px-3 py-2 text-gray-300">{record.loginAccount}</td>
+                    <td className="px-3 py-2 text-gray-400">{record.startTimeText}</td>
+                    <td className="px-3 py-2 text-gray-400">{record.endTimeText}</td>
+                    <td className="px-3 py-2 text-right text-emerald-300 font-semibold">{record.durationText}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -694,6 +711,15 @@ function ToolUsagePanel({ refreshKey }) {
 }
 
 function UserManagementPanel({ canManageUsers }) {
+  const [users, setUsers] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({
+    username: '',
+    loginAccount: '',
+    password: '',
+    role: 'test_lead',
+    status: 'enabled',
+  });
   const [form, setForm] = useState({
     username: '',
     loginAccount: '',
@@ -703,11 +729,57 @@ function UserManagementPanel({ canManageUsers }) {
   });
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleChange = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
   };
+
+  const handleEditChange = (field, value) => {
+    setEditForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const startEdit = (user) => {
+    setEditingId(user.id);
+    setEditForm({
+      username: user.username || '',
+      loginAccount: user.loginAccount || '',
+      password: '',
+      role: user.role || 'test_lead',
+      status: user.status || 'enabled',
+    });
+    setMessage('');
+    setMessageType('');
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditForm({
+      username: '',
+      loginAccount: '',
+      password: '',
+      role: 'test_lead',
+      status: 'enabled',
+    });
+  };
+
+  const loadUsers = async () => {
+    if (!canManageUsers) return;
+    setLoadingUsers(true);
+    const result = await listUserAccounts();
+    setLoadingUsers(false);
+    if (!result.success) {
+      setMessageType('error');
+      setMessage(result.message || '账号列表加载失败');
+      return;
+    }
+    setUsers(result.users);
+  };
+
+  useEffect(() => {
+    loadUsers();
+  }, [canManageUsers]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -728,6 +800,7 @@ function UserManagementPanel({ canManageUsers }) {
     }
     setMessageType('success');
     setMessage(`账号 ${result.user.loginAccount} 已创建`);
+    setUsers((current) => [result.user, ...current.filter((user) => user.loginAccount !== result.user.loginAccount)]);
     setForm({
       username: '',
       loginAccount: '',
@@ -735,10 +808,74 @@ function UserManagementPanel({ canManageUsers }) {
       role: 'test_lead',
       status: 'enabled',
     });
+    await loadUsers();
+  };
+
+  const handleSaveEdit = async (userId) => {
+    if (!canManageUsers) {
+      setMessageType('error');
+      setMessage('当前账号无账号管理权限');
+      return;
+    }
+    setSaving(true);
+    setMessage('');
+    setMessageType('');
+    const result = await updateUserAccount(userId, editForm);
+    setSaving(false);
+    if (!result.success) {
+      setMessageType('error');
+      setMessage(result.message || '修改账号失败');
+      return;
+    }
+    setUsers((current) => current.map((user) => (
+      String(user.id) === String(userId) ? result.user : user
+    )));
+    cancelEdit();
+    setMessageType('success');
+    setMessage(`账号 ${result.user.loginAccount} 已更新`);
+    await loadUsers();
+  };
+
+  const handleToggleStatus = async (user) => {
+    const nextStatus = user.status === 'enabled' ? 'disabled' : 'enabled';
+    const result = await updateUserAccount(user.id, {
+      username: user.username,
+      loginAccount: user.loginAccount,
+      role: user.role,
+      status: nextStatus,
+      password: '',
+    });
+    if (!result.success) {
+      setMessageType('error');
+      setMessage(result.message || '账号状态修改失败');
+      return;
+    }
+    setUsers((current) => current.map((item) => (
+      String(item.id) === String(user.id) ? result.user : item
+    )));
+    setMessageType('success');
+    setMessage(`账号 ${result.user.loginAccount} 已${nextStatus === 'enabled' ? '启用' : '禁用'}`);
+    await loadUsers();
+  };
+
+  const handleDelete = async (user) => {
+    if (!window.confirm(`确认删除账号 ${user.loginAccount} 吗？`)) return;
+    const result = await deleteUserAccount(user.id);
+    if (!result.success) {
+      setMessageType('error');
+      setMessage(result.message || '删除账号失败');
+      return;
+    }
+    setUsers((current) => current.filter((item) => String(item.id) !== String(user.id)));
+    if (String(editingId) === String(user.id)) cancelEdit();
+    setMessageType('success');
+    setMessage(`账号 ${user.loginAccount} 已删除`);
+    await loadUsers();
   };
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-gray-700 bg-dark p-5 space-y-5">
+    <section className="rounded-lg border border-gray-700 bg-dark p-5 space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-5">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold text-white">账号管理</h3>
@@ -801,7 +938,156 @@ function UserManagementPanel({ canManageUsers }) {
           {message}
         </p>
       )}
-    </form>
+      </form>
+
+      <div className="border-t border-gray-800 pt-5">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h4 className="text-sm font-semibold text-gray-200">已创建账号</h4>
+          <button
+            type="button"
+            onClick={loadUsers}
+            disabled={!canManageUsers || loadingUsers}
+            className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs text-gray-200 hover:border-gray-500 disabled:text-gray-500"
+          >
+            {loadingUsers ? '刷新中...' : '刷新'}
+          </button>
+        </div>
+        {!canManageUsers && <p className="text-xs text-gray-500">当前账号无账号管理权限</p>}
+        {canManageUsers && users.length === 0 && !loadingUsers && (
+          <p className="text-xs text-gray-500">暂无账号</p>
+        )}
+        {users.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="min-w-[960px] w-full text-xs">
+              <thead className="bg-gray-950/70 text-gray-400">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">用户名</th>
+                  <th className="px-3 py-2 text-left font-medium">登录账号</th>
+                  <th className="px-3 py-2 text-left font-medium">新密码</th>
+                  <th className="px-3 py-2 text-left font-medium">角色</th>
+                  <th className="px-3 py-2 text-left font-medium">状态</th>
+                  <th className="px-3 py-2 text-left font-medium">最后登录</th>
+                  <th className="px-3 py-2 text-right font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {users.map((user) => {
+                  const isEditing = String(editingId) === String(user.id);
+                  return (
+                    <tr key={user.id || user.loginAccount} className="hover:bg-gray-900/60">
+                      <td className="px-3 py-2 text-gray-200">
+                        {isEditing ? (
+                          <input
+                            value={editForm.username}
+                            onChange={(event) => handleEditChange('username', event.target.value)}
+                            className="w-32 rounded border border-gray-700 bg-gray-950 px-2 py-1 text-gray-100"
+                          />
+                        ) : (user.username || '-')}
+                      </td>
+                      <td className="px-3 py-2 text-gray-300">
+                        {isEditing ? (
+                          <input
+                            value={editForm.loginAccount}
+                            onChange={(event) => handleEditChange('loginAccount', event.target.value)}
+                            className="w-36 rounded border border-gray-700 bg-gray-950 px-2 py-1 text-gray-100"
+                          />
+                        ) : user.loginAccount}
+                      </td>
+                      <td className="px-3 py-2 text-gray-400">
+                        {isEditing ? (
+                          <input
+                            value={editForm.password}
+                            type="password"
+                            placeholder="留空不修改"
+                            onChange={(event) => handleEditChange('password', event.target.value)}
+                            className="w-32 rounded border border-gray-700 bg-gray-950 px-2 py-1 text-gray-100 placeholder-gray-600"
+                          />
+                        ) : '-'}
+                      </td>
+                      <td className="px-3 py-2 text-gray-400">
+                        {isEditing ? (
+                          <select
+                            value={editForm.role}
+                            onChange={(event) => handleEditChange('role', event.target.value)}
+                            className="w-28 rounded border border-gray-700 bg-gray-950 px-2 py-1 text-gray-100"
+                          >
+                            <option value="test_lead">测试负责人</option>
+                            <option value="admin">管理员</option>
+                          </select>
+                        ) : (user.role === 'admin' ? '管理员' : '测试负责人')}
+                      </td>
+                      <td className={user.status === 'enabled' ? 'px-3 py-2 text-emerald-300' : 'px-3 py-2 text-red-300'}>
+                        {isEditing ? (
+                          <select
+                            value={editForm.status}
+                            onChange={(event) => handleEditChange('status', event.target.value)}
+                            className="w-20 rounded border border-gray-700 bg-gray-950 px-2 py-1 text-gray-100"
+                          >
+                            <option value="enabled">启用</option>
+                            <option value="disabled">禁用</option>
+                          </select>
+                        ) : (user.status === 'enabled' ? '启用' : '禁用')}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">
+                        {user.lastLoginTime ? new Date(user.lastLoginTime).toLocaleString('zh-CN', { hour12: false }) : '-'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex justify-end gap-2">
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEdit(user.id)}
+                                disabled={saving}
+                                className="rounded border border-emerald-700 bg-emerald-950/40 px-2 py-1 text-emerald-200 hover:border-emerald-500 disabled:text-gray-500"
+                              >
+                                保存
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEdit}
+                                disabled={saving}
+                                className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-gray-300 hover:border-gray-500"
+                              >
+                                取消
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => startEdit(user)}
+                                className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-gray-200 hover:border-gray-500"
+                              >
+                                修改
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleStatus(user)}
+                                className="rounded border border-amber-800 bg-amber-950/30 px-2 py-1 text-amber-200 hover:border-amber-500"
+                              >
+                                {user.status === 'enabled' ? '禁用' : '启用'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(user)}
+                                className="rounded border border-red-900 bg-red-950/40 px-2 py-1 text-red-200 hover:border-red-500"
+                              >
+                                删除
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -810,8 +1096,9 @@ export default function ConfigCenter() {
   const [activeType, setActiveType] = useState(CONFIG_TYPES.LANGFUSE);
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = () => setRefreshKey((value) => value + 1);
-  const canManage = hasPermission(auth?.currentUser, PERMISSIONS.CONFIG_MANAGE);
-  const canManageUsers = hasPermission(auth?.currentUser, PERMISSIONS.USER_MANAGE);
+  const isAdminUser = auth?.currentUser?.role === 'admin';
+  const canManage = isAdminUser;
+  const canManageUsers = isAdminUser;
 
   useEffect(() => {
     const onToolUsageUpdated = () => refresh();

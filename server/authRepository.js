@@ -95,6 +95,16 @@ function toPublicUser(row) {
   };
 }
 
+export async function listUserAccounts(pool) {
+  const result = await pool.query(
+    `SELECT id, username, login_account, role, status, last_login_time, created_at, updated_at
+       FROM user_account
+      WHERE COALESCE(status, '') <> 'deleted'
+      ORDER BY created_at DESC, id DESC`
+  );
+  return result.rows.map(toPublicUser);
+}
+
 export async function authenticateUser(pool, loginAccount, password, metadata = {}) {
   const account = String(loginAccount ?? '').trim();
   const passwordText = String(password ?? '');
@@ -196,6 +206,87 @@ export async function createUserAccount(pool, input) {
     }
     throw error;
   }
+}
+
+export async function updateUserAccount(pool, userId, input) {
+  const id = Number(userId);
+  if (!Number.isInteger(id) || id <= 0) {
+    return { success: false, status: 400, message: '账号 ID 不合法' };
+  }
+
+  const username = String(input.username ?? '').trim();
+  const loginAccount = String(input.loginAccount ?? '').trim();
+  const password = String(input.password ?? '');
+  const role = String(input.role || 'test_lead').trim();
+  const status = String(input.status || 'enabled').trim();
+
+  if (!username || !loginAccount) {
+    return { success: false, status: 400, message: '请填写用户名和登录账号' };
+  }
+  if (!ROLE_PERMISSIONS[role]) {
+    return { success: false, status: 400, message: '角色不存在' };
+  }
+  if (!['enabled', 'disabled'].includes(status)) {
+    return { success: false, status: 400, message: '账号状态不合法' };
+  }
+
+  const passwordRecord = password ? createPasswordRecord(password) : null;
+  try {
+    const result = await pool.query(
+      `UPDATE user_account
+          SET username = $2,
+              login_account = $3,
+              role = $4,
+              status = $5,
+              password_hash = CASE WHEN $6::TEXT IS NULL THEN password_hash ELSE $6 END,
+              password_salt = CASE WHEN $7::TEXT IS NULL THEN password_salt ELSE $7 END,
+              password_algorithm = CASE WHEN $8::TEXT IS NULL THEN password_algorithm ELSE $8 END,
+              updated_at = NOW()
+        WHERE id = $1
+          AND COALESCE(status, '') <> 'deleted'
+        RETURNING id, username, login_account, role, status, last_login_time, created_at, updated_at`,
+      [
+        id,
+        username,
+        loginAccount,
+        role,
+        status,
+        passwordRecord?.hash || null,
+        passwordRecord?.salt || null,
+        passwordRecord?.algorithm || null,
+      ]
+    );
+    if (!result.rows[0]) {
+      return { success: false, status: 404, message: '账号不存在' };
+    }
+    return { success: true, user: toPublicUser(result.rows[0]) };
+  } catch (error) {
+    if (error?.code === '23505') {
+      return { success: false, status: 409, message: '登录账号已存在' };
+    }
+    throw error;
+  }
+}
+
+export async function deleteUserAccount(pool, userId) {
+  const id = Number(userId);
+  if (!Number.isInteger(id) || id <= 0) {
+    return { success: false, status: 400, message: '账号 ID 不合法' };
+  }
+
+  const result = await pool.query(
+    `UPDATE user_account
+        SET status = 'deleted',
+            updated_at = NOW()
+      WHERE id = $1
+        AND COALESCE(status, '') <> 'deleted'
+      RETURNING id, username, login_account, role, status, last_login_time, created_at, updated_at`,
+    [id]
+  );
+  if (!result.rows[0]) {
+    return { success: false, status: 404, message: '账号不存在' };
+  }
+  return { success: true, user: toPublicUser(result.rows[0]) };
 }
 
 export function createSession(sessionStore, user, options = {}) {

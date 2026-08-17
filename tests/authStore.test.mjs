@@ -103,3 +103,38 @@ function createMemoryStorage() {
   assert.match(result.message, /数据库访问被拒绝/);
   assert.match(result.message, /10\.10\.122\.130/);
 }
+
+{
+  const storage = createMemoryStorage();
+  storage.setItem('voiceauto_auth_v1', JSON.stringify({
+    users: [
+      {
+        id: 99,
+        username: 'Local User',
+        loginAccount: 'LocalOps',
+        passwordHash: 'local:Local12345',
+        role: 'test_lead',
+        status: 'enabled',
+      },
+    ],
+    session: null,
+  }));
+  const result = await authenticateUser('LocalOps', 'Local12345', {
+    storage,
+    fetchImpl: async () => ({
+      ok: false,
+      status: 404,
+      json: async () => ({ success: false, message: '账号不存在' }),
+    }),
+  });
+  assert.equal(result.success, true);
+  assert.equal(result.user.loginAccount, 'LocalOps');
+  assert.equal((await getCurrentUser({
+    storage,
+    fetchImpl: async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ success: false, message: '未登录' }),
+    }),
+  })).loginAccount, 'LocalOps');
+}

@@ -164,7 +164,7 @@ function AppContent() {
           <div className="space-y-6">
             {pendingLangfuseJump && (
               <div className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-blue-100">
-                测试已完成，将在当前页面停留 2 分钟后跳转到 Langfuse 日志，并拉取所选环境日志。
+                测试已完成，将在当前页面停留 2 分钟后跳转到 Langfuse 日志，并拉取所选环境日志。测试音频会保留，可用于下次继续测试。
               </div>
             )}
 

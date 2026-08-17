@@ -18,13 +18,31 @@ function createMockPool() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
+  users.set('LeadOps', {
+    id: 8,
+    username: 'LeadOps',
+    login_account: 'LeadOps',
+    password_hash: 'a432dd981702c5b41f600bc06bab088169e950be28b99e7833e17bed5d106c06',
+    password_salt: 'abc123',
+    password_algorithm: 'sha256_salt_v1',
+    role: 'test_lead',
+    status: 'enabled',
+    last_login_time: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
 
   return {
     configs,
     async query(sql, params = []) {
       const normalized = sql.replace(/\s+/g, ' ').trim();
-      if (normalized.includes('FROM user_account') && (params[0] === 'LilyLuv' || params[0] === 7)) {
-        return { rows: [users.get('LilyLuv')] };
+      if (normalized.includes('FROM user_account') && typeof params[0] === 'string') {
+        const user = users.get(params[0]);
+        return { rows: user ? [user] : [] };
+      }
+      if (normalized.includes('FROM user_account') && typeof params[0] === 'number') {
+        const user = Array.from(users.values()).find((item) => item.id === params[0]);
+        return { rows: user ? [user] : [] };
       }
       if (normalized.startsWith('INSERT INTO app_config')) {
         const [configType, payload, updatedBy] = params;
@@ -130,6 +148,25 @@ try {
   assert.equal(loadedMiniMax.status, 200);
   assert.equal(loadedMiniMax.body.config.model, 'MiniMax-M2.7');
   assert.equal(loadedMiniMax.body.config.apiKey, 'sk-minimax-db-secret');
+
+  const leadLogin = await request(server, 'POST', '/api/auth/login', {
+    loginAccount: 'LeadOps',
+    password: 'Sdmc1234',
+  });
+  assert.equal(leadLogin.status, 200);
+  const leadCookie = leadLogin.headers.get('set-cookie');
+
+  const leadRead = await request(server, 'GET', '/api/configs/tapd', null, leadCookie);
+  assert.equal(leadRead.status, 200);
+
+  const leadSave = await request(server, 'PUT', '/api/configs/tapd', {
+    config: {
+      apiUser: 'blocked',
+      enabled: true,
+    },
+  }, leadCookie);
+  assert.equal(leadSave.status, 403);
+  assert.equal(leadSave.body.message, '无配置修改权限');
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

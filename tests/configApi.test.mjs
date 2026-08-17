@@ -107,3 +107,20 @@ assert.equal(savedConfigs.get('minimax').apiKey, 'sk-minimax-db-secret');
 const minimaxLoaded = await loadDatabaseConfig(CONFIG_TYPES.MINIMAX);
 assert.equal(minimaxLoaded.apiKey, 'sk-minimax-db-secret');
 assert.equal(minimaxLoaded.enabled, true);
+
+const minimaxUpdated = await saveDatabaseConfig(CONFIG_TYPES.MINIMAX, {
+  configName: 'MiniMax 评测模型',
+  baseUrl: 'https://api.minimax.io/v1',
+  apiKey: '',
+  model: 'MiniMax-M2.8',
+  temperature: 0.7,
+  maxCompletionTokens: 4096,
+  timeout: 45000,
+  enabled: true,
+});
+assert.equal(minimaxUpdated.model, 'MiniMax-M2.8');
+assert.equal(minimaxUpdated.temperature, 0.7);
+assert.equal(minimaxUpdated.maxCompletionTokens, 4096);
+assert.equal(minimaxUpdated.timeout, 45000);
+assert.equal(savedConfigs.get('minimax').apiKey, 'sk-minimax-db-secret');
+assert.equal(savedConfigs.get('minimax').model, 'MiniMax-M2.8');
