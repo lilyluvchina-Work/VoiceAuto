@@ -45,6 +45,15 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon',
 };
 
+const LANGFUSE_PROXY_TARGETS = [
+  ['/langfuse-api-uat-local', 'https://monitor-live-test-cedar.sdmc.tv'],
+  ['/langfuse-api-test-local', 'https://monitor-live-test-cedar.sdmc.tv'],
+  ['/langfuse-api-prod-local', 'https://monitor-live-test-cedar.sdmc.tv'],
+  ['/langfuse-api-uat', 'https://monitor-live-test-cedar.sdmc.tv'],
+  ['/langfuse-api-test', 'https://monitor-live-test-cedar.sdmc.tv'],
+  ['/langfuse-api-prod', 'https://monitor-live-test-cedar.sdmc.tv'],
+];
+
 function sendJson(res, status, body, headers = {}) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
@@ -141,6 +150,14 @@ async function readJson(req) {
   const text = Buffer.concat(chunks).toString('utf8').trim();
   if (!text) return {};
   return JSON.parse(text);
+}
+
+async function readRequestBuffer(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 function parseCookies(header = '') {
@@ -246,6 +263,87 @@ function sendError(res, error, fallbackStatus = 500) {
     ...(error?.providerCode ? { providerCode: error.providerCode } : {}),
     ...(error?.logId ? { logId: error.logId } : {}),
   });
+}
+
+function findLangfuseProxyTarget(pathname) {
+  return LANGFUSE_PROXY_TARGETS.find(([prefix]) => (
+    pathname === prefix || pathname.startsWith(`${prefix}/`)
+  ));
+}
+
+function copyProxyRequestHeaders(req) {
+  const headers = {};
+  ['authorization', 'accept', 'content-type'].forEach((name) => {
+    if (req.headers[name]) headers[name] = req.headers[name];
+  });
+  return headers;
+}
+
+async function proxyLangfuseApi(req, res, url, proxyTarget, fetchImpl) {
+  const [prefix, baseUrl] = proxyTarget;
+  const rewrittenPath = url.pathname.slice(prefix.length) || '/';
+  const target = new URL(rewrittenPath, baseUrl);
+  url.searchParams.forEach((value, key) => {
+    target.searchParams.append(key, value);
+  });
+
+  try {
+    const body = ['GET', 'HEAD'].includes(req.method) ? null : await readRequestBuffer(req);
+    const response = await fetchImpl(target.toString(), {
+      method: req.method,
+      headers: copyProxyRequestHeaders(req),
+      body: body?.length ? body : undefined,
+    });
+    const responseBody = Buffer.from(await response.arrayBuffer());
+    sendBuffer(
+      res,
+      response.status,
+      responseBody,
+      response.headers.get('content-type') || 'application/json; charset=utf-8'
+    );
+  } catch (error) {
+    sendJson(res, 502, {
+      success: false,
+      message: 'Langfuse 代理请求失败',
+      detail: error?.message || String(error),
+    });
+  }
+}
+
+async function proxyDingTalkRobot(req, res, url, fetchImpl) {
+  if (req.method !== 'POST') {
+    sendJson(res, 405, { success: false, message: 'Method not allowed' });
+    return;
+  }
+
+  const target = new URL('https://oapi.dingtalk.com/robot/send');
+  url.searchParams.forEach((value, key) => {
+    target.searchParams.append(key, value);
+  });
+
+  try {
+    const body = await readRequestBuffer(req);
+    const response = await fetchImpl(target.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': req.headers['content-type'] || 'application/json',
+      },
+      body: body.length ? body : undefined,
+    });
+    const responseBody = Buffer.from(await response.arrayBuffer());
+    sendBuffer(
+      res,
+      response.status,
+      responseBody,
+      response.headers.get('content-type') || 'application/json; charset=utf-8'
+    );
+  } catch (error) {
+    sendJson(res, 502, {
+      success: false,
+      message: '钉钉机器人代理请求失败',
+      detail: error?.message || String(error),
+    });
+  }
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -412,10 +510,22 @@ export function createApp(options) {
   const pool = options.pool;
   const sessionStore = options.sessionStore || new Map();
   const staticDir = options.staticDir || join(process.cwd(), 'dist');
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
 
   return async function app(req, res) {
     const url = new URL(req.url, 'http://localhost');
     try {
+      const langfuseProxyTarget = findLangfuseProxyTarget(url.pathname);
+      if (langfuseProxyTarget) {
+        await proxyLangfuseApi(req, res, url, langfuseProxyTarget, fetchImpl);
+        return;
+      }
+
+      if (url.pathname === '/dingtalk-robot') {
+        await proxyDingTalkRobot(req, res, url, fetchImpl);
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/health/database') {
         try {
           const result = await checkDatabase(pool);

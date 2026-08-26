@@ -17,7 +17,7 @@ Write-Host "[2/5] Creating external bundle directory: $bundleDir"
 New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
 
 Write-Host "[3/5] Copying dist output"
-Copy-Item -Path (Join-Path $projectRoot "dist\*") -Destination (Join-Path $bundleDir "dist") -Recurse -Force
+Copy-Item -Path (Join-Path $projectRoot "dist") -Destination (Join-Path $bundleDir "dist") -Recurse -Force
 
 Write-Host "[4/6] Copying backend server"
 Copy-Item -Path (Join-Path $projectRoot "server") -Destination (Join-Path $bundleDir "server") -Recurse -Force
