@@ -8,6 +8,10 @@ import { generateId } from '../utils/formatters';
 import { getDefaultLangfuseEnvironmentKey } from '../modules/langfuse/services/langfuseService';
 import { sanitizePersistedVoiceAutoState } from './stateSanitizer';
 import { normalizeVoiceConfigByLang } from '../constants';
+import {
+  DEFAULT_AGENT_EVALUATION_METRICS,
+  normalizeSelectedEvaluationMetrics,
+} from '../utils/agentEvaluation';
 
 const STORAGE_KEY = 'voiceauto_state';
 const DEFAULT_LANGFUSE_ENV_KEY = getDefaultLangfuseEnvironmentKey();
@@ -148,6 +152,9 @@ const initialState = {
       longTextSilenceEndMs: 3500,
       veryLongTextSilenceEndMs: 5000,
       afterFinishCooldownMs: 3000
+    },
+    agentEvaluation: {
+      selectedMetrics: [...DEFAULT_AGENT_EVALUATION_METRICS]
     }
   },
 
@@ -203,6 +210,7 @@ const ActionTypes = {
   SET_AUTONOMOUS_WAKE: 'SET_AUTONOMOUS_WAKE',
   SET_AUTONOMOUS_INPUT: 'SET_AUTONOMOUS_INPUT',
   SET_AUTONOMOUS_RESPONSE: 'SET_AUTONOMOUS_RESPONSE',
+  SET_AGENT_EVALUATION_METRICS: 'SET_AGENT_EVALUATION_METRICS',
   SET_PLAYBACK_STATE: 'SET_PLAYBACK_STATE',
   START_PLAYBACK: 'START_PLAYBACK',
   PAUSE_PLAYBACK: 'PAUSE_PLAYBACK',
@@ -396,6 +404,18 @@ function testReducer(state, action) {
           autonomousResponse: {
             ...state.testOptions.autonomousResponse,
             ...action.payload
+          }
+        }
+      };
+
+    case ActionTypes.SET_AGENT_EVALUATION_METRICS:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          agentEvaluation: {
+            ...(state.testOptions.agentEvaluation || {}),
+            selectedMetrics: normalizeSelectedEvaluationMetrics(action.payload)
           }
         }
       };
@@ -720,6 +740,13 @@ export function TestProvider({ children }) {
                 Number(parsed.testOptions?.autonomousResponse?.afterFinishCooldownMs)
                 || init.testOptions.autonomousResponse.afterFinishCooldownMs
               )
+            },
+            agentEvaluation: {
+              ...init.testOptions.agentEvaluation,
+              ...(parsed.testOptions?.agentEvaluation || {}),
+              selectedMetrics: normalizeSelectedEvaluationMetrics(
+                parsed.testOptions?.agentEvaluation?.selectedMetrics
+              )
             }
           }
         };
@@ -886,6 +913,11 @@ export const actions = {
   setAutonomousResponse: (configPatch) => ({
     type: ActionTypes.SET_AUTONOMOUS_RESPONSE,
     payload: configPatch
+  }),
+
+  setAgentEvaluationMetrics: (metrics) => ({
+    type: ActionTypes.SET_AGENT_EVALUATION_METRICS,
+    payload: metrics
   }),
 
   setPlaybackState: (state) => ({
