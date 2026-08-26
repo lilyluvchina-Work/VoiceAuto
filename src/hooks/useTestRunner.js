@@ -13,6 +13,10 @@ import {
   resolveTestCaseDirectory,
   sortTestCasesByDirectoryOrder,
 } from '../utils/testCaseOrdering';
+import {
+  buildContinueDecision,
+  buildMultiTurnQueue,
+} from '../utils/multiTurnDialogue';
 import { shouldExpectVoiceResponse } from '../modules/tapd/utils/tapdParser';
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -128,21 +132,6 @@ const resolveAudioCaseId = (audio, index) => {
   return audio?.id || `case_${index + 1}`;
 };
 
-const buildQueue = (audios, loopCount) => {
-  const queue = [];
-  for (let round = 0; round < loopCount; round++) {
-    for (let i = 0; i < audios.length; i++) {
-      queue.push({
-        audio: audios[i],
-        listIndex: i,
-        round: round + 1,
-        totalRounds: loopCount
-      });
-    }
-  }
-  return queue;
-};
-
 const logWake = (stage, payload = {}) => {
   const detail = {
     id: `process_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -243,7 +232,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
     return generated && moduleMatched;
   }));
 
-  const totalCases = playableAudios.length * (testOptions.loopCount || 1);
+  const totalCases = buildMultiTurnQueue(playableAudios, testOptions.loopCount || 1).length;
 
   const [currentAudioText, setCurrentAudioText] = useState('');
   const startTimeRef = useRef(null);
@@ -270,7 +259,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
       return;
     }
 
-    const queue = buildQueue(playableAudios, testOptions.loopCount);
+    const queue = buildMultiTurnQueue(playableAudios, testOptions.loopCount);
     const shouldStop = () => !isPlayingRef.current || runIdRef.current !== runId;
 
     const reportRunId = createReportRunId();
@@ -654,20 +643,46 @@ export default function useTestRunner({ onTestComplete } = {}) {
 
         const item = queue[cursor];
 
-        const wakeResult = await ensureSpeakerWakeup(item, cursor);
+        const wakeResult = item.needWakeup
+          ? await ensureSpeakerWakeup(item, cursor)
+          : {
+              wake_audio_play_status: 'skipped_reused_session',
+              wake_audio_play_start_time: null,
+              wake_audio_play_end_time: null,
+              speaker_wake_status: 'skipped_reused_session',
+              wake_event_time: null,
+              wake_fail_count: wakeFailCountRef.current,
+              adb_reboot_triggered: false,
+              adb_reboot_result: '',
+              fail_stage: '',
+              fail_reason: '',
+            };
 
         if (shouldStop()) return;
 
         // 自主监测开启时，监听到唤醒成功后直接播放测试音频。
         const autonomousWakeEnabled = Boolean(testOptions.autonomousWake?.enabled);
+        const continueDecision = buildContinueDecision(item);
         logWake('post_wake.route', {
           cursor,
           autonomousWakeEnabled,
+          needWakeup: item.needWakeup,
+          dialogueTurnKey: item.dialogueTurnKey,
           speakerWakeStatus: wakeResult?.speaker_wake_status,
           fixedDelayMs: wakeWord.wakeAfterDelay,
-          willUseFixedDelay: !autonomousWakeEnabled
+          willUseFixedDelay: item.needWakeup && !autonomousWakeEnabled
         });
-        if (!autonomousWakeEnabled) {
+        if (!item.needWakeup) {
+          dispatch(actions.setPlaybackState({ currentType: 'test-ready' }));
+          setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 多轮对话第 ${item.turnIndex}/${item.turnTotal} 轮，复用唤醒会话`);
+          logWake('post_wake.skipped_reused_session', {
+            cursor,
+            dialogueTurnKey: item.dialogueTurnKey,
+            multiTurnCaseId: item.multiTurnCaseId,
+            turnIndex: item.turnIndex,
+            turnTotal: item.turnTotal
+          });
+        } else if (!autonomousWakeEnabled) {
           dispatch(actions.setPlaybackState({ currentType: 'delay' }));
           await wait(wakeWord.wakeAfterDelay);
         } else {
@@ -1064,8 +1079,8 @@ export default function useTestRunner({ onTestComplete } = {}) {
         lastTestAudioTimeRef.current = playEndTime;
         dispatch(actions.setReport({ lastTestAudioTime: lastTestAudioTimeRef.current }));
 
-        const wakeAudioPassed = wakeResult?.wake_audio_play_status === 'completed';
-        const wakeDetectPassed = !autonomousWakeEnabled || wakeResult?.speaker_wake_status === 'success';
+        const wakeAudioPassed = !item.needWakeup || wakeResult?.wake_audio_play_status === 'completed';
+        const wakeDetectPassed = !item.needWakeup || !autonomousWakeEnabled || wakeResult?.speaker_wake_status === 'success';
         const testAudioPassed = Boolean(playEndTime) && failStage !== 'TEST_AUDIO_PLAY';
         const asrPassed = !autonomousInputEnabled || inputChainPassed === true;
         const speakerAudioPassed = !Boolean((testOptions.autonomousResponse || {}).enabled)
@@ -1094,6 +1109,16 @@ export default function useTestRunner({ onTestComplete } = {}) {
           index: cursor,
           listIndex: item.listIndex,
           round: item.round,
+          multiTurnCaseId: item.multiTurnCaseId,
+          multiTurnTitle: item.multiTurnTitle,
+          turnIndex: item.turnIndex,
+          turnTotal: item.turnTotal,
+          maxTurns: item.maxTurns,
+          dialogueTurnKey: item.dialogueTurnKey,
+          dialogueStatus: continueDecision.dialogue_status,
+          continueDecision,
+          needWakeup: item.needWakeup,
+          shouldContinue: continueDecision.should_continue,
           runId: reportRunIdRef.current,
           caseId,
           playIndex: cursor + 1,
