@@ -10,10 +10,21 @@ import {
   generateReportCsv,
   copyToClipboard
 } from '../utils/audioUtils.jsx';
+import { evaluateAgentReport } from '../utils/agentEvaluation';
+import { summarizeMultiTurnCases } from '../utils/multiTurnDialogue';
 
 export default function TestReport() {
   const { state } = useTest();
   const { wakeWord, report } = state;
+  const selectedEvaluationMetrics = state.testOptions?.agentEvaluation?.selectedMetrics || [];
+  const multiTurnSummary = React.useMemo(
+    () => summarizeMultiTurnCases(report.cases),
+    [report.cases]
+  );
+  const agentEvaluation = React.useMemo(
+    () => evaluateAgentReport(report.cases, selectedEvaluationMetrics),
+    [report.cases, selectedEvaluationMetrics]
+  );
 
   const [showReport, setShowReport] = useState(false);
 
@@ -41,6 +52,8 @@ export default function TestReport() {
     successCount: report.successCount,
     failCount: report.failCount,
     totalDuration: report.endTime - report.startTime || 0,
+    multiTurnSummary,
+    agentEvaluation,
     testCases: report.cases
   });
 
@@ -188,6 +201,56 @@ export default function TestReport() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-4 mb-6 lg:grid-cols-2">
+        <div className="p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+          <h3 className="font-medium text-gray-200 mb-3">多轮对话</h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-gray-500">对话数</p>
+              <p className="mt-1 text-lg font-semibold text-white">{multiTurnSummary.dialogueCount}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">总轮次</p>
+              <p className="mt-1 text-lg font-semibold text-white">{multiTurnSummary.turnCount}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">完成率</p>
+              <p className="mt-1 text-lg font-semibold text-accent">{multiTurnSummary.completionRate}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">平均轮次</p>
+              <p className="mt-1 text-lg font-semibold text-white">{multiTurnSummary.averageTurns}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+          <h3 className="font-medium text-gray-200 mb-2">智能体评测</h3>
+          <p className="text-sm font-semibold text-emerald-300">{agentEvaluation.plan.planName}</p>
+          <p className="mt-1 text-xs text-gray-400">{agentEvaluation.plan.reason}</p>
+          <div className="mt-3 space-y-2">
+            {agentEvaluation.metrics.map((metric) => (
+              <div key={metric.metricId} className="flex items-start justify-between gap-3 rounded bg-black/20 px-3 py-2 text-xs">
+                <div>
+                  <p className="font-medium text-gray-200">{metric.label}</p>
+                  <p className={metric.status === 'missing_instrumentation' ? 'text-amber-200' : 'text-gray-400'}>
+                    {metric.message}
+                  </p>
+                </div>
+                <span className="shrink-0 font-mono text-gray-100">{metric.score || '/'}</span>
+              </div>
+            ))}
+          </div>
+          {agentEvaluation.missingMessages.length > 0 && (
+            <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+              {agentEvaluation.missingMessages.map((message) => (
+                <p key={message}>{message}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 测试详情 */}
       {showReport && (
         <div className="border-t border-gray-700 pt-6">
@@ -253,6 +316,9 @@ export default function TestReport() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-white truncate">{tc.text}</p>
                 <p className="text-xs text-gray-500 mt-0.5">时间点：{formatCaseTimeRange(tc)}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  多轮：{tc.multiTurnTitle || tc.multiTurnCaseId || '单轮'} · 第 {tc.turnIndex || 1}/{tc.turnTotal || 1} 轮 · {tc.needWakeup === false ? '无需重复唤醒' : '需要唤醒'}
+                </p>
               </div>
             </div>
           ))}

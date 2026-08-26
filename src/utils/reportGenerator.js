@@ -38,6 +38,8 @@ export function generateReportJson(reportData) {
     successCount,
     failCount,
     totalDuration,
+    multiTurnSummary,
+    agentEvaluation,
     testCases
   } = reportData;
 
@@ -84,10 +86,21 @@ export function generateReportJson(reportData) {
       wakeAfterDelayMs: Number(wakeAfterDelay) || 0,
       wakeIntervalDelayMs: Number(wakeIntervalDelay) || 0
     },
+    multiTurnSummary: multiTurnSummary || null,
+    agentEvaluation: agentEvaluation || null,
     cases: safeTestCases.map((tc, i) => ({
       index: i + 1,
       text: tc?.text || '',
       success: Boolean(tc?.success),
+      multiTurnCaseId: tc?.multiTurnCaseId || tc?.caseId || '',
+      multiTurnTitle: tc?.multiTurnTitle || '',
+      turnIndex: Number(tc?.turnIndex) || 1,
+      turnTotal: Number(tc?.turnTotal) || 1,
+      dialogueTurnKey: tc?.dialogueTurnKey || '',
+      dialogueStatus: tc?.dialogueStatus || '',
+      needWakeup: tc?.needWakeup !== false,
+      shouldContinue: Boolean(tc?.shouldContinue),
+      continueReason: tc?.continueDecision?.reason || '',
       wakeStatus: getWakeStatus(tc),
       asrStatus: getAsrStatus(tc),
       ttsStatus: getTtsStatus(tc),
@@ -125,13 +138,22 @@ export function generateReportJson(reportData) {
  */
 export function generateReportCsv(reportData) {
   const payload = generateReportJson(reportData);
-  const headers = ['index', 'success', 'wakeStatus', 'asrStatus', 'ttsStatus', 'round', 'playStartTimeText', 'playEndTimeText', 'durationMs', 'text', 'actualAsrText', 'responseTtsText', 'responseTtsAudioFile', 'responseAudioAsrText', 'responseTextSimilarity', 'responseAudioDurationMs', 'responseAudioSegmentDurationMs', 'responseSpeakerState', 'responseFinishReason', 'responseTtsTextLength', 'responseEstimatedTtsDurationMs', 'responseMinProtectMs', 'responseMaxRecordMs', 'responseSilenceEndMs', 'responseFinalSilenceMs', 'responseSuspectedTruncated'];
+  const planId = payload.agentEvaluation?.plan?.planId || '';
+  const missingMessages = (payload.agentEvaluation?.missingMessages || []).join(' | ');
+  const headers = ['index', 'success', 'multiTurnCaseId', 'turnIndex', 'turnTotal', 'needWakeup', 'dialogueStatus', 'agentEvaluationPlan', 'agentEvaluationMissingMessages', 'wakeStatus', 'asrStatus', 'ttsStatus', 'round', 'playStartTimeText', 'playEndTimeText', 'durationMs', 'text', 'actualAsrText', 'responseTtsText', 'responseTtsAudioFile', 'responseAudioAsrText', 'responseTextSimilarity', 'responseAudioDurationMs', 'responseAudioSegmentDurationMs', 'responseSpeakerState', 'responseFinishReason', 'responseTtsTextLength', 'responseEstimatedTtsDurationMs', 'responseMinProtectMs', 'responseMaxRecordMs', 'responseSilenceEndMs', 'responseFinalSilenceMs', 'responseSuspectedTruncated'];
   const lines = [headers.join(',')];
 
   payload.cases.forEach((item) => {
     lines.push([
       item.index,
       item.success,
+      csvEscape(item.multiTurnCaseId),
+      item.turnIndex,
+      item.turnTotal,
+      item.needWakeup,
+      csvEscape(item.dialogueStatus),
+      csvEscape(planId),
+      csvEscape(missingMessages),
       item.wakeStatus,
       item.asrStatus,
       item.ttsStatus,
@@ -178,6 +200,8 @@ export function generateReportText(reportData) {
     successCount,
     failCount,
     totalDuration,
+    multiTurnSummary,
+    agentEvaluation,
     testCases
   } = reportData;
 
@@ -215,6 +239,27 @@ export function generateReportText(reportData) {
   text += `ASR成功: ${asrStats.success}，ASR失败: ${asrStats.failed}\n`;
   text += `TTS成功: ${ttsStats.success}，TTS失败: ${ttsStats.failed}\n\n`;
 
+  if (multiTurnSummary) {
+    text += '🔁 多轮对话 ───────────────────────────────────────\n';
+    text += `对话数: ${multiTurnSummary.dialogueCount}\n`;
+    text += `总轮次: ${multiTurnSummary.turnCount}\n`;
+    text += `完成率: ${multiTurnSummary.completionRate}\n`;
+    text += `平均轮次: ${multiTurnSummary.averageTurns}\n\n`;
+  }
+
+  if (agentEvaluation) {
+    text += '🧠 智能体评测 ─────────────────────────────────────\n';
+    text += `推荐方案: ${agentEvaluation.plan?.planName || '-'}\n`;
+    text += `推荐原因: ${agentEvaluation.plan?.reason || '-'}\n`;
+    (agentEvaluation.metrics || []).forEach((metric) => {
+      text += `${metric.label}: ${metric.score || '/'}（${metric.status}）${metric.message ? ` - ${metric.message}` : ''}\n`;
+    });
+    (agentEvaluation.missingMessages || []).forEach((message) => {
+      text += `缺失提示: ${message}\n`;
+    });
+    text += '\n';
+  }
+
   text += '⏱️ 时间统计 ───────────────────────────────────────\n';
   text += `总耗时: ${formatTime(totalDuration / 1000)}\n`;
   text += `平均每条: ${avgTime}秒\n\n`;
@@ -228,6 +273,7 @@ export function generateReportText(reportData) {
     const startText = tc.playStartTime ? formatDate(tc.playStartTime) : '-';
     const endText = tc.playEndTime ? formatDate(tc.playEndTime) : '-';
     text += `${status} ${i + 1}. [${startText} ~ ${endText}] ${displayText}\n`;
+    text += `   多轮: ${tc.multiTurnCaseId || tc.caseId || '-'} | 第 ${tc.turnIndex || 1}/${tc.turnTotal || 1} 轮 | ${tc.needWakeup === false ? '无需重复唤醒' : '需要唤醒'} | 状态: ${tc.dialogueStatus || '-'}\n`;
     text += `   唤醒: ${getWakeStatus(tc)} | ASR: ${getAsrStatus(tc)} | TTS: ${getTtsStatus(tc)} | TTS文本: ${tc.responseTtsText || tc.speakerResponseText || '-'} | TTS音频: ${tc.responseTtsAudioFile || tc.responseAudioFile || '-'} | 录音ASR: ${tc.responseAsrText || '-'} | 相似度: ${Number.isFinite(Number(tc.responseTextSimilarity)) ? `${(Number(tc.responseTextSimilarity) * 100).toFixed(1)}%` : '-'}\n`;
     text += `   录制诊断: 状态=${tc.responseSpeakerState || '-'} | 结束原因=${tc.responseFinishReason || '-'} | 预计=${tc.responseEstimatedTtsDurationMs || 0}ms | 实际=${tc.responseAudioDuration || 0}ms | 保护=${tc.responseMinProtectMs || 0}ms | 连续静音=${tc.responseFinalSilenceMs || 0}ms | 疑似截断=${tc.responseSuspectedTruncated ? '是' : '否'}\n`;
   });

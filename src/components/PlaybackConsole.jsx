@@ -16,6 +16,10 @@ import adbWakeService from '../services/adbWakeService';
 import ttsService from '../services/ttsService.jsx';
 import { notifyDingTalk } from '../services/dingTalkService';
 import { resolveTestCaseDirectory } from '../utils/testCaseOrdering';
+import {
+  AGENT_EVALUATION_METRIC_GROUPS,
+  selectAgentEvaluationPlan,
+} from '../utils/agentEvaluation';
 
 export default function PlaybackConsole({ onTestComplete }) {
   const { state, dispatch } = useTest();
@@ -29,6 +33,11 @@ export default function PlaybackConsole({ onTestComplete }) {
   const autonomousWake = state.testOptions?.autonomousWake || {};
   const autonomousInput = state.testOptions?.autonomousInput || {};
   const autonomousResponse = state.testOptions?.autonomousResponse || {};
+  const selectedEvaluationMetrics = state.testOptions?.agentEvaluation?.selectedMetrics || [];
+  const evaluationPlan = React.useMemo(
+    () => selectAgentEvaluationPlan(selectedEvaluationMetrics),
+    [selectedEvaluationMetrics]
+  );
   const [microphones, setMicrophones] = useState([]);
   const [microphoneStatus, setMicrophoneStatus] = useState('');
   const [speakers, setSpeakers] = useState([]);
@@ -100,6 +109,13 @@ export default function PlaybackConsole({ onTestComplete }) {
 
   const handleAutonomousResponseChange = (patch) => {
     dispatch(actions.setAutonomousResponse(patch));
+  };
+
+  const handleEvaluationMetricChange = (metricId, checked) => {
+    const next = checked
+      ? [...selectedEvaluationMetrics, metricId]
+      : selectedEvaluationMetrics.filter((item) => item !== metricId);
+    dispatch(actions.setAgentEvaluationMetrics(next));
   };
 
   const handleWakeTextChange = (e) => {
@@ -706,6 +722,40 @@ export default function PlaybackConsole({ onTestComplete }) {
             }`}>
               {autoFetchLangfuseLogs ? '已开启：结束后停留 2 分钟再拉日志' : '已关闭：测试结束停留语音测试'}
             </span>
+          </div>
+        </div>
+        <div className="mt-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-200">智能体评测项</p>
+              <p className="mt-1 text-xs text-gray-400">按勾选项自动选择唯一评测方案。</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-emerald-100">
+              <span className="text-gray-400">推荐方案：</span>
+              <span className="font-semibold">{evaluationPlan.planName}</span>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-gray-400">{evaluationPlan.reason}</p>
+          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
+            {AGENT_EVALUATION_METRIC_GROUPS.map((group) => (
+              <div key={group.id} className="rounded-lg border border-gray-700 bg-gray-900/40 p-3">
+                <p className="mb-2 text-xs font-semibold text-gray-300">{group.label}</p>
+                <div className="space-y-2">
+                  {group.metrics.map((metric) => (
+                    <label key={metric.id} className="flex items-center gap-2 text-xs text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={selectedEvaluationMetrics.includes(metric.id)}
+                        onChange={(event) => handleEvaluationMetricChange(metric.id, event.target.checked)}
+                        disabled={isLocked}
+                        className="h-4 w-4 rounded bg-gray-800 border-gray-600 disabled:opacity-50"
+                      />
+                      <span>{metric.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
         <div className={`mt-3 p-3 rounded-lg border ${
