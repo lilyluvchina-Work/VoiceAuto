@@ -89,6 +89,17 @@ export function buildContinueDecision(queueItem = {}) {
   };
 }
 
+export function buildRetryQueueItem(queueItem = {}, failureResult = {}) {
+  return {
+    ...queueItem,
+    needWakeup: true,
+    retryOfDialogueTurnKey: queueItem.dialogueTurnKey || '',
+    previousFailureEvent: failureResult.failureEvent || failureResult.result || '',
+    previousFailureLog: failureResult.failureLog || failureResult.message || '',
+    retryCount: Number(queueItem.retryCount || 0) + 1,
+  };
+}
+
 export function buildMultiTurnQueue(audios = [], loopCount = 1) {
   const loops = Math.max(1, Number(loopCount) || 1);
   const normalized = (audios || []).map((audio, sourceIndex) => {

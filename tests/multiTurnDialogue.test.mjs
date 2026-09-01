@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 
 import {
+  buildRetryQueueItem,
   buildContinueDecision,
   buildMultiTurnQueue,
   summarizeMultiTurnCases,
 } from '../src/utils/multiTurnDialogue.js';
+import { DEVICE_TYPES } from '../src/config/deviceProfiles.js';
 
 const audios = Array.from({ length: 10 }, (_, index) => ({
   id: `turn-${index + 1}`,
@@ -58,3 +60,36 @@ assert.equal(summary.turnCount, 3);
 assert.equal(summary.completedDialogueCount, 1);
 assert.equal(summary.completionRate, '50.0%');
 assert.equal(summary.averageTurns, 1.5);
+
+const aiToyQueue = buildMultiTurnQueue([
+  {
+    id: 'toy-turn-1',
+    text: '客厅有哪些设备？',
+    audioStatus: 'generated',
+    multiTurnCaseId: 'toy-dialogue',
+    turnIndex: 1,
+    turnTotal: 4,
+    deviceType: DEVICE_TYPES.AI_TOY,
+  },
+  {
+    id: 'toy-turn-2',
+    text: '客厅灯现在是什么状态？',
+    audioStatus: 'generated',
+    multiTurnCaseId: 'toy-dialogue',
+    turnIndex: 2,
+    turnTotal: 4,
+    deviceType: DEVICE_TYPES.AI_TOY,
+  },
+], 1);
+
+assert.equal(aiToyQueue[0].needWakeup, true);
+assert.equal(aiToyQueue[1].needWakeup, false);
+
+const retry = buildRetryQueueItem(aiToyQueue[1], {
+  failureEvent: 'idle',
+  failureLog: 'Application: New State: idle',
+});
+assert.equal(retry.audio.id, aiToyQueue[1].audio.id);
+assert.equal(retry.needWakeup, true);
+assert.equal(retry.retryOfDialogueTurnKey, 'toy-dialogue#2');
+assert.equal(retry.previousFailureEvent, 'idle');
