@@ -5,6 +5,9 @@ const path = require('node:path');
 
 const PORT = Number(process.env.ADB_BRIDGE_PORT) || 17321;
 const HOST = process.env.ADB_BRIDGE_HOST || '127.0.0.1';
+const LOG_SOURCE_ADB = 'adb';
+const LOG_SOURCE_SERIAL = 'serial';
+const DEVICE_TYPE_AI_TOY = 'ai_toy';
 const DEFAULT_KEYWORDS = [
   'WakeupSuccess',
   'WAKEUP_SUCCESS',
@@ -67,6 +70,20 @@ const DEFAULT_RESPONSE_TTS_KEYWORDS = [
   'TTS_STATUS',
   'tts_status'
 ];
+const AI_TOY_WAKE_KEYWORDS = ['VOICE WAKE WORD HIT ACCEPTED'];
+const AI_TOY_INPUT_KEYWORDS = ['Cedar: Input Text'];
+const AI_TOY_FIRST_AUDIO_KEYWORDS = ['Audio latency first_downlink_audio'];
+const AI_TOY_PLAYBACK_DONE_KEYWORDS = ['TTS playback done'];
+const AI_TOY_LISTENING_KEYWORDS = ['Cedar: Start listening'];
+const AI_TOY_FAILURE_KEYWORDS = [
+  'Application: ║ New State: idle',
+  'Application: New State: idle',
+  'WS response timeout (no_tts_start)',
+  'Rebooting.',
+  'Guru Meditation',
+  'task_wdt',
+  'I2C transaction timeout'
+];
 const LOG_DIR = path.resolve(process.cwd(), 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'adb-bridge.log');
 
@@ -114,6 +131,183 @@ function readBody(req) {
       }
     });
     req.on('error', reject);
+  });
+}
+
+function resolveLogSource(body = {}) {
+  return body.logSource === LOG_SOURCE_SERIAL ? LOG_SOURCE_SERIAL : LOG_SOURCE_ADB;
+}
+
+function isAiToy(body = {}) {
+  return body.deviceType === DEVICE_TYPE_AI_TOY;
+}
+
+async function loadSerialPort() {
+  try {
+    return require('serialport');
+  } catch (err) {
+    const error = new Error('USB串口模式需要安装 serialport 依赖：npm install serialport@^12.0.0');
+    error.cause = err;
+    throw error;
+  }
+}
+
+async function listSerialPorts() {
+  const serial = await loadSerialPort();
+  const ports = await serial.SerialPort.list();
+  const devices = ports.map((port) => ({
+    id: port.path,
+    sn: port.serialNumber || port.path,
+    state: 'device',
+    model: port.manufacturer || '',
+    product: port.friendlyName || port.pnpId || '',
+    transportId: '',
+    label: [port.path, port.manufacturer || port.friendlyName || port.pnpId].filter(Boolean).join(' · '),
+    raw: JSON.stringify(port)
+  }));
+
+  appendBridgeLog('serial.devices.list', { devices });
+
+  return {
+    success: true,
+    devices,
+    message: ''
+  };
+}
+
+function normalizeSerialPath(body = {}) {
+  return String(body.serialPort || body.deviceId || '').trim();
+}
+
+function closeSerialQuietly(port) {
+  if (!port) return;
+  try {
+    if (port.isOpen) {
+      port.close(() => {});
+    }
+  } catch (err) {
+    appendBridgeLog('serial.close.error', { message: err?.message || String(err) });
+  }
+}
+
+function detectFromSerial({
+  serialPort,
+  baudrate,
+  timeoutMs,
+  matchers,
+  failureMatchers = [],
+  extractText = () => '',
+  buildSuccess = (line, matcher) => ({ success: true, matchedKeyword: matcher.label, matchedLine: line }),
+  buildFailure = (line, matcher) => ({ success: false, status: 'failed_marker', matchedKeyword: matcher.label, matchedLine: line }),
+  timeoutMessage = 'Serial marker not detected before timeout'
+}) {
+  const safeTimeoutMs = Math.max(1000, Number(timeoutMs) || 5000);
+  const safeBaudrate = Number(baudrate) || 115200;
+  const safeSerialPort = String(serialPort || '').trim();
+
+  if (!safeSerialPort) {
+    return Promise.resolve({
+      success: false,
+      status: 'serial_port_missing',
+      eventTime: null,
+      matchedKeyword: '',
+      matchedLine: '',
+      sampleLines: [],
+      message: 'USB串口模式需要填写串口号'
+    });
+  }
+
+  return new Promise(async (resolve, reject) => {
+    let done = false;
+    let serialModule;
+    let serialDevice;
+    let buffered = '';
+    let extractedText = '';
+    const sampleLines = [];
+
+    const finish = (payload) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeoutId);
+      closeSerialQuietly(serialDevice);
+      resolve({
+        ...payload,
+        sampleLines: sampleLines.slice(-30)
+      });
+    };
+
+    const handleLine = (line) => {
+      const text = String(line || '').trim();
+      if (!text) return;
+      sampleLines.push(text);
+      if (sampleLines.length > 200) sampleLines.shift();
+
+      const nextText = extractText(text);
+      if (nextText) extractedText = nextText;
+
+      const failureMatcher = failureMatchers.find((item) => item.test(text));
+      if (failureMatcher) {
+        finish({
+          ...buildFailure(text, failureMatcher, extractedText),
+          eventTime: Date.now()
+        });
+        return;
+      }
+
+      const matcher = matchers.find((item) => item.test(text));
+      if (matcher) {
+        const payload = {
+          ...buildSuccess(text, matcher, extractedText),
+          eventTime: Date.now()
+        };
+        if (payload.success === false && payload.keepWaiting) {
+          return;
+        }
+        finish(payload);
+      }
+    };
+
+    const timeoutId = setTimeout(() => {
+      finish({
+        success: false,
+        status: 'timeout',
+        eventTime: null,
+        matchedKeyword: '',
+        matchedLine: '',
+        actualAsrText: extractedText,
+        message: timeoutMessage
+      });
+    }, safeTimeoutMs);
+
+    try {
+      serialModule = await loadSerialPort();
+      serialDevice = new serialModule.SerialPort({
+        path: safeSerialPort,
+        baudRate: safeBaudrate,
+        autoOpen: true
+      });
+    } catch (err) {
+      clearTimeout(timeoutId);
+      reject(err);
+      return;
+    }
+
+    serialDevice.on('data', (chunk) => {
+      buffered += chunk.toString('utf8');
+      const lines = buffered.split(/\r?\n/);
+      buffered = lines.pop() || '';
+      for (const line of lines) {
+        handleLine(line);
+        if (done) break;
+      }
+    });
+
+    serialDevice.on('error', (err) => {
+      if (done) return;
+      clearTimeout(timeoutId);
+      closeSerialQuietly(serialDevice);
+      reject(err);
+    });
   });
 }
 
@@ -266,6 +460,42 @@ async function getAdbHealth({ deviceId }) {
   return payload;
 }
 
+async function getSerialHealth(body = {}) {
+  const checkedAt = Date.now();
+  const serialPort = normalizeSerialPath(body);
+  const devicesResult = await listSerialPorts();
+  const devices = devicesResult.devices || [];
+  const selectedDevice = serialPort
+    ? devices.find((device) => device.id === serialPort) || null
+    : devices[0] || null;
+  const selectedDeviceId = selectedDevice?.id || serialPort || '';
+  const success = Boolean(selectedDeviceId);
+  const checks = {
+    adbConnected: false,
+    speakerOnline: success,
+    deviceState: success ? 'device' : '',
+    bootCompleted: false,
+    logcatReadable: false,
+    logcatHasRecentOutput: false,
+    serialConnected: success
+  };
+
+  const payload = {
+    success,
+    checkedAt,
+    checkedAtText: new Date(checkedAt).toLocaleString('zh-CN', { hour12: false }),
+    selectedDeviceId,
+    selectedDevice,
+    devices,
+    checks,
+    sampleLines: [],
+    message: success ? 'USB串口监听链路可用' : '未发现 USB 串口设备或未填写串口号'
+  };
+
+  appendBridgeLog('serial.health.check', payload);
+  return payload;
+}
+
 async function recoverAdbLink({ deviceId }) {
   const startedAt = Date.now();
   appendBridgeLog('adb.recover.start', { deviceId: deviceId || '<default>' });
@@ -298,6 +528,23 @@ async function recoverAdbLink({ deviceId }) {
   };
   appendBridgeLog('adb.recover.finish', payload);
   return payload;
+}
+
+async function recoverLogLink(body = {}) {
+  if (resolveLogSource(body) === LOG_SOURCE_SERIAL) {
+    const health = await getSerialHealth(body);
+    return {
+      success: Boolean(health.success),
+      recoveredDeviceId: health.selectedDeviceId || '',
+      steps: {
+        serialHealth: { ok: Boolean(health.success), error: health.success ? '' : health.message }
+      },
+      health,
+      message: health.success ? 'USB串口监听链路已确认' : health.message
+    };
+  }
+
+  return recoverAdbLink(body);
 }
 
 function parseAdbDevices(output) {
@@ -429,6 +676,54 @@ function extractTtsTextFromLine(line) {
 
 function detectAsr({ deviceId, timeoutMs, keywords, patterns, startKeywords, endKeywords, failureKeywords }) {
   const safeTimeoutMs = Math.max(1000, Number(timeoutMs) || 8000);
+  if (arguments[0] && resolveLogSource(arguments[0]) === LOG_SOURCE_SERIAL) {
+    const body = arguments[0];
+    const safeStartKeywords = Array.isArray(startKeywords) && startKeywords.length
+      ? startKeywords
+      : (isAiToy(body) ? AI_TOY_INPUT_KEYWORDS : DEFAULT_ASR_START_KEYWORDS);
+    const safeEndKeywords = Array.isArray(endKeywords) && endKeywords.length
+      ? endKeywords
+      : (isAiToy(body) ? AI_TOY_INPUT_KEYWORDS : (Array.isArray(keywords) && keywords.length ? keywords : DEFAULT_ASR_END_KEYWORDS));
+    const safeFailureKeywords = Array.isArray(failureKeywords) && failureKeywords.length
+      ? failureKeywords
+      : (isAiToy(body) ? AI_TOY_FAILURE_KEYWORDS : DEFAULT_ASR_FAILURE_KEYWORDS);
+
+    return detectFromSerial({
+      serialPort: normalizeSerialPath(body),
+      baudrate: body.baudrate,
+      timeoutMs: safeTimeoutMs,
+      matchers: createKeywordMatchers(safeEndKeywords),
+      failureMatchers: createKeywordMatchers(safeFailureKeywords),
+      extractText: (line) => extractAsrTextFromLine(line, patterns),
+      buildSuccess: (line, matcher, actualAsrText) => ({
+        success: true,
+        status: 'completed',
+        matchedKeyword: matcher.label,
+        matchedLine: line,
+        startDetected: true,
+        startMatchedKeyword: createKeywordMatchers(safeStartKeywords).find((item) => item.test(line))?.label || matcher.label,
+        startMatchedLine: line,
+        startEventTime: Date.now(),
+        endMatchedKeyword: matcher.label,
+        endMatchedLine: line,
+        endEventTime: Date.now(),
+        actualAsrText,
+        message: actualAsrText ? '' : 'ASR marker detected but text extraction failed'
+      }),
+      buildFailure: (line, matcher, actualAsrText) => ({
+        success: false,
+        status: 'failed_marker',
+        matchedKeyword: matcher.label,
+        matchedLine: line,
+        failureMatchedKeyword: matcher.label,
+        failureMatchedLine: line,
+        actualAsrText,
+        message: 'ASR failure marker detected'
+      }),
+      timeoutMessage: 'Serial ASR marker not detected before timeout'
+    });
+  }
+
   const startMatchers = createKeywordMatchers(Array.isArray(startKeywords) && startKeywords.length ? startKeywords : DEFAULT_ASR_START_KEYWORDS);
   const endMatchers = createKeywordMatchers(
     Array.isArray(endKeywords) && endKeywords.length
@@ -617,9 +912,100 @@ function detectAsr({ deviceId, timeoutMs, keywords, patterns, startKeywords, end
   });
 }
 
-function detectSpeakerResponseLog({ deviceId, timeoutMs, maxWaitMs, vadStartKeywords, vadEndKeywords, ttsKeywords }) {
+function detectSpeakerResponseLog({ deviceId, timeoutMs, maxWaitMs, vadStartKeywords, vadEndKeywords, ttsKeywords, firstAudioKeywords, playbackDoneKeywords, listeningKeywords, failureKeywords }) {
   const safeTimeoutMs = Math.max(1000, Number(timeoutMs) || 15000);
   const safeMaxWaitMs = Math.max(safeTimeoutMs, Number(maxWaitMs) || 60000);
+  if (arguments[0] && resolveLogSource(arguments[0]) === LOG_SOURCE_SERIAL) {
+    const body = arguments[0];
+    const firstAudioMatchers = createKeywordMatchers(
+      Array.isArray(firstAudioKeywords) && firstAudioKeywords.length
+        ? firstAudioKeywords
+        : (isAiToy(body) ? AI_TOY_FIRST_AUDIO_KEYWORDS : DEFAULT_RESPONSE_VAD_START_KEYWORDS)
+    );
+    const playbackDoneMatchers = createKeywordMatchers(
+      Array.isArray(playbackDoneKeywords) && playbackDoneKeywords.length
+        ? playbackDoneKeywords
+        : (isAiToy(body) ? AI_TOY_PLAYBACK_DONE_KEYWORDS : DEFAULT_RESPONSE_VAD_END_KEYWORDS)
+    );
+    const listeningMatchers = createKeywordMatchers(
+      Array.isArray(listeningKeywords) && listeningKeywords.length
+        ? listeningKeywords
+        : (isAiToy(body) ? AI_TOY_LISTENING_KEYWORDS : [])
+    );
+    const failureMatchers = createKeywordMatchers(
+      Array.isArray(failureKeywords) && failureKeywords.length
+        ? failureKeywords
+        : (isAiToy(body) ? AI_TOY_FAILURE_KEYWORDS : [])
+    );
+
+    return new Promise(async (resolve, reject) => {
+      let firstAudioDetected = false;
+      let playbackDoneDetected = false;
+      let firstAudioTime = null;
+      let playbackDoneTime = null;
+      try {
+        const result = await detectFromSerial({
+          serialPort: normalizeSerialPath(body),
+          baudrate: body.baudrate,
+          timeoutMs: safeMaxWaitMs,
+          matchers: [
+            ...firstAudioMatchers,
+            ...playbackDoneMatchers,
+            ...listeningMatchers
+          ],
+          failureMatchers,
+          extractText: extractTtsTextFromLine,
+          buildSuccess: (line, matcher, speakerResponseText) => {
+            if (firstAudioMatchers.some((item) => item.label === matcher.label && item.test(line))) {
+              firstAudioDetected = true;
+              firstAudioTime = Date.now();
+            }
+            if (playbackDoneMatchers.some((item) => item.label === matcher.label && item.test(line))) {
+              playbackDoneDetected = true;
+              playbackDoneTime = Date.now();
+            }
+            const listeningDetected = listeningMatchers.some((item) => item.label === matcher.label && item.test(line));
+            const success = isAiToy(body)
+              ? Boolean(firstAudioDetected && playbackDoneDetected && listeningDetected)
+              : Boolean(firstAudioDetected || playbackDoneDetected || speakerResponseText);
+
+            return {
+              success,
+              status: success ? 'completed' : 'partial_marker',
+              keepWaiting: !success,
+              matchedKeyword: matcher.label,
+              matchedLine: line,
+              vadStarted: firstAudioDetected,
+              vadEnded: playbackDoneDetected,
+              vadStartTime: firstAudioTime,
+              vadEndTime: playbackDoneTime,
+              speakerResponseText,
+              ttsMatchedLine: line,
+              message: success ? '' : 'Serial response marker detected but completion sequence is not finished'
+            };
+          },
+          buildFailure: (line, matcher, speakerResponseText) => ({
+            success: false,
+            status: 'failed_marker',
+            matchedKeyword: matcher.label,
+            matchedLine: line,
+            vadStarted: firstAudioDetected,
+            vadEnded: playbackDoneDetected,
+            vadStartTime: firstAudioTime,
+            vadEndTime: playbackDoneTime,
+            speakerResponseText,
+            ttsMatchedLine: '',
+            message: 'Serial response failure marker detected'
+          }),
+          timeoutMessage: 'Serial response marker not detected before timeout'
+        });
+        resolve(result);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
   // Once VAD starts, keep waiting up to maxWaitMs so long TTS playback can finish cleanly.
   const startMatchers = createKeywordMatchers(Array.isArray(vadStartKeywords) && vadStartKeywords.length ? vadStartKeywords : DEFAULT_RESPONSE_VAD_START_KEYWORDS);
   const endMatchers = createKeywordMatchers(Array.isArray(vadEndKeywords) && vadEndKeywords.length ? vadEndKeywords : DEFAULT_RESPONSE_VAD_END_KEYWORDS);
@@ -816,6 +1202,53 @@ function detectSpeakerResponseLog({ deviceId, timeoutMs, maxWaitMs, vadStartKeyw
 
 function detectWakeup({ deviceId, timeoutMs, keywords }) {
   const safeTimeoutMs = Math.max(1000, Number(timeoutMs) || 5000);
+  if (arguments[0] && resolveLogSource(arguments[0]) === LOG_SOURCE_SERIAL) {
+    const body = arguments[0];
+    const safeKeywords = Array.isArray(keywords) && keywords.length
+      ? keywords
+      : (isAiToy(body) ? AI_TOY_WAKE_KEYWORDS : DEFAULT_KEYWORDS);
+    const listeningMatchers = createKeywordMatchers(isAiToy(body) ? AI_TOY_LISTENING_KEYWORDS : []);
+    let wakeDetected = false;
+    let wakeMatchedKeyword = '';
+    let wakeMatchedLine = '';
+
+    return detectFromSerial({
+      serialPort: normalizeSerialPath(body),
+      baudrate: body.baudrate,
+      timeoutMs: safeTimeoutMs,
+      matchers: [
+        ...createKeywordMatchers(safeKeywords),
+        ...listeningMatchers
+      ],
+      failureMatchers: createKeywordMatchers(isAiToy(body) ? AI_TOY_FAILURE_KEYWORDS : []),
+      buildSuccess: (line, matcher) => {
+        const isWake = createKeywordMatchers(safeKeywords).some((item) => item.label === matcher.label && item.test(line));
+        const isListening = listeningMatchers.some((item) => item.label === matcher.label && item.test(line));
+        if (isWake) {
+          wakeDetected = true;
+          wakeMatchedKeyword = matcher.label;
+          wakeMatchedLine = line;
+        }
+        const success = isAiToy(body) ? Boolean(wakeDetected && isListening) : Boolean(isWake);
+        return {
+          success,
+          keepWaiting: !success,
+          matchedKeyword: wakeMatchedKeyword || matcher.label,
+          matchedLine: wakeMatchedLine || line,
+          message: success ? '' : 'Serial wake marker detected but listening marker is not finished'
+        };
+      },
+      buildFailure: (line, matcher) => ({
+        success: false,
+        status: 'failed_marker',
+        matchedKeyword: matcher.label,
+        matchedLine: line,
+        message: 'Serial wake failure marker detected'
+      }),
+      timeoutMessage: 'Serial wake marker not detected before timeout'
+    });
+  }
+
   const keywordMatchers = createKeywordMatchers(keywords);
   const detectId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 
@@ -1043,17 +1476,21 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.url === '/api/adb/devices') {
-      sendJson(res, 200, await listAdbDevices());
+      sendJson(res, 200, resolveLogSource(body) === LOG_SOURCE_SERIAL
+        ? await listSerialPorts()
+        : await listAdbDevices());
       return;
     }
 
     if (req.url === '/api/adb/health') {
-      sendJson(res, 200, await getAdbHealth(body));
+      sendJson(res, 200, resolveLogSource(body) === LOG_SOURCE_SERIAL
+        ? await getSerialHealth(body)
+        : await getAdbHealth(body));
       return;
     }
 
     if (req.url === '/api/adb/recover') {
-      sendJson(res, 200, await recoverAdbLink(body));
+      sendJson(res, 200, await recoverLogLink(body));
       return;
     }
 
