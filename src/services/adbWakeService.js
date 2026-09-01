@@ -100,14 +100,28 @@ async function postJson(path, payload, options = {}) {
   }
 }
 
+function buildDevicePayload(options = {}) {
+  return {
+    deviceType: options.deviceType || '',
+    logSource: options.logSource || '',
+    serialPort: options.serialPort || '',
+    baudrate: Number(options.baudrate) || undefined,
+  };
+}
+
 export async function detectWakeup({
   bridgeUrl,
   deviceId,
+  deviceType,
+  logSource,
+  serialPort,
+  baudrate,
   timeoutMs = 5000,
   keywords = WAKEUP_KEYWORDS,
   signal
-}) {
+} = {}) {
   const data = await postJson('/api/adb/wakeup/detect', {
+    ...buildDevicePayload({ deviceType, logSource, serialPort, baudrate }),
     deviceId: deviceId || '',
     timeoutMs,
     keywords
@@ -129,10 +143,16 @@ export async function detectWakeup({
 
 export async function listDevices({
   bridgeUrl,
+  deviceType,
+  logSource,
+  serialPort,
+  baudrate,
   timeoutMs = 5000,
   signal
 } = {}) {
-  const data = await postJson('/api/adb/devices', {}, {
+  const data = await postJson('/api/adb/devices', {
+    ...buildDevicePayload({ deviceType, logSource, serialPort, baudrate }),
+  }, {
     bridgeUrl,
     timeoutMs,
     signal
@@ -159,10 +179,15 @@ export async function listDevices({
 export async function checkListenerHealth({
   bridgeUrl,
   deviceId,
+  deviceType,
+  logSource,
+  serialPort,
+  baudrate,
   timeoutMs = 35000,
   signal
 } = {}) {
   const data = await postJson('/api/adb/health', {
+    ...buildDevicePayload({ deviceType, logSource, serialPort, baudrate }),
     deviceId: deviceId || ''
   }, {
     bridgeUrl,
@@ -187,10 +212,15 @@ export async function checkListenerHealth({
 export async function recoverListenerLink({
   bridgeUrl,
   deviceId,
+  deviceType,
+  logSource,
+  serialPort,
+  baudrate,
   timeoutMs = 70000,
   signal
 } = {}) {
   const data = await postJson('/api/adb/recover', {
+    ...buildDevicePayload({ deviceType, logSource, serialPort, baudrate }),
     deviceId: deviceId || ''
   }, {
     bridgeUrl,
@@ -211,10 +241,15 @@ export async function recoverListenerLink({
 export async function rebootSpeaker({
   bridgeUrl,
   deviceId,
+  deviceType,
+  logSource,
+  serialPort,
+  baudrate,
   recoveryTimeoutMs = 180000,
   signal
-}) {
+} = {}) {
   const data = await postJson('/api/adb/reboot-and-wait', {
+    ...buildDevicePayload({ deviceType, logSource, serialPort, baudrate }),
     deviceId: deviceId || '',
     recoveryTimeoutMs
   }, {
@@ -234,6 +269,10 @@ export async function rebootSpeaker({
 export async function detectAsr({
   bridgeUrl,
   deviceId,
+  deviceType,
+  logSource,
+  serialPort,
+  baudrate,
   timeoutMs = 8000,
   keywords = ASR_KEYWORDS,
   startKeywords = ASR_START_KEYWORDS,
@@ -241,8 +280,9 @@ export async function detectAsr({
   failureKeywords = ASR_FAILURE_KEYWORDS,
   patterns = [],
   signal
-}) {
+} = {}) {
   const data = await postJson('/api/adb/asr/detect', {
+    ...buildDevicePayload({ deviceType, logSource, serialPort, baudrate }),
     deviceId: deviceId || '',
     timeoutMs,
     keywords,
@@ -281,14 +321,33 @@ export async function detectAsr({
 export async function detectSpeakerResponseLog({
   bridgeUrl,
   deviceId,
+  deviceType,
+  logSource,
+  serialPort,
+  baudrate,
   timeoutMs = 15000,
   maxWaitMs = 60000,
+  vadStartKeywords,
+  vadEndKeywords,
+  ttsKeywords,
+  firstAudioKeywords,
+  playbackDoneKeywords,
+  listeningKeywords,
+  failureKeywords,
   signal
-}) {
+} = {}) {
   const data = await postJson('/api/adb/response/detect', {
+    ...buildDevicePayload({ deviceType, logSource, serialPort, baudrate }),
     deviceId: deviceId || '',
     timeoutMs,
-    maxWaitMs
+    maxWaitMs,
+    vadStartKeywords,
+    vadEndKeywords,
+    ttsKeywords,
+    firstAudioKeywords,
+    playbackDoneKeywords,
+    listeningKeywords,
+    failureKeywords
   }, {
     bridgeUrl,
     timeoutMs: Math.max(timeoutMs, maxWaitMs) + 1500,
