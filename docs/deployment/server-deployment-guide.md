@@ -1,5 +1,16 @@
 # VoiceAuto 服务器部署指南（公网 IP / 域名访问）
 
+## 设备桥接更新补充（2026-09-05）
+
+设备桥接默认监听 `127.0.0.1:17321`，运行于连接 ADB/串口设备的主机。它与 Node 业务后端、Vite 前端是不同进程。仅发布前端或刷新浏览器不会更新桥接。
+
+更新桥接时一并更新 `scripts/adbBridge.cjs`、`scripts/aiToySession.cjs`、`scripts/aiToyReboot.cjs` 及依赖。先停止正在执行的测试，确认 17321 端口对应本项目旧进程并关闭，再运行 `npm run adb:bridge`。查看启动输出及 `logs/adb-bridge.log`，然后重新开始测试。
+
+新增 `/api/adb/ai-toy/session` 返回 `not found` 时优先核对目标地址和旧进程。不要同时启动两个进程抢占端口或串口。公网页面中的 `127.0.0.1` 指浏览器所在主机，远端业务部署不会自动连接到测试人员的 USB 设备。
+
+恢复时序与故障检查见[设备流程说明](../product/device-test-workflows.md)。
+
+
 ## 1. 文档目标
 
 - 目标：把本地 VoiceAuto 项目部署到服务器，让他人可通过公网 IP 或域名访问。

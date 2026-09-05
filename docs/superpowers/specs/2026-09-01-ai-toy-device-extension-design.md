@@ -1,5 +1,7 @@
 # AI Toy Device Extension Design
 
+> 历史设计/实施计划：后续实现已演进为持续会话和启动确认后的恢复。当前操作与限制以[设备测试流程说明](../../product/device-test-workflows.md)为准，本文代码示例和待办状态保留用于追溯。
+
 ## Goal
 
 Merge the logic from `E:\hey_cedar_test` into VoiceAuto as a first-class device extension named `AI玩具`, while keeping the existing `Speaker` behavior available. VoiceAuto must support both ADB logcat and USB serial log ingestion for device events.

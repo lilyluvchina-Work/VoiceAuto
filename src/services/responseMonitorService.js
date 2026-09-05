@@ -426,6 +426,12 @@ export async function detectSpeakerResponse(options = {}) {
     while (now() < deadline) {
       if (signal?.aborted) throw new Error('响应监测已取消');
       const currentTime = now();
+      if (config.isPlaybackComplete?.() === true) {
+        audioEndTime = currentTime;
+        finishReason = '设备已确认播报结束，立即释放连续收音窗口';
+        speakerState = 'FINISHED';
+        break;
+      }
       const rms = calculateByteRms(analyser, analyserBuffer);
       peakRms = Math.max(peakRms, rms);
       latestDynamicThreshold = Math.max(baseThreshold, noiseFloor > 0 ? noiseFloor * 3 : 0);

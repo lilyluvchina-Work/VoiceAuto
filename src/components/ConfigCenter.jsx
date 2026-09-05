@@ -95,7 +95,6 @@ const CONFIG_TABS = [
   CONFIG_TYPES.DINGTALK,
   CONFIG_TYPES.DOUBAO_TTS,
   CONFIG_TYPES.MINIMAX,
-  CONFIG_TYPES.SERVER,
 ];
 const USER_MANAGEMENT_TAB = 'userManagement';
 
@@ -527,34 +526,8 @@ function ConfigForm({ type, onSaved, canManage }) {
     }
   };
 
-  return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-gray-700 bg-dark p-5 space-y-5">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-semibold text-white">{schema.label}</h3>
-          <p className="text-xs text-gray-500 mt-1">版本 {readConfig(type).version || 0}</p>
-        </div>
-        <button
-          className="px-4 py-2 rounded-lg bg-primary hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-sm font-medium text-white"
-          type="submit"
-          disabled={!canManage}
-        >
-          保存配置
-        </button>
-      </div>
-
-      <ParameterPreview
-        type={type}
-        config={previewConfig}
-        onDingTalkParameterChange={handleChange}
-        onTapdParameterChange={handleChange}
-        canManage={canManage}
-      />
-
-      {loading && <p className="text-sm text-gray-400">正在从数据库加载配置...</p>}
-      {![CONFIG_TYPES.TAPD, CONFIG_TYPES.DINGTALK].includes(type) && (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {(FIELD_ORDER[type] || []).map((field) => {
+  const advancedFields = new Set(['timeout', 'temperature', 'maxCompletionTokens', 'debugDirectoryMapping']);
+  const renderConfigField = (field) => {
           if (field === 'enabled' || field === 'debugDirectoryMapping') {
             return (
               <label key={field} className="flex items-center gap-3 rounded-lg border border-gray-700 bg-gray-900 px-3 py-3 text-sm text-gray-300">
@@ -587,8 +560,48 @@ function ConfigForm({ type, onSaved, canManage }) {
               />
             </label>
           );
-        })}
+
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-lg border border-gray-700 bg-dark p-5 space-y-5">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-white">{schema.label}</h3>
+          <p className="text-xs text-gray-500 mt-1">版本 {readConfig(type).version || 0}</p>
+        </div>
+        <button
+          className="px-4 py-2 rounded-lg bg-primary hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-sm font-medium text-white"
+          type="submit"
+          disabled={!canManage}
+        >
+          保存配置
+        </button>
       </div>
+
+      <ParameterPreview
+        type={type}
+        config={previewConfig}
+        onDingTalkParameterChange={handleChange}
+        onTapdParameterChange={handleChange}
+        canManage={canManage}
+      />
+
+      {loading && <p className="text-sm text-gray-400">正在从数据库加载配置...</p>}
+      {![CONFIG_TYPES.TAPD, CONFIG_TYPES.DINGTALK].includes(type) && (
+      <>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {(FIELD_ORDER[type] || []).filter(field => !advancedFields.has(field)).map(renderConfigField)}
+        </div>
+        {(FIELD_ORDER[type] || []).some(field => advancedFields.has(field)) && (
+          <details className="rounded-lg border border-gray-700 p-3">
+            <summary className="cursor-pointer text-sm text-gray-400">高级设置</summary>
+            <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+              {(FIELD_ORDER[type] || []).filter(field => advancedFields.has(field)).map(renderConfigField)}
+            </div>
+          </details>
+        )}
+      </>
       )}
 
       <ConfigSaveMessage type={messageType} message={message} />
@@ -1109,7 +1122,7 @@ export default function ConfigCenter() {
   useEffect(() => {
     const onOpenConfigType = (event) => {
       const requestedType = event?.detail?.type;
-      if (CONFIG_SCHEMAS[requestedType]) setActiveType(requestedType);
+      if (CONFIG_TABS.includes(requestedType)) setActiveType(requestedType);
     };
     window.addEventListener('voiceauto:open-config-type', onOpenConfigType);
     return () => window.removeEventListener('voiceauto:open-config-type', onOpenConfigType);
@@ -1154,8 +1167,13 @@ export default function ConfigCenter() {
       ) : (
         <ConfigForm key={`${activeType}-${refreshKey}`} type={activeType} onSaved={refresh} canManage={canManage} />
       )}
-      <ToolUsagePanel refreshKey={refreshKey} />
-      <OperationLogPanel refreshKey={refreshKey} />
+      <details className="rounded-xl border border-gray-700 bg-dark p-4">
+        <summary className="cursor-pointer text-sm text-gray-300">使用统计与操作记录</summary>
+        <div className="mt-4 space-y-4">
+          <ToolUsagePanel refreshKey={refreshKey} />
+          <OperationLogPanel refreshKey={refreshKey} />
+        </div>
+      </details>
     </div>
   );
 }

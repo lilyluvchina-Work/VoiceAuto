@@ -14,10 +14,24 @@ import {
   sortTestCasesByDirectoryOrder,
 } from '../utils/testCaseOrdering';
 import {
+  buildRetryQueueItem,
   buildContinueDecision,
-  buildMultiTurnQueue,
 } from '../utils/multiTurnDialogue';
+import { buildDeviceExecutionQueue } from '../utils/deviceExecutionQueue';
+import {
+  DEVICE_TYPES,
+  LOG_SOURCES,
+  resolveDeviceRuntimeOptions,
+} from '../config/deviceProfiles';
 import { shouldExpectVoiceResponse } from '../modules/tapd/utils/tapdParser';
+import {
+  fetchObservations,
+  fetchTraces,
+  getDefaultLangfuseEnvironmentKey,
+} from '../modules/langfuse/services/langfuseService';
+import { waitForLangfuseResponseComplete } from '../utils/langfuseResponseGate';
+import { runAiToyTest } from '../runners/aiToyRunner';
+import { planSpeakerRecovery } from '../utils/speakerRecovery';
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const POST_REBOOT_WAKE_RETRY_DELAY_MS = 120000;
@@ -26,6 +40,8 @@ const POST_WAKE_TTS_QUEUE_RESET_MS = 180;
 const TEST_AUDIO_START_TIMEOUT_MS = 10000;
 const RESPONSE_END_MAX_WAIT_MS = 120000;
 const RESPONSE_END_WAKE_GUARD_MS = 3000;
+const LANGFUSE_RESPONSE_POLL_INTERVAL_MS = 3000;
+const SPEAKER_CONTINUOUS_PLAYBACK_DONE_KEYWORD = '/SpeechService.*onLiveTtsEnd==>(?:false\\b|\\$stopRecord)/i';
 
 const numberOrDefault = (value, fallback) => {
   const parsed = Number(value);
@@ -196,6 +212,18 @@ const textSimilarity = (left, right) => {
 
 const parseListConfig = parseWakeKeywords;
 
+const toLines = (value) => Array.isArray(value) ? value : parseListConfig(value);
+
+const resolveConfiguredList = (value, fallback = []) => {
+  const configured = parseListConfig(value);
+  return configured.length ? configured : toLines(fallback);
+};
+
+const matchesSpeakerRebootFailure = (value) => (
+  /reboot|boot_completed|device offline|device not found|adb logcat exited|failed_marker/i
+    .test(String(value || ''))
+);
+
 const logInput = (stage, payload = {}) => {
   const detail = {
     id: `process_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -232,7 +260,12 @@ export default function useTestRunner({ onTestComplete } = {}) {
     return generated && moduleMatched;
   }));
 
-  const totalCases = buildMultiTurnQueue(playableAudios, testOptions.loopCount || 1).length;
+  const deviceRuntime = resolveDeviceRuntimeOptions(testOptions);
+  const isAiToyRun = deviceRuntime.deviceType === DEVICE_TYPES.AI_TOY;
+  const isSpeakerRun = deviceRuntime.deviceType === DEVICE_TYPES.SPEAKER;
+  const totalCases = buildDeviceExecutionQueue(playableAudios, testOptions.loopCount || 1, deviceRuntime.deviceType, {
+    speakerContinuousDialogue: deviceRuntime.speakerContinuousDialogue,
+  }).length;
 
   const [currentAudioText, setCurrentAudioText] = useState('');
   const startTimeRef = useRef(null);
@@ -259,8 +292,18 @@ export default function useTestRunner({ onTestComplete } = {}) {
       return;
     }
 
-    const queue = buildMultiTurnQueue(playableAudios, testOptions.loopCount);
+    const queue = buildDeviceExecutionQueue(playableAudios, testOptions.loopCount, deviceRuntime.deviceType, {
+      speakerContinuousDialogue: deviceRuntime.speakerContinuousDialogue,
+    });
     const shouldStop = () => !isPlayingRef.current || runIdRef.current !== runId;
+    const resolveStopReason = (activeRunId) => {
+      if (!isPlayingRef.current) return isPausedRef.current ? 'paused' : 'not_playing';
+      if (runIdRef.current !== activeRunId) return 'run_id_changed';
+      return '';
+    };
+    const isSpeakerContinuousDialogue = isSpeakerRun
+      && Boolean(deviceRuntime.speakerContinuousDialogue);
+    let lastSpeakerPlaybackDoneResult = null;
 
     const reportRunId = createReportRunId();
     reportRunIdRef.current = reportRunId;
@@ -272,6 +315,10 @@ export default function useTestRunner({ onTestComplete } = {}) {
       runId: reportRunId,
       autonomousWake: testOptions.autonomousWake || {},
       autonomousResponse: testOptions.autonomousResponse || {},
+      deviceType: deviceRuntime.deviceType,
+      logSource: deviceRuntime.logSource,
+      serialPort: deviceRuntime.serialPort,
+      baudrate: deviceRuntime.baudrate,
       queueLength: queue.length
     });
     notifyDingTalk('TEST_STARTED', {
@@ -285,10 +332,12 @@ export default function useTestRunner({ onTestComplete } = {}) {
     });
 
     const ensureSpeakerWakeup = async (item, cursor) => {
-      const config = testOptions.autonomousWake || {};
-      const autonomousWakeEnabled = Boolean(config.enabled);
+      const config = { ...(testOptions.autonomousWake || {}) };
+      const autonomousWakeEnabled = Boolean(config.enabled || isSpeakerContinuousDialogue || item.forceWakeDetection);
       const wakeKeywords = parseWakeKeywords(config.keywords);
-      const caseRebootCountRef = { current: 0 };
+      const profileWakeKeywords = toLines(deviceRuntime.profile.wake?.keywords);
+      const deviceLabel = deviceRuntime.profile?.label || 'Speaker';
+      const caseRebootCountRef = { current: Number(item.recoveryRebootCount || 0) };
       let lastRebootResult = '';
 
       while (!shouldStop()) {
@@ -326,8 +375,12 @@ export default function useTestRunner({ onTestComplete } = {}) {
           detectPromise = adbWakeService.detectWakeup({
             bridgeUrl: config.bridgeUrl,
             deviceId: config.deviceId,
-            keywords: wakeKeywords.length ? wakeKeywords : undefined,
-            timeoutMs: (Number(config.detectionTimeoutMs) || 5000) + 3000,
+            deviceType: deviceRuntime.deviceType,
+            logSource: deviceRuntime.logSource,
+            serialPort: deviceRuntime.serialPort,
+            baudrate: deviceRuntime.baudrate,
+            keywords: wakeKeywords.length ? wakeKeywords : profileWakeKeywords,
+            timeoutMs: (Number(config.detectionTimeoutMs) || deviceRuntime.profile.defaults.wakeDetectionTimeoutMs || 5000) + 3000,
             signal: abortControllerRef.current?.signal
           }).catch((err) => ({ __error: err }));
           dispatch(actions.setPlaybackState({ currentType: 'wake' }));
@@ -470,10 +523,10 @@ export default function useTestRunner({ onTestComplete } = {}) {
           continue;
         }
 
-        const maxRebootsPerCase = Math.max(0, Number(config.maxRebootsPerCase) || 0);
-        const maxRebootsPerRun = Math.max(0, Number(config.maxRebootsPerRun) || 0);
+        const maxRebootsPerCase = Math.max(0, Number(config.maxRebootsPerCase) || 1);
+        const maxRebootsPerRun = Math.max(0, Number(config.maxRebootsPerRun) || 3);
         if (caseRebootCountRef.current >= maxRebootsPerCase || rebootCountRef.current >= maxRebootsPerRun) {
-          const wakeFailureMessage = `唤醒失败 ${wakeFailCountRef.current}/${failureThreshold}，已达到 ADB 重启上限：${failReason}`;
+          const wakeFailureMessage = `唤醒失败 ${wakeFailCountRef.current}/${failureThreshold}，已达到 ${deviceLabel} 重启上限：${failReason}`;
           dispatch(actions.setPlaybackState({
             currentType: 'wake-failed',
             status: 'failed',
@@ -505,7 +558,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
         }
 
         dispatch(actions.setPlaybackState({ currentType: 'reboot' }));
-        setCurrentAudioText(`唤醒失败 ${wakeFailCountRef.current}/${failureThreshold}，正在重启 Speaker`);
+        setCurrentAudioText(`唤醒失败 ${wakeFailCountRef.current}/${failureThreshold}，正在重启 ${deviceLabel}`);
         notifyDingTalk('WAKE_CONSECUTIVE_FAILED', {
           state,
           runId: reportRunIdRef.current,
@@ -513,7 +566,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           details: [
             `用例ID：${resolveAudioCaseId(item.audio, item.listIndex)}`,
             `目标文本：${item.audio.text || '/'}`,
-            `连续唤醒失败 ${wakeFailCountRef.current}/${failureThreshold}，即将尝试重启 Speaker`,
+            `连续唤醒失败 ${wakeFailCountRef.current}/${failureThreshold}，即将尝试重启 ${deviceLabel}`,
             `失败原因：${failReason || '/'}`,
           ],
         });
@@ -530,11 +583,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
           rebootResult = await adbWakeService.rebootSpeaker({
             bridgeUrl: config.bridgeUrl,
             deviceId: config.deviceId,
+            deviceType: deviceRuntime.deviceType,
+            logSource: deviceRuntime.logSource,
+            serialPort: deviceRuntime.serialPort,
+            baudrate: deviceRuntime.baudrate,
             recoveryTimeoutMs: config.recoveryTimeoutMs,
             signal: abortControllerRef.current?.signal
           });
         } catch (err) {
-          const rebootFailReason = `ADB 重启失败：${err?.message || err}`;
+          const rebootFailReason = `${deviceLabel} 重启失败：${err?.message || err}`;
           dispatch(actions.setPlaybackState({
             currentType: 'wake-failed',
             status: 'failed',
@@ -562,10 +619,12 @@ export default function useTestRunner({ onTestComplete } = {}) {
 
         rebootCountRef.current += 1;
         caseRebootCountRef.current += 1;
+        item.recoveryRebootCount = caseRebootCountRef.current;
+        if (shouldStop()) return null;
         wakeFailCountRef.current = 0;
 
-        if (!rebootResult.success || !rebootResult.bootCompleted) {
-          const rebootFailReason = rebootResult.message || 'Speaker 重启后未恢复';
+        if (rebootResult.success !== true || rebootResult.bootCompleted !== true) {
+          const rebootFailReason = rebootResult.message || `${deviceLabel} 重启后未恢复`;
           dispatch(actions.setPlaybackState({
             currentType: 'wake-failed',
             status: 'failed',
@@ -591,6 +650,25 @@ export default function useTestRunner({ onTestComplete } = {}) {
           throw error;
         }
 
+        if (deviceRuntime.logSource !== LOG_SOURCES.SERIAL && rebootResult.recoveredDeviceId) {
+          config.deviceId = rebootResult.recoveredDeviceId;
+          dispatch(actions.setAutonomousWake({ deviceId: rebootResult.recoveredDeviceId }));
+        }
+
+        const recoveredSerialPort = deviceRuntime.logSource === LOG_SOURCES.SERIAL
+          ? String(rebootResult.recoveredDeviceId || '').trim()
+          : '';
+        if (recoveredSerialPort && recoveredSerialPort !== deviceRuntime.serialPort) {
+          deviceRuntime.serialPort = recoveredSerialPort;
+          dispatch(actions.setDeviceOptions({ serialPort: recoveredSerialPort }));
+          dispatch(actions.setAutonomousWake({ deviceId: recoveredSerialPort }));
+          logWake('reboot.serial_port.recovered', {
+            cursor,
+            previousSerialPort: rebootResult.health?.requestedSerialPort || '',
+            recoveredSerialPort
+          });
+        }
+
         lastRebootResult = rebootResult.message || 'reboot_recovered';
         logWake('reboot.recovered', {
           cursor,
@@ -607,7 +685,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           ],
         });
         dispatch(actions.setPlaybackState({ currentType: 'reboot-wait' }));
-        setCurrentAudioText('Speaker 已重启恢复，等待 2 分钟后重新唤醒当前用例');
+        setCurrentAudioText(`${deviceLabel} 已重启恢复，等待 2 分钟后重新唤醒当前用例`);
         logWake('reboot.wait_before_retry.start', {
           cursor,
           delayMs: POST_REBOOT_WAKE_RETRY_DELAY_MS
@@ -633,6 +711,53 @@ export default function useTestRunner({ onTestComplete } = {}) {
     let failedCases = 0;
 
     try {
+      if (isAiToyRun) {
+        await runAiToyTest({
+          runId,
+          reportRunId,
+          queue,
+          state,
+          wakeWord,
+          defaultVoiceConfig,
+          testOptions,
+          deviceRuntime,
+          dispatch,
+          setCurrentAudioText,
+          refs: {
+            isPlayingRef,
+            isPausedRef,
+            runIdRef,
+            firstTestAudioTimeRef,
+            lastTestAudioTimeRef,
+            wakeFailCountRef,
+            rebootCountRef,
+            abortControllerRef,
+          },
+          services: {
+            ttsService,
+            playAudioItem,
+            adbWakeService,
+            notifyDingTalk,
+          },
+          helpers: {
+            wait,
+            resolveAudioCaseId,
+            textSimilarity,
+            buildRetryQueueItem,
+            buildContinueDecision,
+            resolveExpectsVoiceResponse,
+            logWake,
+            logInput,
+            logResponse,
+            createStageError,
+            resolveConfiguredList,
+            toLines,
+          },
+          onTestComplete,
+        });
+        return;
+      }
+
       for (let cursor = 0; cursor < queue.length; cursor++) {
         if (shouldStop()) return;
 
@@ -673,6 +798,27 @@ export default function useTestRunner({ onTestComplete } = {}) {
           willUseFixedDelay: item.needWakeup && !autonomousWakeEnabled
         });
         if (!item.needWakeup) {
+          if (isSpeakerContinuousDialogue) {
+            const playbackDone = Boolean(
+              lastSpeakerPlaybackDoneResult?.vadEnded
+              || lastSpeakerPlaybackDoneResult?.status === 'playback_done'
+            );
+            logWake('continuous_speaker.wait_for_playback_done', {
+              cursor,
+              dialogueTurnKey: item.dialogueTurnKey,
+              playbackDone,
+              status: lastSpeakerPlaybackDoneResult?.status || '',
+              matchedLine: lastSpeakerPlaybackDoneResult?.vadEndLine || lastSpeakerPlaybackDoneResult?.matchedLine || ''
+            });
+            if (!playbackDone) {
+              const message = 'Speaker 连续对话未检测到上一轮 onLiveTtsEnd 播报结束标记，停止触发下一条测试音频';
+              setCurrentAudioText(message);
+              queue[cursor] = planSpeakerRecovery(item, { message });
+              lastSpeakerPlaybackDoneResult = null;
+              cursor -= 1;
+              continue;
+            }
+          }
           dispatch(actions.setPlaybackState({ currentType: 'test-ready' }));
           setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 多轮对话第 ${item.turnIndex}/${item.turnTotal} 轮，复用唤醒会话`);
           logWake('post_wake.skipped_reused_session', {
@@ -687,7 +833,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           await wait(wakeWord.wakeAfterDelay);
         } else {
           dispatch(actions.setPlaybackState({ currentType: 'test-ready' }));
-          setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · Speaker 已唤醒，播放测试音频`);
+          setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · ${deviceRuntime.profile?.label || '设备'} 已唤醒，播放测试音频`);
           logWake('post_wake.ready_to_play_test_audio', {
             cursor,
             wakeAudioPlayStatus: wakeResult?.wake_audio_play_status,
@@ -695,10 +841,31 @@ export default function useTestRunner({ onTestComplete } = {}) {
             wakeEventTime: wakeResult?.wake_event_time,
             testAudioGapMs: POST_WAKE_TEST_AUDIO_GAP_MS
           });
-          await wait(POST_WAKE_TEST_AUDIO_GAP_MS);
+          if (!isSpeakerContinuousDialogue) await wait(POST_WAKE_TEST_AUDIO_GAP_MS);
         }
 
-        if (shouldStop()) return;
+        logInput('test_audio.before_play.check', {
+          cursor,
+          audioId: item.audio.id,
+          targetText: item.audio.text,
+          currentType: 'test-ready',
+          stopReason: resolveStopReason(runId),
+          isPlaying: isPlayingRef.current,
+          activeRunId: runIdRef.current,
+          runId
+        });
+        if (shouldStop()) {
+          logInput('test_audio.stopped_before_play', {
+            cursor,
+            audioId: item.audio.id,
+            targetText: item.audio.text,
+            stopReason: resolveStopReason(runId),
+            isPlaying: isPlayingRef.current,
+            activeRunId: runIdRef.current,
+            runId
+          });
+          return;
+        }
 
         // 播放测试音频
         ttsService.stopAudio();
@@ -706,11 +873,23 @@ export default function useTestRunner({ onTestComplete } = {}) {
           cursor,
           audioId: item.audio.id,
           targetText: item.audio.text,
-          resetDelayMs: POST_WAKE_TTS_QUEUE_RESET_MS
+          resetDelayMs: POST_WAKE_TTS_QUEUE_RESET_MS,
+          deviceType: deviceRuntime.deviceType
         });
-        await wait(POST_WAKE_TTS_QUEUE_RESET_MS);
+        if (!isSpeakerContinuousDialogue) await wait(POST_WAKE_TTS_QUEUE_RESET_MS);
 
-        if (shouldStop()) return;
+        if (shouldStop()) {
+          logInput('test_audio.stopped_before_play', {
+            cursor,
+            audioId: item.audio.id,
+            targetText: item.audio.text,
+            stopReason: resolveStopReason(runId),
+            isPlaying: isPlayingRef.current,
+            activeRunId: runIdRef.current,
+            runId
+          });
+          return;
+        }
 
         dispatch(actions.setPlaybackState({
           currentIndex: cursor,
@@ -740,28 +919,49 @@ export default function useTestRunner({ onTestComplete } = {}) {
         let inputChainPassed = null;
         let responseResult = null;
         let responseLogResult = null;
+        let devicePlaybackComplete = false;
+        let langfuseResponseResult = null;
         let responseChainPassed = null;
         let responseTextSimilarity = null;
         let testAudioStarted = false;
+        let continuousSpeakerPlaybackDonePassed = true;
+        const nextItem = queue[cursor + 1] || null;
+        const shouldGateNextSpeakerTurn = Boolean(
+          isSpeakerContinuousDialogue
+        );
         const autonomousInputConfig = testOptions.autonomousInput || {};
         const autonomousInputEnabled = Boolean(autonomousInputConfig.enabled);
         const autonomousResponseConfig = testOptions.autonomousResponse || {};
         const expectsVoiceResponse = resolveExpectsVoiceResponse(item.audio);
         const autonomousResponseEnabled = Boolean(autonomousResponseConfig.enabled && expectsVoiceResponse);
-        const asrKeywords = parseListConfig(autonomousInputConfig.asrKeywords);
-        const asrStartKeywords = parseListConfig(autonomousInputConfig.asrStartKeywords);
-        const asrEndKeywords = parseListConfig(autonomousInputConfig.asrEndKeywords || autonomousInputConfig.asrKeywords);
-        const asrFailureKeywords = parseListConfig(autonomousInputConfig.asrFailureKeywords);
-        const asrPatterns = parseListConfig(autonomousInputConfig.asrPatterns);
+        const langfuseResponseGateEnabled = autonomousResponseConfig.langfuseResponseGateEnabled === true;
+        const speakerSingleTurnLangfuseWakeGateEnabled = Boolean(
+          isSpeakerRun
+          && !isSpeakerContinuousDialogue
+          && autonomousResponseEnabled
+          && langfuseResponseGateEnabled
+        );
+        const asrKeywords = resolveConfiguredList(autonomousInputConfig.asrKeywords, deviceRuntime.profile.input?.endKeywords);
+        const asrStartKeywords = resolveConfiguredList(autonomousInputConfig.asrStartKeywords, deviceRuntime.profile.input?.startKeywords);
+        const asrEndKeywords = resolveConfiguredList(
+          autonomousInputConfig.asrEndKeywords || autonomousInputConfig.asrKeywords,
+          deviceRuntime.profile.input?.endKeywords || asrKeywords
+        );
+        const asrFailureKeywords = resolveConfiguredList(autonomousInputConfig.asrFailureKeywords, deviceRuntime.profile.input?.failureKeywords);
+        const asrPatterns = resolveConfiguredList(autonomousInputConfig.asrPatterns, deviceRuntime.profile.input?.extractPatterns);
         const caseId = resolveAudioCaseId(item.audio, item.listIndex);
         const playStartTime = Date.now();
         let asrDetectPromise = null;
         let responseDetectPromise = null;
         let responseLogDetectPromise = null;
+        let langfuseResponsePromise = null;
+        let langfuseEnvKey = '';
+        let langfuseFromTime = '';
+        let langfuseTimeoutMs = 0;
+        let langfusePollIntervalMs = 0;
 
-        if (autonomousInputEnabled) {
-          dispatch(actions.setPlaybackState({ currentType: 'asr-detect' }));
-          logInput('asr.detect.start.before_audio', {
+        const startAsrDetection = (stage) => {
+          logInput(stage, {
             cursor,
             caseId,
             targetText: item.audio.text,
@@ -771,17 +971,26 @@ export default function useTestRunner({ onTestComplete } = {}) {
             failureKeywords: asrFailureKeywords,
             patterns: asrPatterns
           });
-          asrDetectPromise = adbWakeService.detectAsr({
+          return adbWakeService.detectAsr({
             bridgeUrl: testOptions.autonomousWake?.bridgeUrl,
             deviceId: testOptions.autonomousWake?.deviceId,
-            timeoutMs: Number(autonomousInputConfig.asrDetectionTimeoutMs) || 8000,
+            deviceType: deviceRuntime.deviceType,
+            logSource: deviceRuntime.logSource,
+            serialPort: deviceRuntime.serialPort,
+            baudrate: deviceRuntime.baudrate,
+            timeoutMs: Number(autonomousInputConfig.asrDetectionTimeoutMs) || deviceRuntime.profile.defaults.asrDetectionTimeoutMs || 8000,
             keywords: asrKeywords.length ? asrKeywords : undefined,
             startKeywords: asrStartKeywords.length ? asrStartKeywords : undefined,
             endKeywords: asrEndKeywords.length ? asrEndKeywords : undefined,
             failureKeywords: asrFailureKeywords.length ? asrFailureKeywords : undefined,
             patterns: asrPatterns,
             signal: abortControllerRef.current?.signal
-          });
+          }).catch((err) => ({ __error: err }));
+        };
+
+        if (autonomousInputEnabled) {
+          dispatch(actions.setPlaybackState({ currentType: 'asr-detect' }));
+          asrDetectPromise = startAsrDetection('asr.detect.start.before_audio');
           dispatch(actions.setPlaybackState({ currentType: 'test' }));
         }
 
@@ -848,9 +1057,11 @@ export default function useTestRunner({ onTestComplete } = {}) {
           durationMs: playEndTime - playStartTime
         });
 
-        if (autonomousResponseEnabled && success) {
+        if (isSpeakerRun && (autonomousResponseEnabled || shouldGateNextSpeakerTurn) && success) {
           dispatch(actions.setPlaybackState({ currentType: 'response-detect' }));
-          setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 正在采集 Speaker 响应`);
+          setCurrentAudioText(speakerSingleTurnLangfuseWakeGateEnabled
+            ? `第 ${item.round}/${item.totalRounds} 轮 · 正在等待 Langfuse response_complete`
+            : `第 ${item.round}/${item.totalRounds} 轮 · 正在采集 Speaker 响应`);
           // Normalize once per case so audio VAD, ADB VAD, and the final wake guard share one policy.
           const responseRuntimeConfig = buildResponseRuntimeConfig(autonomousResponseConfig, item);
           const { monitorOptions, responseMaxWaitMs, afterFinishCooldownMs } = responseRuntimeConfig;
@@ -876,24 +1087,100 @@ export default function useTestRunner({ onTestComplete } = {}) {
             language: monitorOptions.language
           });
 
-          responseDetectPromise = responseMonitorService.detectSpeakerResponse({
-            ...monitorOptions,
-            signal: abortControllerRef.current?.signal,
-            onLog: (stage, payload = {}) => logResponse(stage, {
+          if (!speakerSingleTurnLangfuseWakeGateEnabled && autonomousResponseEnabled) {
+            responseDetectPromise = responseMonitorService.detectSpeakerResponse({
+              ...monitorOptions,
+              isPlaybackComplete: shouldGateNextSpeakerTurn ? () => devicePlaybackComplete : undefined,
+              signal: abortControllerRef.current?.signal,
+              onLog: (stage, payload = {}) => logResponse(stage, {
+                cursor,
+                caseId,
+                targetText: item.audio.text,
+                ...payload
+              })
+            }).catch((err) => ({ __error: err }));
+          }
+
+          if (!speakerSingleTurnLangfuseWakeGateEnabled) {
+            responseLogDetectPromise = adbWakeService.detectSpeakerResponseLog({
+              bridgeUrl: testOptions.autonomousWake?.bridgeUrl,
+              deviceId: testOptions.autonomousWake?.deviceId,
+              deviceType: deviceRuntime.deviceType,
+              logSource: deviceRuntime.logSource,
+              serialPort: deviceRuntime.serialPort,
+              baudrate: deviceRuntime.baudrate,
+              timeoutMs: monitorOptions.responseWindowMs,
+              maxWaitMs: responseMaxWaitMs,
+              vadStartKeywords: deviceRuntime.profile.response?.vadStartKeywords,
+              vadEndKeywords: deviceRuntime.profile.response?.vadEndKeywords,
+              ttsKeywords: deviceRuntime.profile.response?.ttsKeywords,
+              firstAudioKeywords: deviceRuntime.profile.response?.firstAudioKeywords,
+              playbackDoneKeywords: shouldGateNextSpeakerTurn
+                ? [SPEAKER_CONTINUOUS_PLAYBACK_DONE_KEYWORD]
+                : deviceRuntime.profile.response?.playbackDoneKeywords,
+              listeningKeywords: deviceRuntime.profile.response?.listeningKeywords,
+              failureKeywords: deviceRuntime.profile.failure?.keywords,
+              signal: abortControllerRef.current?.signal
+            }).then(result => {
+              devicePlaybackComplete = result?.success === true
+                && result?.status === 'playback_done';
+              return result;
+            }).catch((err) => ({ __error: err }));
+          }
+
+          if (speakerSingleTurnLangfuseWakeGateEnabled) {
+            langfuseEnvKey = testOptions.selectedLangfuseEnv || getDefaultLangfuseEnvironmentKey();
+            langfuseFromTime = new Date(Math.max(0, playStartTime - 3000)).toISOString();
+            langfuseTimeoutMs = Math.max(
+              1000,
+              Number(autonomousResponseConfig.langfuseResponseTimeoutMs)
+              || Number(autonomousResponseConfig.responseMaxWaitMs)
+              || RESPONSE_END_MAX_WAIT_MS
+            );
+            langfusePollIntervalMs = Math.max(
+              1000,
+              Number(autonomousResponseConfig.langfuseResponsePollIntervalMs)
+              || LANGFUSE_RESPONSE_POLL_INTERVAL_MS
+            );
+
+            logResponse('response.langfuse.detect.start', {
               cursor,
               caseId,
               targetText: item.audio.text,
-              ...payload
-            })
-          }).catch((err) => ({ __error: err }));
+              envKey: langfuseEnvKey,
+              fromTimestamp: langfuseFromTime,
+              timeoutMs: langfuseTimeoutMs,
+              pollIntervalMs: langfusePollIntervalMs
+            });
 
-          responseLogDetectPromise = adbWakeService.detectSpeakerResponseLog({
-            bridgeUrl: testOptions.autonomousWake?.bridgeUrl,
-            deviceId: testOptions.autonomousWake?.deviceId,
-            timeoutMs: monitorOptions.responseWindowMs,
-            maxWaitMs: responseMaxWaitMs,
-            signal: abortControllerRef.current?.signal
-          }).catch((err) => ({ __error: err }));
+            langfuseResponsePromise = waitForLangfuseResponseComplete({
+              envKey: langfuseEnvKey,
+              fromTimestamp: langfuseFromTime,
+              toTimestamp: () => new Date(Date.now() + 1000).toISOString(),
+              testCase: {
+                ...item,
+                caseId,
+                audioId: item.audio.id,
+                audio: item.audio,
+              },
+              fetchTraces,
+              fetchObservations,
+              timeoutMs: langfuseTimeoutMs,
+              intervalMs: langfusePollIntervalMs,
+              signal: abortControllerRef.current?.signal,
+              onAttempt: (payload = {}) => logResponse('response.langfuse.detect.poll', {
+                cursor,
+                caseId,
+                targetText: item.audio.text,
+                envKey: langfuseEnvKey,
+                attempts: payload.attempts,
+                tracesCount: payload.tracesCount,
+                observationsCount: payload.observationsCount,
+                matchedObservationId: payload.candidate?.matchedObservationId || '',
+                error: payload.error?.message || ''
+              })
+            });
+          }
         }
 
         if (autonomousInputEnabled) {
@@ -961,8 +1248,8 @@ export default function useTestRunner({ onTestComplete } = {}) {
           const responseOutcome = await responseDetectPromise;
           if (responseOutcome?.__error) {
             const err = responseOutcome.__error;
-            success = false;
             responseChainPassed = false;
+            success = false;
             failStage = failStage || 'RESPONSE_AUDIO_RECORD';
             failReason = failReason || (err?.message || 'Speaker 响应监测失败');
             logResponse('response.detect.error', {
@@ -1009,7 +1296,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
             });
           }
 
-          if (responseLogDetectPromise) {
+          if (!speakerSingleTurnLangfuseWakeGateEnabled && responseLogDetectPromise) {
             const logOutcome = await responseLogDetectPromise;
             if (logOutcome?.__error) {
               logResponse('response.adb.detect.error', {
@@ -1051,6 +1338,82 @@ export default function useTestRunner({ onTestComplete } = {}) {
               || responseResult?.responseFailReason
               || 'Speaker 播报音频收录失败';
           }
+        } else if (langfuseResponsePromise) {
+          dispatch(actions.setPlaybackState({ currentType: 'langfuse-response-detect' }));
+          setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 正在等待 Langfuse response_complete`);
+          langfuseResponseResult = await langfuseResponsePromise;
+
+          if (langfuseResponseResult?.success) {
+            responseLogResult = {
+              success: true,
+              status: langfuseResponseResult.status,
+              speakerResponseText: langfuseResponseResult.responseText,
+              ttsMatchedLine: langfuseResponseResult.matchedObservationName
+                || langfuseResponseResult.matchedObservationId
+                || '',
+              message: 'Langfuse response_complete 已确认',
+            };
+          }
+
+          responseChainPassed = Boolean(langfuseResponseResult?.success);
+          logResponse('response.langfuse.detect.result', {
+            cursor,
+            caseId,
+            targetText: item.audio.text,
+            envKey: langfuseEnvKey,
+            success: responseChainPassed,
+            status: langfuseResponseResult?.status || '',
+            attempts: langfuseResponseResult?.attempts || 0,
+            responseText: langfuseResponseResult?.responseText || '',
+            matchedObservationId: langfuseResponseResult?.matchedObservationId || '',
+            matchedTraceId: langfuseResponseResult?.matchedTraceId || '',
+            message: langfuseResponseResult?.message || ''
+          });
+
+          if (!responseChainPassed) {
+            success = false;
+            failStage = failStage || 'LANGFUSE_RESPONSE';
+            failReason = failReason || (langfuseResponseResult?.message || 'Langfuse response_complete 获取超时，标记本轮失败并进入下一轮唤醒');
+            setCurrentAudioText('Langfuse response_complete 获取超时，标记本轮失败并进入下一轮唤醒');
+            logResponse('scheme2.langfuse_response_timeout_continue_next_wake', {
+              cursor,
+              caseId,
+              targetText: item.audio.text,
+              status: langfuseResponseResult?.status || 'timeout',
+              message: failReason
+            });
+          }
+        } else if (responseLogDetectPromise) {
+          dispatch(actions.setPlaybackState({ currentType: 'response-detect' }));
+          setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 正在等待 Speaker 播报结束`);
+          const logOutcome = await responseLogDetectPromise;
+          if (logOutcome?.__error) {
+            success = false;
+            failStage = failStage || 'SPEAKER_CONTINUOUS_PLAYBACK_DONE';
+            failReason = failReason || (logOutcome.__error?.message || 'Speaker 连续对话播报结束监听失败');
+            logResponse('continuous_speaker.playback_done.error', {
+              cursor,
+              caseId,
+              targetText: item.audio.text,
+              message: failReason
+            });
+          } else {
+            responseLogResult = logOutcome;
+            lastSpeakerPlaybackDoneResult = responseLogResult;
+            logResponse('continuous_speaker.playback_done.result', {
+              cursor,
+              caseId,
+              targetText: item.audio.text,
+              success: Boolean(responseLogResult.success),
+              status: responseLogResult.status,
+              matchedLine: responseLogResult.vadEndLine || responseLogResult.matchedLine || responseLogResult.ttsMatchedLine || ''
+            });
+            if (!responseLogResult.success || (!responseLogResult.vadEnded && responseLogResult.status !== 'playback_done')) {
+              success = false;
+              failStage = failStage || 'SPEAKER_CONTINUOUS_PLAYBACK_DONE';
+              failReason = failReason || 'Speaker 连续对话未检测到 onLiveTtsEnd 播报结束标记';
+            }
+          }
         } else {
           responseChainPassed = autonomousResponseEnabled ? false : null;
           if ((testOptions.autonomousResponse || {}).enabled && !expectsVoiceResponse) {
@@ -1076,6 +1439,38 @@ export default function useTestRunner({ onTestComplete } = {}) {
           }
         }
 
+        if (responseLogResult && shouldGateNextSpeakerTurn) {
+          lastSpeakerPlaybackDoneResult = responseLogResult;
+        }
+        if (shouldGateNextSpeakerTurn) {
+          const playbackDone = devicePlaybackComplete;
+          continuousSpeakerPlaybackDonePassed = playbackDone;
+          const speakerRebooted = matchesSpeakerRebootFailure([
+            responseLogResult?.status,
+            responseLogResult?.matchedKeyword,
+            responseLogResult?.matchedLine,
+            responseLogResult?.message,
+            failReason
+          ].filter(Boolean).join(' | '));
+          if (!playbackDone && speakerRebooted && nextItem) {
+            nextItem.needWakeup = true;
+            nextItem.nextRequiresWakeup = false;
+            lastSpeakerPlaybackDoneResult = null;
+            logWake('continuous_speaker.reboot_requires_rewake', {
+              cursor,
+              nextCursor: cursor + 1,
+              dialogueTurnKey: nextItem.dialogueTurnKey,
+              status: responseLogResult?.status || '',
+              message: responseLogResult?.message || failReason || ''
+            });
+          }
+          if (!playbackDone) {
+            success = false;
+            failStage = failStage || 'SPEAKER_CONTINUOUS_PLAYBACK_DONE';
+            failReason = failReason || 'Speaker 连续对话未检测到 onLiveTtsEnd 播报结束标记';
+          }
+        }
+
         lastTestAudioTimeRef.current = playEndTime;
         dispatch(actions.setReport({ lastTestAudioTime: lastTestAudioTimeRef.current }));
 
@@ -1092,6 +1487,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           && testAudioPassed
           && asrPassed
           && speakerAudioPassed
+          && continuousSpeakerPlaybackDonePassed
         );
         if (!finalSuccess && success) {
           success = false;
@@ -1178,7 +1574,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           responseAudioUrl: responseResult?.responseAudioUrl || '',
           responseAudioMimeType: responseResult?.responseAudioMimeType || '',
           responseAudioSize: responseResult?.responseAudioSize || 0,
-          responseTtsText: responseLogResult?.speakerResponseText || '',
+          responseTtsText: langfuseResponseResult?.responseText || responseLogResult?.speakerResponseText || '',
           responseTtsAudioFile: responseResult?.responseTtsAudioFile || responseResult?.responseAudioFile || '',
           responseTtsAudioUrl: responseResult?.responseTtsAudioUrl || responseResult?.responseAudioUrl || '',
           responseTtsAudioMimeType: responseResult?.responseTtsAudioMimeType || responseResult?.responseAudioMimeType || '',
@@ -1192,13 +1588,22 @@ export default function useTestRunner({ onTestComplete } = {}) {
           responseAsrStatus: responseResult?.responseAsrStatus || '',
           responseAsrText: responseResult?.responseAsrText || '',
           responseTextSimilarity,
-          speakerResponseText: responseLogResult?.speakerResponseText || '',
-          responseTtsStatus: responseLogResult?.status || '',
+          speakerResponseText: langfuseResponseResult?.responseText || responseLogResult?.speakerResponseText || '',
+          responseTtsStatus: langfuseResponseResult?.status || responseLogResult?.status || '',
           responseVadStarted: Boolean(responseLogResult?.vadStarted),
           responseVadEnded: Boolean(responseLogResult?.vadEnded),
           responseVadStartTime: responseLogResult?.vadStartTime || null,
           responseVadEndTime: responseLogResult?.vadEndTime || null,
-          responseTtsMatchedLine: responseLogResult?.ttsMatchedLine || '',
+          responseTtsMatchedLine: langfuseResponseResult?.matchedObservationName
+            || langfuseResponseResult?.matchedObservationId
+            || responseLogResult?.ttsMatchedLine
+            || '',
+          langfuseResponseEnabled: Boolean(speakerSingleTurnLangfuseWakeGateEnabled),
+          langfuseResponseStatus: langfuseResponseResult?.status || '',
+          langfuseResponseText: langfuseResponseResult?.responseText || '',
+          langfuseResponseObservationId: langfuseResponseResult?.matchedObservationId || '',
+          langfuseResponseTraceId: langfuseResponseResult?.matchedTraceId || '',
+          langfuseResponseAttempts: langfuseResponseResult?.attempts || 0,
           speakerOutputStatus: responseResult?.speakerOutputStatus || '',
           responseFailStage: responseResult?.responseFailStage || '',
           responseFailReason: responseResult?.responseFailReason || '',
@@ -1219,8 +1624,28 @@ export default function useTestRunner({ onTestComplete } = {}) {
           responseChainPassed
         }));
 
+        if (responseLogResult && shouldGateNextSpeakerTurn) {
+          lastSpeakerPlaybackDoneResult = responseLogResult;
+        }
+
+        if (isSpeakerRun && ((isSpeakerContinuousDialogue && !devicePlaybackComplete)
+          || (responseLogDetectPromise && (!responseLogResult || responseLogResult.status === 'timeout')))) {
+          const reason = responseLogResult?.message || failReason || '播报结束监听超时';
+          queue[cursor] = planSpeakerRecovery(item, { message: reason });
+          lastSpeakerPlaybackDoneResult = null;
+          setCurrentAudioText('未确认播报结束，重新唤醒并重试当前用例');
+          logWake('speaker.recovery.rewake_current_case', { cursor, caseId,
+            retryCount: queue[cursor].retryCount, reason });
+          notifyDingTalk('SPEAKER_RECOVERY_REWAKE', { state, runId: reportRunId,
+            details: [`用例ID：${caseId}`, `原因：${reason}`,
+              `恢复尝试：${queue[cursor].retryCount}/3，重新唤醒后重试当前用例`] });
+          if (shouldStop()) return;
+          cursor -= 1;
+          continue;
+        }
+
         const isLastCase = cursor === queue.length - 1;
-        if (!isLastCase && autonomousResponseEnabled) {
+        if (!isLastCase && nextItem?.needWakeup !== false && isSpeakerRun && autonomousResponseEnabled && !speakerSingleTurnLangfuseWakeGateEnabled) {
           const { afterFinishCooldownMs } = buildResponseRuntimeConfig(autonomousResponseConfig, item);
           // Use the latest known end signal to prevent the next wake word from overlapping Speaker tail audio.
           const responseEndTime = Math.max(
@@ -1260,6 +1685,12 @@ export default function useTestRunner({ onTestComplete } = {}) {
         if (!isLastCase && !autonomousMonitoringEnabled) {
           dispatch(actions.setPlaybackState({ currentType: 'interval' }));
           await wait(wakeWord.wakeIntervalDelay);
+        } else if (!isLastCase && speakerSingleTurnLangfuseWakeGateEnabled) {
+          logWake('interval.skipped.scheme2_langfuse_response_complete', {
+            cursor,
+            langfuseResponseStatus: langfuseResponseResult?.status || '',
+            nextTrigger: 'next_wakeup'
+          });
         } else if (!isLastCase) {
           logWake('interval.skipped.autonomous_monitoring', {
             cursor,
@@ -1354,6 +1785,8 @@ export default function useTestRunner({ onTestComplete } = {}) {
     testOptions.debugSequence,
     testOptions.dingTalkEnabled,
     testOptions.selectedTestModule,
+    testOptions.selectedLangfuseEnv,
+    testOptions.device,
     testOptions.autonomousWake,
     testOptions.autonomousInput,
     testOptions.autonomousResponse

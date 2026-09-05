@@ -35,6 +35,7 @@ const Logo = () => (
 const MODES = {
   voice: 'voice',
   cases: 'cases',
+  audio: 'audio',
   report: 'report',
   summary: 'summary',
   langfuse: 'langfuse',
@@ -43,7 +44,8 @@ const MODES = {
 
 const TAB_ITEMS = [
   { key: MODES.cases, icon: '🗃️', label: '测试用例管理' },
-  { key: MODES.voice, icon: '🎙️', label: '语音测试' },
+  { key: MODES.audio, icon: '🎧', label: '测试音频' },
+  { key: MODES.voice, icon: '🎙️', label: '语音控制' },
   { key: MODES.report, icon: '📊', label: '测试过程记录' },
   { key: MODES.langfuse, icon: '🗂️', label: 'Langfuse 日志' },
   { key: MODES.summary, icon: '🧾', label: '总结报告' },
@@ -134,13 +136,20 @@ function AppContent() {
   const renderMainContent = () => {
     return (
       <div className="space-y-6">
-        {/* 保持挂载：切换顶部菜单时只隐藏页面，避免已展示数据或编辑内容被重置 */}
+        {/* 保持挂载：切换左侧菜单时只隐藏页面，避免已展示数据或编辑内容被重置 */}
         <div className={activeMode === MODES.langfuse ? 'block' : 'hidden'}>
           <LangfuseFetcher />
         </div>
 
         <div className={activeMode === MODES.cases ? 'block' : 'hidden'}>
           <TestCaseManager />
+        </div>
+
+        <div className={activeMode === MODES.audio ? 'block' : 'hidden'}>
+          <div className="mx-auto max-w-6xl space-y-6">
+            <AudioImporter />
+            <AudioList />
+          </div>
         </div>
 
         <div className={activeMode === MODES.report ? 'block' : 'hidden'}>
@@ -168,16 +177,7 @@ function AppContent() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_minmax(560px,1fr)]">
-              <section className="min-w-0">
-                <PlaybackConsole onTestComplete={handleTestComplete} />
-              </section>
-
-              <section className="min-w-0 space-y-6">
-                <AudioImporter />
-                <AudioList />
-              </section>
-            </div>
+            <PlaybackConsole onTestComplete={handleTestComplete} />
           </div>
         </div>
       </div>
@@ -206,6 +206,10 @@ function AppContent() {
       return <span>🗃️ 测试用例管理模式</span>;
     }
 
+    if (activeMode === MODES.audio) {
+      return <span>🎧 测试音频模式</span>;
+    }
+
     if (activeMode === MODES.config) {
       return <span>⚙️ 配置中心模式</span>;
     }
@@ -214,39 +218,44 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-darker">
-      {/* 顶部导航 */}
-      <header className="bg-dark border-b border-gray-800 sticky top-0 z-50">
+    <div className="min-h-screen bg-darker pl-16 md:pl-56">
+      <aside className="fixed inset-y-0 left-0 z-50 flex w-16 flex-col border-r border-gray-800 bg-dark md:w-56">
+        <div className="flex h-20 shrink-0 items-center justify-center border-b border-gray-800 px-3 md:justify-start md:px-5">
+          <span className="text-primary"><Logo /></span>
+          <span className="ml-3 hidden text-lg font-bold text-white md:block">VoiceAuto</span>
+        </div>
+        <nav aria-label="主菜单" className="flex-1 space-y-2 overflow-y-auto px-2 py-5 md:px-3">
+          {TAB_ITEMS.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => setActiveMode(item.key)}
+              aria-current={activeMode === item.key ? 'page' : undefined}
+              aria-label={item.label}
+              title={item.label}
+              className={`flex min-h-11 w-full items-center justify-center gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:justify-start ${
+                activeMode === item.key
+                  ? 'bg-primary text-white'
+                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <span aria-hidden="true" className="shrink-0 text-lg">{item.icon}</span>
+              <span className="hidden md:block">{item.label}</span>
+            </button>
+          ))}
+        </nav>
+      </aside>
+      {/* 顶部信息栏 */}
+      <header className="bg-dark border-b border-gray-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="text-primary">
-                <Logo />
-              </div>
               <div>
-                <h1 className="text-xl font-bold text-white">VoiceAuto</h1>
+                <h1 className="text-xl font-bold text-white">{TAB_ITEMS.find(item => item.key === activeMode)?.label}</h1>
                 <p className="text-xs text-gray-400">语音自动化测试平台 · 版本号：{APP_VERSION}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1 p-1 bg-gray-800 rounded-lg">
-                {TAB_ITEMS.map((item) => (
-                  <button
-                    key={item.key}
-                    onClick={() => setActiveMode(item.key)}
-                    className={`px-3 py-1.5 text-xs rounded-md transition-colors flex items-center gap-1.5 ${
-                      activeMode === item.key
-                        ? 'bg-primary text-white'
-                        : 'text-gray-300 hover:bg-gray-700'
-                    }`}
-                  >
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </button>
-                ))}
-              </div>
-
+            <div className="flex flex-wrap items-center gap-3">
               {/* 状态指示 */}
               <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 rounded-full">
                 <span className={`w-2 h-2 rounded-full ${
@@ -274,18 +283,18 @@ function AppContent() {
       </header>
 
       {/* 主内容 */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="min-w-0 max-w-7xl mx-auto px-4 py-6 lg:px-6">
         {renderMainContent()}
       </main>
 
       {/* 页脚 */}
       <footer className="border-t border-gray-800 mt-12">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between text-sm text-gray-500">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-500">
             <div>
               VoiceAuto - 语音自动化测试平台 · 版本号：{APP_VERSION}
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3">
               {renderFooterModeText()}
             </div>
           </div>

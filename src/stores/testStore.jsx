@@ -12,6 +12,11 @@ import {
   DEFAULT_AGENT_EVALUATION_METRICS,
   normalizeSelectedEvaluationMetrics,
 } from '../utils/agentEvaluation';
+import {
+  DEVICE_TYPES,
+  LOG_SOURCES,
+  getDefaultDeviceOptions,
+} from '../config/deviceProfiles';
 
 const STORAGE_KEY = 'voiceauto_state';
 const DEFAULT_LANGFUSE_ENV_KEY = getDefaultLangfuseEnvironmentKey();
@@ -82,6 +87,9 @@ const initialState = {
     autoFetchLangfuseLogs: true,
     selectedLangfuseEnv: DEFAULT_LANGFUSE_ENV_KEY,
     selectedTestModule: 'all',
+    device: {
+      ...getDefaultDeviceOptions(),
+    },
     autonomousWake: {
       enabled: false,
       bridgeUrl: 'http://127.0.0.1:17321',
@@ -151,7 +159,10 @@ const initialState = {
       shortTextSilenceEndMs: 2000,
       longTextSilenceEndMs: 3500,
       veryLongTextSilenceEndMs: 5000,
-      afterFinishCooldownMs: 3000
+      afterFinishCooldownMs: 3000,
+      langfuseResponseGateEnabled: false,
+      langfuseResponseTimeoutMs: 120000,
+      langfuseResponsePollIntervalMs: 3000
     },
     agentEvaluation: {
       selectedMetrics: [...DEFAULT_AGENT_EVALUATION_METRICS]
@@ -207,6 +218,7 @@ const ActionTypes = {
   SET_AUTO_FETCH_LANGFUSE_LOGS: 'SET_AUTO_FETCH_LANGFUSE_LOGS',
   SET_SELECTED_LANGFUSE_ENV: 'SET_SELECTED_LANGFUSE_ENV',
   SET_SELECTED_TEST_MODULE: 'SET_SELECTED_TEST_MODULE',
+  SET_DEVICE_OPTIONS: 'SET_DEVICE_OPTIONS',
   SET_AUTONOMOUS_WAKE: 'SET_AUTONOMOUS_WAKE',
   SET_AUTONOMOUS_INPUT: 'SET_AUTONOMOUS_INPUT',
   SET_AUTONOMOUS_RESPONSE: 'SET_AUTONOMOUS_RESPONSE',
@@ -369,6 +381,19 @@ function testReducer(state, action) {
         testOptions: {
           ...state.testOptions,
           selectedTestModule: action.payload || 'all'
+        }
+      };
+
+    case ActionTypes.SET_DEVICE_OPTIONS:
+      return {
+        ...state,
+        testOptions: {
+          ...state.testOptions,
+          device: {
+            ...getDefaultDeviceOptions(),
+            ...(state.testOptions.device || {}),
+            ...action.payload
+          }
         }
       };
 
@@ -586,6 +611,20 @@ export function TestProvider({ children }) {
             autoFetchLangfuseLogs: parsed.testOptions?.autoFetchLangfuseLogs !== false,
             selectedLangfuseEnv: parsed.testOptions?.selectedLangfuseEnv || DEFAULT_LANGFUSE_ENV_KEY,
             selectedTestModule: parsed.testOptions?.selectedTestModule || 'all',
+            device: {
+              ...getDefaultDeviceOptions(),
+              ...(parsed.testOptions?.device || {}),
+              type: parsed.testOptions?.device?.type === DEVICE_TYPES.AI_TOY
+                ? DEVICE_TYPES.AI_TOY
+                : DEVICE_TYPES.SPEAKER,
+              logSource: parsed.testOptions?.device?.logSource === LOG_SOURCES.SERIAL
+                ? LOG_SOURCES.SERIAL
+                : LOG_SOURCES.ADB,
+              serialPort: String(parsed.testOptions?.device?.serialPort || ''),
+              baudrate: Number(parsed.testOptions?.device?.baudrate)
+                || getDefaultDeviceOptions().baudrate,
+              speakerContinuousDialogue: Boolean(parsed.testOptions?.device?.speakerContinuousDialogue)
+            },
             autonomousWake: {
               ...init.testOptions.autonomousWake,
               ...(parsed.testOptions?.autonomousWake || {}),
@@ -739,6 +778,17 @@ export function TestProvider({ children }) {
                 0,
                 Number(parsed.testOptions?.autonomousResponse?.afterFinishCooldownMs)
                 || init.testOptions.autonomousResponse.afterFinishCooldownMs
+              ),
+              langfuseResponseGateEnabled: parsed.testOptions?.autonomousResponse?.langfuseResponseGateEnabled === true,
+              langfuseResponseTimeoutMs: Math.max(
+                60000,
+                Number(parsed.testOptions?.autonomousResponse?.langfuseResponseTimeoutMs)
+                || init.testOptions.autonomousResponse.langfuseResponseTimeoutMs
+              ),
+              langfuseResponsePollIntervalMs: Math.max(
+                1000,
+                Number(parsed.testOptions?.autonomousResponse?.langfuseResponsePollIntervalMs)
+                || init.testOptions.autonomousResponse.langfuseResponsePollIntervalMs
               )
             },
             agentEvaluation: {
@@ -898,6 +948,11 @@ export const actions = {
   setSelectedTestModule: (moduleName) => ({
     type: ActionTypes.SET_SELECTED_TEST_MODULE,
     payload: moduleName
+  }),
+
+  setDeviceOptions: (configPatch) => ({
+    type: ActionTypes.SET_DEVICE_OPTIONS,
+    payload: configPatch
   }),
 
   setAutonomousWake: (configPatch) => ({

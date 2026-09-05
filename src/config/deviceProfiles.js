@@ -65,11 +65,16 @@ export const DEVICE_PROFILES = {
       ],
       ttsKeywords: ['TTS_STATUS', 'tts_status'],
       firstAudioKeywords: [],
-      playbackDoneKeywords: [],
+      playbackDoneKeywords: ['/SpeechService.*onLiveTtsEnd==>(?:false\\b|\\$stopRecord)/i'],
       listeningKeywords: [],
     },
     failure: {
-      keywords: [],
+      keywords: [
+        '/reboot/i',
+        '/boot_completed/i',
+        '/device offline/i',
+        '/device not found/i',
+      ],
     },
     defaults: {
       wakeDetectionTimeoutMs: 5000,
@@ -139,6 +144,7 @@ export function getDefaultDeviceOptions() {
     logSource: LOG_SOURCES.ADB,
     serialPort: '',
     baudrate: 115200,
+    speakerContinuousDialogue: false,
   };
 }
 
@@ -152,8 +158,9 @@ export function resolveDeviceRuntimeOptions(testOptions = {}) {
   return {
     deviceType: profile.type,
     profile,
-    logSource: device.logSource === LOG_SOURCES.SERIAL ? LOG_SOURCES.SERIAL : LOG_SOURCES.ADB,
+    logSource: profile.type === DEVICE_TYPES.AI_TOY ? LOG_SOURCES.SERIAL : LOG_SOURCES.ADB,
     serialPort: String(device.serialPort || '').trim(),
     baudrate: Number(device.baudrate) || profile.defaults.baudrate || 115200,
+    speakerContinuousDialogue: profile.type === DEVICE_TYPES.SPEAKER && Boolean(device.speakerContinuousDialogue),
   };
 }

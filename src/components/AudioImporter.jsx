@@ -355,8 +355,8 @@ export default function AudioImporter() {
       </div>
 
       {/* 提示 */}
-      <div className="mt-6 p-4 bg-gray-800/50 rounded-lg">
-        <p className="text-xs text-gray-400 mb-2 font-medium">💡 提示</p>
+      <details className="mt-6 p-4 bg-gray-800/50 rounded-lg">
+        <summary className="cursor-pointer text-xs text-gray-400 mb-2 font-medium">导入说明</summary>
         <ul className="text-xs text-gray-500 space-y-1">
           <li>• 音频文件导入：直接使用现有音频文件，并显示在当前页面</li>
           <li>• 文本导入：支持按标题自动识别模块（如 # 音乐控制）</li>
@@ -364,7 +364,7 @@ export default function AudioImporter() {
           <li>• 文本用例会显示在测试用例管理页顶部，并标记为文本导入</li>
           <li>• 无法识别模块时，将归类到当前选择的模块</li>
         </ul>
-      </div>
+      </details>
     </div>
   );
 }

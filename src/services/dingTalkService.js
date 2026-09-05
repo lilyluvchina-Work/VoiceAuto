@@ -10,6 +10,14 @@ const DEFAULT_PROXY_PATH = '/dingtalk-robot';
 const MISSING = '/';
 
 const DINGTALK_MESSAGE_TYPES = {
+  SPEAKER_RECOVERY_REWAKE: { title: 'Speaker 超时恢复：重新唤醒', level: 'ERROR', node: '播报结束监听超时恢复' },
+  AI_TOY_WAKE_SUCCESS: { title: 'AI玩具唤醒成功', level: 'SUCCESS', node: 'AI玩具唤醒成功' },
+  AI_TOY_TURN_RESULT: { title: 'AI玩具用例执行结果', level: 'INFO', node: 'AI玩具用例执行结果' },
+  AI_TOY_INTERRUPTED: { title: 'AI玩具会话中断', level: 'ERROR', node: 'AI玩具会话中断' },
+  AI_TOY_REBOOT_STARTED: { title: 'AI玩具开始重启恢复', level: 'INFO', node: 'AI玩具开始重启恢复' },
+  AI_TOY_REBOOT_SUCCESS: { title: 'AI玩具启动完成', level: 'SUCCESS', node: 'AI玩具启动完成' },
+  AI_TOY_REBOOT_FAILED: { title: 'AI玩具重启恢复失败', level: 'ERROR', node: 'AI玩具重启恢复失败' },
+
   TEST_STARTED: {
     title: '开始执行语音测试',
     level: 'INFO',
@@ -191,6 +199,7 @@ function buildMarkdownMessage(type, context = {}) {
   const lines = [
     `## 【VoiceAuto】【${meta.level || 'INFO'}】${meta.title || '钉钉通知'}`,
     '',
+    `- 设备类型：${(context.deviceType || state.testOptions?.device?.type) === 'ai_toy' ? 'AI玩具' : 'Speaker'}`,
     `- 测试环境：${valueOrSlash(envInfo.envText)}`,
     `- 测试批次ID：${valueOrSlash(runId)}`,
     `- 触发节点：${valueOrSlash(meta.node)}`,

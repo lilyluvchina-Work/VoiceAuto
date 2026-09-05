@@ -443,7 +443,7 @@ export default function TestCaseManager() {
       <div className="bg-dark rounded-xl p-5 border border-gray-700">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h3 className="text-lg font-semibold text-white">生成测试音频参数</h3>
+            <h3 className="text-lg font-semibold text-white">音频生成设置</h3>
             <p className="text-sm text-gray-400 mt-1">选择后点击生成，所选音色和语言会写入对应测试用例。</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -473,13 +473,7 @@ export default function TestCaseManager() {
             </label>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          <span className="px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-300">{generationConfig.voiceName}</span>
-          <span className="px-2.5 py-1 rounded-full bg-gray-800 text-gray-300">{generationConfig.voiceType}</span>
-          <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300">
-            {LANG_OPTIONS.find((item) => item.value === generationConfig.lang)?.label || generationConfig.lang}
-          </span>
-        </div>
+
       </div>
 
       <div className="bg-dark rounded-xl p-5 border border-gray-700">

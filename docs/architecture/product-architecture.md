@@ -1,5 +1,15 @@
 # VoiceAuto 架构文档
 
+## 2026-09-05 设备控制边界
+
+- `useTestRunner.js` 路由设备：AI玩具进入 `src/runners/aiToyRunner.js`，Speaker 维持 ADB/录音编排。
+- `scripts/aiToySession.cjs` 管理持久串口会话及锁；`POST /api/adb/ai-toy/session` 支持 open/read/arm/close，arm 区分 wake/turn。
+- `scripts/aiToyReboot.cjs` 在复位前订阅日志，处理重新枚举和启动顺序确认；共用 `/api/adb/reboot-and-wait` 返回 `bootCompleted`。
+- `src/utils/speakerRecovery.js` 保留当前用例身份、强制重新唤醒并限制恢复次数。Speaker 播报结束监听按最大等待时间运行，明确完播结果可释放录音保护。
+- `dingTalkService.js` 统一模板；AI玩具新增事件异步发送，不阻塞设备控制。
+- 重试计数、启动标记和现有限制见[设备流程说明](../product/device-test-workflows.md)。历史设计中的分阶段串口开关已由持续会话替代。
+
+
 ## 文档定位
 
 - 目标读者：研发与架构维护人员。
@@ -7,7 +17,7 @@
 
 ## 1. 架构目标
 
-- 低部署成本：纯前端运行，无后端依赖。
+- 运行组成：React 前端、Node 业务后端、数据库及连接设备的本地桥接服务。
 - 高操作性：配置、导入、执行、报告在单页内完成。
 - 可扩展性：语音引擎、导入方式、日志分析规则可扩展。
 - 可恢复性：关键状态落盘 `localStorage`，刷新后可恢复。
@@ -50,7 +60,7 @@ flowchart LR
 flowchart TD
   U[用户] --> M{模式}
 
-  M -->|语音测试| V1[配置唤醒词与语音参数]
+  M -->|语音控制| V1[配置唤醒词与语音参数]
   V1 --> V2[导入或选择测试用例]
   V2 --> V3[执行播放队列]
   V3 --> V4[生成测试过程记录]

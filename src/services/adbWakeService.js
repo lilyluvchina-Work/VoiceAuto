@@ -172,6 +172,7 @@ export async function listDevices({
         })).filter((device) => device.id)
       : [],
     message: data?.message || '',
+    usbDiagnostics: Array.isArray(data?.usbDiagnostics) ? data.usbDiagnostics : [],
     raw: data
   };
 }
@@ -204,6 +205,7 @@ export async function checkListenerHealth({
     devices: Array.isArray(data?.devices) ? data.devices : [],
     checks: data?.checks || {},
     sampleLines: Array.isArray(data?.sampleLines) ? data.sampleLines : [],
+    usbDiagnostics: Array.isArray(data?.usbDiagnostics) ? data.usbDiagnostics : [],
     message: data?.message || '',
     raw: data
   };
@@ -260,7 +262,11 @@ export async function rebootSpeaker({
 
   return {
     success: data?.success !== false,
-    bootCompleted: data?.bootCompleted !== false,
+    bootCompleted: data?.bootCompleted === true,
+    recoveredDeviceId: data?.recoveredDeviceId || '',
+    rebootCommandOk: data?.rebootCommandOk !== false,
+    rebootCommandError: data?.rebootCommandError || '',
+    health: data?.health || null,
     message: data?.message || '',
     raw: data
   };
@@ -372,7 +378,23 @@ export async function detectSpeakerResponseLog({
   };
 }
 
+async function aiToySessionRequest(action, options = {}) {
+  const { bridgeUrl, signal, sessionId, mode, expectsVoiceResponse } = options;
+  return postJson('/api/adb/ai-toy/session', {
+    ...buildDevicePayload(options), action, sessionId, mode, expectsVoiceResponse,
+  }, { bridgeUrl, signal, timeoutMs: 15000 });
+}
+
+export const openAiToySession = options => aiToySessionRequest('open', options);
+export const readAiToySession = options => aiToySessionRequest('read', options);
+export const armAiToySession = options => aiToySessionRequest('arm', options);
+export const closeAiToySession = options => aiToySessionRequest('close', options);
+
 export const adbWakeService = {
+  openAiToySession,
+  readAiToySession,
+  armAiToySession,
+  closeAiToySession,
   DEFAULT_BRIDGE_URL,
   WAKEUP_KEYWORDS,
   ASR_KEYWORDS,

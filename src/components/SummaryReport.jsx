@@ -645,6 +645,8 @@ export default function SummaryReport() {
         </div>
       </Section>
 
+      <details className="rounded-xl border border-gray-700 bg-dark p-4">
+        <summary className="cursor-pointer text-sm text-gray-300">环境与版本信息（选填）</summary>
       <Section
         title="环境信息"
         subtitle="缺失数据使用 / 补充，可按本次测试实际情况调整"
@@ -743,6 +745,8 @@ export default function SummaryReport() {
           </div>
         )}
       </Section>
+
+      </details>
 
       <Section title="功能模块统计" subtitle="按模块查看 Agent 命中率、平均耗时与用例覆盖情况（只读）">
         {moduleRows.length === 0 ? (

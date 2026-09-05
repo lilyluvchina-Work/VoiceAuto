@@ -20,12 +20,31 @@ import {
   AGENT_EVALUATION_METRIC_GROUPS,
   selectAgentEvaluationPlan,
 } from '../utils/agentEvaluation';
+import {
+  DEVICE_TYPES,
+  LOG_SOURCES,
+  resolveDeviceRuntimeOptions,
+} from '../config/deviceProfiles';
+import { selectSerialPortCandidate } from '../utils/serialPortSelection';
+
+function formatUsbDiagnostics(usbDiagnostics = []) {
+  const diagnostics = (Array.isArray(usbDiagnostics) ? usbDiagnostics : [])
+    .filter((item) => item?.friendlyName || item?.status || item?.instanceId);
+  if (!diagnostics.length) return '';
+
+  const failedDevice = diagnostics.find((item) => (
+    item?.status && item.status !== 'OK'
+  ) || /未知 USB 设备|设备描述符请求失败/i.test(String(item?.friendlyName || '')));
+  const target = failedDevice || diagnostics[0];
+  const name = target.friendlyName || target.instanceId || 'USB 设备';
+  const status = target.status && target.status !== 'OK' ? `，状态：${target.status}` : '';
+  return `系统已识别到 USB 异常设备：${name}${status}；请重新插拔 AI玩具、确认数据线/供电，并检查串口驱动或设备 USB 模式`;
+}
 
 export default function PlaybackConsole({ onTestComplete }) {
   const { state, dispatch } = useTest();
   const { wakeWord, defaultVoiceConfig } = state;
   const loopCount = state.testOptions?.loopCount || 1;
-  const debugSequence = Boolean(state.testOptions?.debugSequence);
   const dingTalkEnabled = Boolean(state.testOptions?.dingTalkEnabled);
   const autoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
   const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || getDefaultLangfuseEnvironmentKey();
@@ -33,6 +52,18 @@ export default function PlaybackConsole({ onTestComplete }) {
   const autonomousWake = state.testOptions?.autonomousWake || {};
   const autonomousInput = state.testOptions?.autonomousInput || {};
   const autonomousResponse = state.testOptions?.autonomousResponse || {};
+  const deviceOptions = state.testOptions?.device || {};
+  const deviceRuntime = resolveDeviceRuntimeOptions(state.testOptions || {});
+  const deviceLabel = deviceRuntime.profile.label;
+  const isAiToy = deviceRuntime.deviceType === DEVICE_TYPES.AI_TOY;
+  const speakerContinuousDialogueEnabled = deviceRuntime.deviceType === DEVICE_TYPES.SPEAKER
+    && Boolean(deviceRuntime.speakerContinuousDialogue);
+  const autonomousMonitoringEnabled = Boolean(
+    autonomousWake.enabled
+    || autonomousInput.enabled
+    || autonomousResponse.enabled
+  );
+  const wakeIntervalDelayUsed = !isAiToy && !speakerContinuousDialogueEnabled && !autonomousMonitoringEnabled;
   const selectedEvaluationMetrics = state.testOptions?.agentEvaluation?.selectedMetrics || [];
   const evaluationPlan = React.useMemo(
     () => selectAgentEvaluationPlan(selectedEvaluationMetrics),
@@ -79,10 +110,6 @@ export default function PlaybackConsole({ onTestComplete }) {
     dispatch(actions.setLoopCount(parseInt(e.target.value, 10) || 1));
   };
 
-  const handleDebugSequenceChange = (e) => {
-    dispatch(actions.setDebugSequence(e.target.checked));
-  };
-
   const handleDingTalkEnabledChange = (e) => {
     dispatch(actions.setDingTalkEnabled(e.target.checked));
   };
@@ -109,6 +136,17 @@ export default function PlaybackConsole({ onTestComplete }) {
 
   const handleAutonomousResponseChange = (patch) => {
     dispatch(actions.setAutonomousResponse(patch));
+  };
+
+  const handleDeviceOptionsChange = (patch) => {
+    dispatch(actions.setDeviceOptions(patch));
+  };
+
+  const handleDeviceTypeChange = (type) => {
+    handleDeviceOptionsChange({
+      type,
+      logSource: type === DEVICE_TYPES.AI_TOY ? LOG_SOURCES.SERIAL : LOG_SOURCES.ADB,
+    });
   };
 
   const handleEvaluationMetricChange = (metricId, checked) => {
@@ -173,14 +211,14 @@ export default function PlaybackConsole({ onTestComplete }) {
   };
 
   const refreshSpeakers = async () => {
-    setSpeakerStatus('正在检测 Speaker 输出设备...');
+    setSpeakerStatus('正在检测 音频输出设备...');
     try {
       const list = await responseMonitorService.listSpeakers();
       setSpeakers(list);
-      setSpeakerStatus(list.length ? `已发现 ${list.length} 个 Speaker 输出设备` : '未检测到 Speaker 输出设备，请检查系统输出设备或浏览器权限');
+      setSpeakerStatus(list.length ? `已发现 ${list.length} 个 音频输出设备` : '未检测到 音频输出设备，请检查系统输出设备或浏览器权限');
     } catch (err) {
       setSpeakers([]);
-      setSpeakerStatus(err?.message || '读取 Speaker 输出设备失败');
+      setSpeakerStatus(err?.message || '读取 音频输出设备失败');
     }
   };
 
@@ -189,42 +227,73 @@ export default function PlaybackConsole({ onTestComplete }) {
   };
 
   const refreshAdbDevices = async () => {
-    setAdbDeviceStatus('正在检测 ADB Speaker 设备...');
+    setAdbDeviceStatus(`正在检测 ${deviceLabel} ${deviceRuntime.logSource === LOG_SOURCES.SERIAL ? 'USB串口' : 'ADB'} 设备...`);
     try {
       const result = await adbWakeService.listDevices({
-        bridgeUrl: autonomousWake.bridgeUrl
+        bridgeUrl: autonomousWake.bridgeUrl,
+        deviceType: deviceRuntime.deviceType,
+        logSource: deviceRuntime.logSource,
+        serialPort: deviceRuntime.serialPort,
+        baudrate: deviceRuntime.baudrate
       });
       const devices = (result.devices || []).filter((device) => device.state === 'device');
       setAdbDevices(devices);
 
       if (!devices.length) {
-        setAdbDeviceStatus('未检测到 ADB Speaker 设备');
+        const usbHint = deviceRuntime.logSource === LOG_SOURCES.SERIAL
+          ? formatUsbDiagnostics(result.usbDiagnostics)
+          : '';
+        setAdbDeviceStatus(usbHint || `未检测到 ${deviceLabel} ${deviceRuntime.logSource === LOG_SOURCES.SERIAL ? 'USB串口' : 'ADB'} 设备`);
         if (autonomousWake.deviceId) {
           handleAutonomousWakeChange({ deviceId: '' });
         }
         return;
       }
 
-      setAdbDeviceStatus(`已检测到 ${devices.length} 个 ADB Speaker 设备`);
+      if (deviceRuntime.logSource === LOG_SOURCES.SERIAL) {
+        const selectedSerialPort = selectSerialPortCandidate(devices, deviceRuntime.serialPort);
+        if (selectedSerialPort) {
+          if (selectedSerialPort.id !== deviceRuntime.serialPort) {
+            handleDeviceOptionsChange({ serialPort: selectedSerialPort.id });
+          }
+          if (selectedSerialPort.id !== autonomousWake.deviceId) {
+            handleAutonomousWakeChange({ deviceId: selectedSerialPort.id });
+          }
+          setAdbDeviceStatus(`已自动填充 ${deviceLabel} USB串口：${selectedSerialPort.id}`);
+          return;
+        }
+
+        setAdbDeviceStatus(`检测到 ${devices.length} 个 USB串口，请选择 ${deviceLabel} 对应串口`);
+        return;
+      }
+
+      setAdbDeviceStatus(`已检测到 ${devices.length} 个 ${deviceLabel} ${deviceRuntime.logSource === LOG_SOURCES.SERIAL ? 'USB串口' : 'ADB'} 设备`);
       const currentDeviceMatched = devices.some((device) => device.id === autonomousWake.deviceId);
       if (!autonomousWake.deviceId || !currentDeviceMatched) {
         handleAutonomousWakeChange({ deviceId: devices[0].id });
       }
     } catch (err) {
       setAdbDevices([]);
-      setAdbDeviceStatus(err?.message || 'ADB Speaker 设备检测失败');
+      setAdbDeviceStatus(err?.message || `${deviceLabel} 设备检测失败`);
     }
   };
 
   const refreshListenerHealth = async () => {
-    setListenerHealthStatus('正在自检 Speaker 监听链路...');
+    setListenerHealthStatus(`正在自检 ${deviceLabel} 监听链路...`);
     try {
       const result = await adbWakeService.checkListenerHealth({
         bridgeUrl: autonomousWake.bridgeUrl,
-        deviceId: autonomousWake.deviceId
+        deviceId: autonomousWake.deviceId,
+        deviceType: deviceRuntime.deviceType,
+        logSource: deviceRuntime.logSource,
+        serialPort: deviceRuntime.serialPort,
+        baudrate: deviceRuntime.baudrate
       });
       setListenerHealth(result);
-      setListenerHealthStatus(result.message || (result.success ? '监听链路正常' : '监听链路异常'));
+      const usbHint = deviceRuntime.logSource === LOG_SOURCES.SERIAL && !result.success
+        ? formatUsbDiagnostics(result.usbDiagnostics)
+        : '';
+      setListenerHealthStatus(usbHint || result.message || (result.success ? '监听链路正常' : '监听链路异常'));
       const devices = (result.devices || []).filter((device) => device.state === 'device');
       if (devices.length) {
         setAdbDevices(devices);
@@ -238,7 +307,7 @@ export default function PlaybackConsole({ onTestComplete }) {
         details: [
           `自检结果：${result.success ? '正常' : '异常'}`,
           `ADB：${checks.adbConnected ? '正常' : '异常/未检查'}`,
-          `Speaker：${checks.speakerOnline ? '在线' : '离线/未检查'}`,
+          `${deviceLabel}：${checks.speakerOnline ? '在线' : '离线/未检查'}`,
           `logcat：${checks.logcatReadable ? '可读' : '不可读/未检查'}`,
           `boot_completed：${checks.bootCompleted ? '1' : '/'}`,
           `当前设备：${result.selectedDeviceId || autonomousWake.deviceId || '/'}`,
@@ -249,14 +318,14 @@ export default function PlaybackConsole({ onTestComplete }) {
       });
     } catch (err) {
       setListenerHealth(null);
-      setListenerHealthStatus(err?.message || 'Speaker 监听链路自检失败');
+      setListenerHealthStatus(err?.message || `${deviceLabel} 监听链路自检失败`);
       notifyDingTalk('SPEAKER_LISTENER_HEALTH_FAILED', {
         state,
         details: [
           '自检结果：异常',
           `ADB Bridge：${autonomousWake.bridgeUrl || '/'}`,
           `当前设备：${autonomousWake.deviceId || '/'}`,
-          `失败原因：${err?.message || 'Speaker 监听链路自检失败'}`,
+          `失败原因：${err?.message || `${deviceLabel} 监听链路自检失败`}`,
         ],
       });
     }
@@ -268,7 +337,11 @@ export default function PlaybackConsole({ onTestComplete }) {
     try {
       const result = await adbWakeService.recoverListenerLink({
         bridgeUrl: autonomousWake.bridgeUrl,
-        deviceId: autonomousWake.deviceId
+        deviceId: autonomousWake.deviceId,
+        deviceType: deviceRuntime.deviceType,
+        logSource: deviceRuntime.logSource,
+        serialPort: deviceRuntime.serialPort,
+        baudrate: deviceRuntime.baudrate
       });
       setListenerHealth(result.health || null);
       setListenerHealthStatus(result.message || (result.success ? '监听链路已恢复' : '监听链路恢复失败'));
@@ -294,6 +367,7 @@ export default function PlaybackConsole({ onTestComplete }) {
     : playback.currentType === 'reboot-wait' ? '重启后等待'
     : playback.currentType === 'asr-detect' ? '监听 ASR 输入'
     : playback.currentType === 'response-detect' ? 'Speaker 播报音频收录'
+    : playback.currentType === 'langfuse-response-detect' ? 'Langfuse response 确认'
     : playback.currentType === 'response-end-wait' ? '播报结束冷却'
     : playback.currentType === 'test-ready' ? '准备播放测试音频'
     : playback.currentType === 'test-failed' ? '测试音频播放失败'
@@ -333,9 +407,21 @@ export default function PlaybackConsole({ onTestComplete }) {
   }, [autonomousWake.enabled, autonomousWake.bridgeUrl]);
 
   useEffect(() => {
+    if (isLocked || deviceRuntime.logSource !== LOG_SOURCES.SERIAL) return;
+    refreshAdbDevices();
+  }, [deviceRuntime.deviceType, deviceRuntime.logSource, autonomousWake.bridgeUrl]);
+
+  useEffect(() => {
     if (isLocked) return;
     refreshListenerHealth();
-  }, [autonomousWake.bridgeUrl, autonomousWake.deviceId]);
+  }, [
+    autonomousWake.bridgeUrl,
+    autonomousWake.deviceId,
+    deviceRuntime.deviceType,
+    deviceRuntime.logSource,
+    deviceRuntime.serialPort,
+    deviceRuntime.baudrate,
+  ]);
 
   useEffect(() => {
     const handleLangfuseEnvironmentUpdate = () => {
@@ -377,11 +463,15 @@ export default function PlaybackConsole({ onTestComplete }) {
     <div className="bg-dark rounded-xl p-6 border border-gray-700">
       <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
         <span className="text-2xl">🎛️</span>
-        播放控制台 / 唤醒词配置
+        语音控制台
         <span className="ml-2 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
-          Web Speech API
+          自动闭环
         </span>
       </h2>
+
+      <p className="mb-5 text-sm text-gray-400">
+        {isAiToy ? '自动唤醒、收音和测试；中断后自动恢复，启动完成再继续。' : '自动完成唤醒、输入检测、响应采集和结果记录。'}
+      </p>
 
       <section className={`mb-6 rounded-xl border p-5 ${processToneClass}`}>
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -502,7 +592,7 @@ export default function PlaybackConsole({ onTestComplete }) {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className={`h-2.5 w-2.5 rounded-full ${listenerOk ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              <p className="text-sm font-medium text-gray-100">Speaker 监听链路自检</p>
+              <p className="text-sm font-medium text-gray-100">{deviceLabel} 监听链路自检</p>
               <span className={`rounded-full border px-2 py-0.5 text-xs ${
                 listenerOk
                   ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-200'
@@ -512,18 +602,91 @@ export default function PlaybackConsole({ onTestComplete }) {
               </span>
             </div>
             <p className="mt-2 text-xs text-gray-300">
-              {listenerHealthStatus || '启动后自动检查 ADB、Speaker 设备与 logcat 可读状态。'}
+              {listenerHealthStatus || `启动后自动检查 ${deviceLabel} 设备与 ${deviceRuntime.logSource === LOG_SOURCES.SERIAL ? 'USB串口' : 'ADB logcat'} 可读状态。`}
             </p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label className="text-xs text-gray-400">
+                设备类型
+                <select
+                  value={deviceRuntime.deviceType}
+                  onChange={(e) => handleDeviceTypeChange(e.target.value)}
+                  disabled={isLocked}
+                  className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white focus:border-primary disabled:opacity-50"
+                >
+                  <option value={DEVICE_TYPES.SPEAKER}>Speaker</option>
+                  <option value={DEVICE_TYPES.AI_TOY}>AI玩具</option>
+                </select>
+              </label>
+
+              {deviceRuntime.logSource === LOG_SOURCES.SERIAL && (
+                <>
+                  <label className="text-xs text-gray-400">
+                    串口号
+                    <input
+                      type="text"
+                      value={deviceOptions.serialPort || ''}
+                      onChange={(e) => handleDeviceOptionsChange({ serialPort: e.target.value })}
+                      disabled={isLocked}
+                      list="serial-port-candidates"
+                      placeholder="例如 COM7 或 /dev/cu.usbmodem3101"
+                      className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-primary disabled:opacity-50"
+                    />
+                    <datalist id="serial-port-candidates">
+                      {adbDevices.map((device) => (
+                        <option key={device.id} value={device.id}>
+                          {device.label || device.id}
+                        </option>
+                      ))}
+                    </datalist>
+                  </label>
+                  <details className="self-start rounded-lg border border-gray-700 p-2">
+                    <summary className="cursor-pointer text-xs text-gray-400">高级连接设置</summary>
+                    <div className="mt-3 space-y-3">
+                  <label className="text-xs text-gray-400">
+                    波特率
+                    <input
+                      type="number"
+                      min="1200"
+                      step="1200"
+                      value={deviceOptions.baudrate || deviceRuntime.baudrate}
+                      onChange={(e) => handleDeviceOptionsChange({ baudrate: Number(e.target.value) || 115200 })}
+                      disabled={isLocked}
+                      className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white focus:border-primary disabled:opacity-50"
+                    />
+                  </label>
+                      <label className="block text-xs text-gray-400">桥接服务地址
+                        <input type="text" value={autonomousWake.bridgeUrl || ''}
+                          onChange={e => handleAutonomousWakeChange({ bridgeUrl: e.target.value })}
+                          disabled={isLocked} placeholder="http://127.0.0.1:17321"
+                          className="mt-1 w-full rounded border border-gray-600 bg-gray-800 px-3 py-2" />
+                      </label>
+                    </div>
+                  </details>
+                </>
+              )}
+              {deviceRuntime.deviceType === DEVICE_TYPES.SPEAKER && (
+                <label className="flex items-center gap-2 self-end rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-2 text-xs text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(deviceOptions.speakerContinuousDialogue)}
+                    onChange={(e) => handleDeviceOptionsChange({ speakerContinuousDialogue: e.target.checked })}
+                    disabled={isLocked}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  Speaker 连续对话
+                </label>
+              )}
+            </div>
             <div className="mt-3 grid gap-2 text-xs text-gray-400 sm:grid-cols-2 lg:grid-cols-4">
-              <span>ADB：{listenerChecks.adbConnected ? '正常' : '异常/未检查'}</span>
-              <span>Speaker：{listenerChecks.speakerOnline ? '在线' : '离线/未检查'}</span>
-              <span>logcat：{listenerChecks.logcatReadable ? '可读' : '不可读/未检查'}</span>
+              {!isAiToy && <span>ADB：{listenerChecks.adbConnected ? '正常' : '异常/未检查'}</span>}
+              <span>{deviceLabel}：{listenerChecks.speakerOnline ? '在线' : '离线/未检查'}</span>
+              <span>{deviceRuntime.logSource === LOG_SOURCES.SERIAL ? 'USB串口' : 'logcat'}：{listenerChecks.logcatReadable || listenerChecks.serialConnected ? '可读' : '不可读/未检查'}</span>
               <span>最近检查：{listenerHealth?.checkedAtText || '-'}</span>
             </div>
             {listenerHealth?.selectedDeviceId && (
               <p className="mt-2 text-[11px] text-gray-500">
                 当前设备：{listenerHealth.selectedDeviceId}
-                {listenerChecks.bootCompleted ? ' · boot_completed=1' : ''}
+                {!isAiToy && listenerChecks.bootCompleted ? ' · boot_completed=1' : ''}
               </p>
             )}
           </div>
@@ -561,7 +724,7 @@ export default function PlaybackConsole({ onTestComplete }) {
           </button>
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_150px_150px]">
+        <div className={`grid gap-3 ${wakeIntervalDelayUsed ? 'lg:grid-cols-[minmax(0,1fr)_150px_150px]' : 'lg:grid-cols-[minmax(0,1fr)_150px]'}`}>
           <label className="text-xs text-gray-400">
             唤醒词文本
             <input
@@ -573,6 +736,7 @@ export default function PlaybackConsole({ onTestComplete }) {
               className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-primary disabled:opacity-50"
             />
           </label>
+          {!isAiToy && (
           <label className="text-xs text-gray-400">
             唤醒后延迟
             <select
@@ -587,32 +751,39 @@ export default function PlaybackConsole({ onTestComplete }) {
               <option value="1500">1500ms</option>
             </select>
           </label>
-          <label className="text-xs text-gray-400">
-            唤醒间延迟
-            <select
-              value={wakeWord.wakeIntervalDelay}
-              onChange={handleWakeIntervalDelayChange}
-              disabled={isLocked}
-              className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm font-mono text-primary focus:border-primary disabled:opacity-50"
-            >
-              <option value="3000">3000ms</option>
-              <option value="5000">5000ms</option>
-              <option value="10000">10000ms</option>
-              <option value="20000">20000ms</option>
-            </select>
-          </label>
+          )}
+          {wakeIntervalDelayUsed && (
+            <label className="text-xs text-gray-400">
+              唤醒间延迟
+              <select
+                value={wakeWord.wakeIntervalDelay}
+                onChange={handleWakeIntervalDelayChange}
+                disabled={isLocked}
+                className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm font-mono text-primary focus:border-primary disabled:opacity-50"
+              >
+                <option value="3000">3000ms</option>
+                <option value="5000">5000ms</option>
+                <option value="10000">10000ms</option>
+                <option value="20000">20000ms</option>
+              </select>
+            </label>
+          )}
         </div>
 
         <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 text-xs">
           <span className="shrink-0 rounded bg-primary/20 px-3 py-2 text-primary">唤醒词</span>
           <span className="text-gray-500">→</span>
-          <span className="shrink-0 rounded bg-blue-500/20 px-3 py-2 text-blue-300">等待 {wakeWord.wakeAfterDelay}ms</span>
+          <span className="shrink-0 rounded bg-blue-500/20 px-3 py-2 text-blue-300">{isAiToy ? '等待开始收音' : `等待 ${wakeWord.wakeAfterDelay}ms`}</span>
           <span className="text-gray-500">→</span>
           <span className="shrink-0 rounded bg-accent/20 px-3 py-2 text-accent">测试音频</span>
-          <span className="text-gray-500">→</span>
-          <span className="shrink-0 rounded bg-blue-500/20 px-3 py-2 text-blue-300">等待 {wakeWord.wakeIntervalDelay}ms</span>
-          <span className="text-gray-500">→</span>
-          <span className="shrink-0 rounded bg-primary/20 px-3 py-2 text-primary">下一轮唤醒</span>
+          {wakeIntervalDelayUsed && (
+            <>
+              <span className="text-gray-500">→</span>
+              <span className="shrink-0 rounded bg-blue-500/20 px-3 py-2 text-blue-300">等待 {wakeWord.wakeIntervalDelay}ms</span>
+              <span className="text-gray-500">→</span>
+              <span className="shrink-0 rounded bg-primary/20 px-3 py-2 text-primary">下一轮唤醒</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -672,16 +843,7 @@ export default function PlaybackConsole({ onTestComplete }) {
         <p className="mt-2 text-xs text-gray-500">
           测试结束后自动拉取该环境的 Langfuse 日志。
         </p>
-        <label className="mt-3 inline-flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={debugSequence}
-            onChange={handleDebugSequenceChange}
-            disabled={isLocked}
-            className="w-4 h-4 rounded bg-gray-800 border-gray-600 disabled:opacity-50"
-          />
-          输出播放序列调试日志（控制台）
-        </label>
+
         <div className="mt-3 p-3 rounded-lg border border-indigo-500/30 bg-indigo-500/10">
           <div className="flex items-center justify-between gap-3">
             <label className="inline-flex items-center gap-2 text-sm text-gray-200 cursor-pointer select-none">
@@ -724,6 +886,8 @@ export default function PlaybackConsole({ onTestComplete }) {
             </span>
           </div>
         </div>
+        <details className="mt-3 rounded-lg border border-gray-700 p-3">
+          <summary className="cursor-pointer text-sm text-gray-300">评测项设置 · {selectedEvaluationMetrics.length} 项已选</summary>
         <div className="mt-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -758,6 +922,7 @@ export default function PlaybackConsole({ onTestComplete }) {
             ))}
           </div>
         </div>
+        </details>
         <div className={`mt-3 p-3 rounded-lg border ${
           speakers.length
             ? 'border-gray-600 bg-gray-800/40'
@@ -766,10 +931,10 @@ export default function PlaybackConsole({ onTestComplete }) {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className={`text-sm font-medium ${speakers.length ? 'text-gray-200' : 'text-red-200'}`}>
-                Speaker 输出设备
+                音频输出设备
               </p>
               <p className={`mt-1 text-xs ${speakers.length ? 'text-gray-400' : 'text-red-100'}`}>
-                {speakerStatus || '尚未检测 Speaker 输出设备'}
+                {speakerStatus || '尚未检测 音频输出设备'}
               </p>
               {speakers.length > 0 && (
                 <p className="mt-1 text-[11px] text-gray-500 truncate">
@@ -783,7 +948,7 @@ export default function PlaybackConsole({ onTestComplete }) {
               disabled={isLocked}
               className="px-3 py-2 text-sm bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg"
             >
-              刷新 Speaker
+              刷新输出设备
             </button>
           </div>
           {!speakers.length && (
@@ -792,6 +957,16 @@ export default function PlaybackConsole({ onTestComplete }) {
             </p>
           )}
         </div>
+        {isAiToy ? (
+          <label className="mt-4 flex items-center gap-2 text-sm text-gray-300">
+            <input type="checkbox" checked={Boolean(autonomousInput.enabled)}
+              onChange={e => handleAutonomousInputChange({ enabled: e.target.checked })}
+              disabled={isLocked} className="accent-primary" />
+            校验设备是否识别到测试语音
+          </label>
+        ) : (
+          <details className="mt-4 rounded-lg border border-gray-700 p-3">
+            <summary className="cursor-pointer text-sm text-gray-300">高级设置 · Speaker 监测与录音</summary>
         <div className="mt-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/10">
           <div className="flex items-center justify-between gap-3">
             <label className="inline-flex items-center gap-2 text-sm text-gray-200 cursor-pointer select-none">
@@ -809,7 +984,9 @@ export default function PlaybackConsole({ onTestComplete }) {
                 ? 'bg-amber-500/20 text-amber-200 border border-amber-500/30'
                 : 'bg-gray-700 text-gray-300 border border-gray-600'
             }`}>
-              {autonomousWake.enabled ? '启用：检测 WakeupSuccess' : '关闭：使用固定等待'}
+              {autonomousWake.enabled
+                ? `启用：检测 ${deviceRuntime.deviceType === DEVICE_TYPES.AI_TOY ? 'Cedar 唤醒' : 'WakeupSuccess'}`
+                : '关闭：使用固定等待'}
             </span>
           </div>
 
@@ -878,17 +1055,7 @@ export default function PlaybackConsole({ onTestComplete }) {
                   <option value={8000}>8s</option>
                 </select>
               </label>
-              <label className="text-xs text-gray-400">
-                失败重启阈值
-                <select
-                  value={5}
-                  onChange={(e) => handleAutonomousWakeChange({ failureThreshold: Number(e.target.value) })}
-                  disabled={isLocked}
-                  className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
-                >
-                  <option value={5}>连续 5 次</option>
-                </select>
-              </label>
+
             </div>
           )}
         </div>
@@ -962,12 +1129,47 @@ export default function PlaybackConsole({ onTestComplete }) {
                 ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/30'
                 : 'bg-gray-700 text-gray-300 border border-gray-600'
             }`}>
-              {autonomousResponse.enabled ? '启用：麦克风 VAD + 响应 ASR' : '关闭：不采集响应'}
+              {autonomousResponse.enabled ? '启用：Langfuse response 确认' : '关闭：不采集响应'}
             </span>
           </div>
 
           {autonomousResponse.enabled && (
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="md:col-span-2 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-sm text-gray-100">
+                    <span className="block font-medium">方案1：沿用当前 Speaker 响应采集逻辑</span>
+                    <span className="block mt-1 text-xs text-emerald-100/80">
+                      使用麦克风响应采集与当前播报结束保护逻辑，再进入下一轮唤醒。
+                    </span>
+                  </div>
+                  <span className="shrink-0 text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-100 border border-emerald-500/30">
+                    默认
+                  </span>
+                </div>
+              </div>
+              <div className="md:col-span-2 p-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10">
+                <div className="flex items-start justify-between gap-3">
+                  <label className="inline-flex items-start gap-2 text-sm text-gray-100 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={autonomousResponse.langfuseResponseGateEnabled !== false}
+                      onChange={(e) => handleAutonomousResponseChange({ langfuseResponseGateEnabled: e.target.checked })}
+                      disabled={isLocked}
+                      className="mt-0.5 w-4 h-4 rounded bg-gray-800 border-gray-600 disabled:opacity-50"
+                    />
+                    <span>
+                      <span className="block font-medium">方案2：Langfuse response_complete 确认后进入下一轮</span>
+                      <span className="block mt-1 text-xs text-cyan-100/80">
+                        实时轮询 Langfuse 日志，命中 response_complete 且解析到非空 TTS/response 内容后触发下一轮唤醒；未命中会标记本轮失败，并继续进入下一轮唤醒。
+                      </span>
+                    </span>
+                  </label>
+                  <span className="shrink-0 text-xs px-2 py-1 rounded-full bg-cyan-500/20 text-cyan-100 border border-cyan-500/30">
+                    新方案
+                  </span>
+                </div>
+              </div>
               <label className="text-xs text-gray-400 md:col-span-2">
                 外部麦克风
                 <div className="mt-1 flex gap-2">
@@ -1020,6 +1222,32 @@ export default function PlaybackConsole({ onTestComplete }) {
                   <option value={60000}>60s</option>
                   <option value={120000}>120s</option>
                   <option value={180000}>180s</option>
+                </select>
+              </label>
+              <label className="text-xs text-gray-400">
+                Langfuse 确认超时
+                <select
+                  value={autonomousResponse.langfuseResponseTimeoutMs || 120000}
+                  onChange={(e) => handleAutonomousResponseChange({ langfuseResponseTimeoutMs: Number(e.target.value) })}
+                  disabled={isLocked || autonomousResponse.langfuseResponseGateEnabled === false}
+                  className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
+                >
+                  <option value={60000}>60s</option>
+                  <option value={120000}>120s</option>
+                  <option value={180000}>180s</option>
+                </select>
+              </label>
+              <label className="text-xs text-gray-400">
+                Langfuse 轮询间隔
+                <select
+                  value={autonomousResponse.langfuseResponsePollIntervalMs || 3000}
+                  onChange={(e) => handleAutonomousResponseChange({ langfuseResponsePollIntervalMs: Number(e.target.value) })}
+                  disabled={isLocked || autonomousResponse.langfuseResponseGateEnabled === false}
+                  className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
+                >
+                  <option value={1000}>1s</option>
+                  <option value={3000}>3s</option>
+                  <option value={5000}>5s</option>
                 </select>
               </label>
               <label className="text-xs text-gray-400">
@@ -1155,6 +1383,8 @@ export default function PlaybackConsole({ onTestComplete }) {
             </div>
           )}
         </div>
+          </details>
+        )}
       </div>
 
       {/* 快捷键提示 */}

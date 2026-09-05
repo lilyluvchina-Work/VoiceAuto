@@ -10,6 +10,11 @@ import {
 const speaker = getDeviceProfile();
 assert.equal(speaker.type, DEVICE_TYPES.SPEAKER);
 assert.equal(speaker.label, 'Speaker');
+assert.match(speaker.response.playbackDoneKeywords.join('\n'), /SpeechService/);
+assert.match(speaker.response.playbackDoneKeywords.join('\n'), /onLiveTtsEnd/);
+assert.match(speaker.response.playbackDoneKeywords.join('\n'), /stopRecord/);
+assert.match(speaker.response.ttsKeywords.join('\n'), /TTS_STATUS/);
+assert.match(speaker.response.ttsKeywords.join('\n'), /tts_status/);
 
 const toy = getDeviceProfile(DEVICE_TYPES.AI_TOY);
 assert.equal(toy.label, 'AI玩具');
@@ -33,3 +38,19 @@ assert.equal(runtime.profile.label, 'AI玩具');
 assert.equal(runtime.logSource, LOG_SOURCES.SERIAL);
 assert.equal(runtime.serialPort, 'COM7');
 assert.equal(runtime.baudrate, 115200);
+
+const speakerRuntime = resolveDeviceRuntimeOptions({
+  device: {
+    type: DEVICE_TYPES.SPEAKER,
+    logSource: LOG_SOURCES.SERIAL,
+  },
+});
+assert.equal(speakerRuntime.logSource, LOG_SOURCES.ADB);
+
+const aiToyRuntime = resolveDeviceRuntimeOptions({
+  device: {
+    type: DEVICE_TYPES.AI_TOY,
+    logSource: LOG_SOURCES.ADB,
+  },
+});
+assert.equal(aiToyRuntime.logSource, LOG_SOURCES.SERIAL);
