@@ -78,6 +78,9 @@ export default function PlaybackConsole({ onTestComplete }) {
   const [listenerHealth, setListenerHealth] = useState(null);
   const [listenerHealthStatus, setListenerHealthStatus] = useState('');
   const [listenerRecovering, setListenerRecovering] = useState(false);
+  const [aiToyRebooting, setAiToyRebooting] = useState(false);
+  const [aiToyRebootStatus, setAiToyRebootStatus] = useState('');
+  const aiToyRebootingRef = React.useRef(false);
   const [wakePreviewPlaying, setWakePreviewPlaying] = useState(false);
   const [langfuseEnvVersion, setLangfuseEnvVersion] = useState(0);
 
@@ -356,7 +359,44 @@ export default function PlaybackConsole({ onTestComplete }) {
     }
   };
 
-  const isLocked = isPlayingRef.current || isPausedRef.current;
+  const rebootAiToy = async () => {
+    if (!isAiToy || isPlayingRef.current || isPausedRef.current || listenerRecovering || aiToyRebootingRef.current) return;
+    if (!deviceRuntime.serialPort?.trim()) {
+      setAiToyRebootStatus('请先选择 AI玩具串口');
+      return;
+    }
+    aiToyRebootingRef.current = true;
+    setAiToyRebooting(true);
+    setAiToyRebootStatus('正在发送复位信号，等待 AI玩具启动完成，USB 物理连接保持…');
+    setListenerHealth(null);
+    try {
+      const result = await adbWakeService.rebootSpeaker({
+        bridgeUrl: autonomousWake.bridgeUrl,
+        deviceId: deviceRuntime.serialPort,
+        deviceType: deviceRuntime.deviceType,
+        logSource: deviceRuntime.logSource,
+        serialPort: deviceRuntime.serialPort,
+        baudrate: deviceRuntime.baudrate,
+        recoveryTimeoutMs: 35000,
+      });
+      if (result.success !== true || result.bootCompleted !== true || result.serialConnected !== true || result.rebootCommandOk === false) {
+        throw new Error(result.message || result.rebootCommandError || '串口未恢复');
+      }
+      if (result.recoveredDeviceId) {
+        handleDeviceOptionsChange({ serialPort: result.recoveredDeviceId });
+        handleAutonomousWakeChange({ deviceId: result.recoveredDeviceId });
+      }
+      setListenerHealth(result.health || null);
+      setAiToyRebootStatus(`AI玩具已重启并确认启动完成（${result.recoveredDeviceId || deviceRuntime.serialPort}），可以重新自检或开始测试。`);
+    } catch (error) {
+      setAiToyRebootStatus(`AI玩具重启失败：${error?.message || '恢复未完成'}，请检查连接后重试。`);
+    } finally {
+      aiToyRebootingRef.current = false;
+      setAiToyRebooting(false);
+    }
+  };
+
+  const isLocked = isPlayingRef.current || isPausedRef.current || aiToyRebooting;
   const selectedAdbDeviceId = autonomousWake.deviceId || (adbDevices.length === 1 ? adbDevices[0].id : '');
   const listenerChecks = listenerHealth?.checks || {};
   const listenerOk = Boolean(listenerHealth?.success);
@@ -440,6 +480,7 @@ export default function PlaybackConsole({ onTestComplete }) {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (aiToyRebootingRef.current) return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
       if (e.key === 'Enter' && !isPlayingRef.current && !isPausedRef.current) {
@@ -538,7 +579,7 @@ export default function PlaybackConsole({ onTestComplete }) {
               {!isPlayingRef.current && !isPausedRef.current ? (
                 <button
                   onClick={handleStart}
-                  disabled={testAudios.length === 0}
+                  disabled={testAudios.length === 0 || aiToyRebooting}
                   className="flex items-center gap-2 rounded-lg bg-accent px-6 py-3 font-medium text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-600"
                 >
                   <span>▶</span>
@@ -604,6 +645,9 @@ export default function PlaybackConsole({ onTestComplete }) {
             <p className="mt-2 text-xs text-gray-300">
               {listenerHealthStatus || `启动后自动检查 ${deviceLabel} 设备与 ${deviceRuntime.logSource === LOG_SOURCES.SERIAL ? 'USB串口' : 'ADB logcat'} 可读状态。`}
             </p>
+            {isAiToy && aiToyRebootStatus && (
+              <p role="status" aria-live="polite" className="mt-2 text-xs text-amber-200">{aiToyRebootStatus}</p>
+            )}
             <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <label className="text-xs text-gray-400">
                 设备类型
@@ -707,6 +751,17 @@ export default function PlaybackConsole({ onTestComplete }) {
             >
               {listenerRecovering ? '恢复中...' : '一键恢复'}
             </button>
+            {isAiToy && (
+              <button
+                type="button"
+                onClick={rebootAiToy}
+                disabled={isLocked || listenerRecovering || !deviceRuntime.serialPort?.trim()}
+                title={isPlayingRef.current || isPausedRef.current ? '请先停止测试，再重启 AI玩具' : '发送复位信号，保持 USB 物理连接'}
+                className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-50"
+              >
+                {aiToyRebooting ? '重启中…' : '重启AI玩具'}
+              </button>
+            )}
           </div>
         </div>
       </div>

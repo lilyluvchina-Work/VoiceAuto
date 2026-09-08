@@ -1,6 +1,7 @@
 import { actions } from '../stores/testStore';
 
 const MAX_TURN_RETRIES = 3;
+const MAX_WAKE_RETRIES = 5;
 const numberOrDefault = (value, fallback) => Number(value) > 0 ? Number(value) : fallback;
 
 export async function runAiToyTest({
@@ -21,6 +22,12 @@ export async function runAiToyTest({
     signal: abortControllerRef.current?.signal,
   };
   let sessionId;
+  const serialLogs = [];
+  const closeSession = async () => {
+    const result = await adbWakeService.closeAiToySession({ ...bridgeOptions, signal: undefined, sessionId });
+    if (typeof result?.serialLog === 'string') serialLogs.push(result.serialLog);
+    sessionId = undefined;
+  };
   let sessionState;
   let firstWake = true;
   let fallbackRebootUsed = false;
@@ -45,7 +52,7 @@ export async function runAiToyTest({
     if (sessionState.error) throw new Error(sessionState.error);
     return sessionState;
   };
-  const waitForSession = async (accept, { wakeTimeout = false, bootTimeout = false } = {}) => {
+  const waitForSession = async (accept, { wakeTimeout = false, bootTimeout = false, turnTimeout = false } = {}) => {
     let started = Date.now();
     const warningMs = numberOrDefault(testOptions.autonomousResponse?.responseMaxWaitMs, 35000);
     let lastWarning = started;
@@ -62,7 +69,13 @@ export async function runAiToyTest({
         throw new Error('AI玩具重启后未检测到启动完成日志，已停止测试');
       }
       if (wakeTimeout && Date.now() - started > numberOrDefault(wakeConfig.detectionTimeoutMs, 10000) + 3000) {
-        throw new Error('AI玩具唤醒后未检测到开始收音，已停止测试');
+        return null;
+      }
+      if (turnTimeout) {
+        const elapsed = Date.now() - started;
+        const hasInputEvidence = current.inputDetected || current.firstAudioDetected || current.playbackDone;
+        if ((!hasInputEvidence && elapsed > numberOrDefault(testOptions.autonomousInput?.asrDetectionTimeoutMs, 8000))
+          || elapsed > warningMs) return null;
       }
       if (!wakeTimeout && Date.now() - lastWarning >= warningMs) {
         lastWarning = Date.now();
@@ -72,6 +85,38 @@ export async function runAiToyTest({
       await wait(200);
     }
     return null;
+  };
+
+  const rebootAndReconnect = async (cursor, caseId, failReason) => {
+    setCurrentAudioText(`${failReason}，正在发送复位信号并等待启动完成`);
+    logWake('ai_toy.reboot.start', { cursor, caseId, failReason });
+    rebootInProgress = true;
+    notify('AI_TOY_REBOOT_STARTED', [`${failReason}，发送复位信号，USB 物理连接保持`]);
+    // The session owns the serial lock for its lifetime. Release it before reset.
+    await closeSession();
+    if (shouldStop()) return;
+    const recovery = await adbWakeService.rebootSpeaker({
+      ...bridgeOptions, recoveryTimeoutMs: 35000,
+    });
+    if (recovery.raw?.serialLog) serialLogs.push(recovery.raw.serialLog);
+    if (shouldStop()) return;
+    if (recovery.success !== true || recovery.bootCompleted !== true || recovery.serialConnected !== true || recovery.rebootCommandOk === false) {
+      throw new Error(`AI玩具重启恢复失败，已停止测试：${recovery.message || recovery.rebootCommandError || '串口未恢复'}`);
+    }
+    rebootInProgress = false;
+    notify('AI_TOY_REBOOT_SUCCESS', ['已确认启动完成，将重新唤醒并确认收音',
+      `恢复串口：${recovery.recoveredDeviceId || bridgeOptions.serialPort}`]);
+    if (recovery.recoveredDeviceId) {
+      bridgeOptions.serialPort = recovery.recoveredDeviceId;
+      bridgeOptions.deviceId = recovery.recoveredDeviceId;
+      deviceRuntime.serialPort = recovery.recoveredDeviceId;
+      dispatch(actions.setDeviceOptions({ serialPort: recovery.recoveredDeviceId }));
+    }
+    ({ sessionId } = await adbWakeService.openAiToySession(bridgeOptions));
+    if (shouldStop()) return;
+    firstWake = true;
+    wakeFailCountRef.current = 0;
+    logWake('ai_toy.reboot.recovered', { cursor, caseId, serialPort: bridgeOptions.serialPort });
   };
 
   try {
@@ -118,8 +163,30 @@ export async function runAiToyTest({
         await ttsService.speak(wakeWord.text, { ...defaultVoiceConfig, volume: 200 });
         const ended = Date.now();
         dispatch(actions.setPlaybackState({ currentType: 'wake-detect' }));
-        const listening = await waitForSession(current => current.ready, { wakeTimeout: true });
+        const listening = await waitForSession(current => current.ready || (current.wakeable && !current.rebootPending), { wakeTimeout: true });
         if (shouldStop()) return;
+        // Check remaining work before recovering: a finished run only needs cleanup/logs.
+        if (cursor >= queue.length) break;
+        if (!listening?.ready) {
+          wakeFailCountRef.current += 1;
+          const failReason = 'AI玩具唤醒后未检测到开始收音';
+          logWake(listening?.wakeable ? 'ai_toy.wake.idle' : 'ai_toy.wake.timeout', { cursor, caseId, remainingCases: queue.length - cursor });
+          if (wakeFailCountRef.current <= MAX_WAKE_RETRIES) {
+            firstWake = true;
+            setCurrentAudioText(`${listening?.wakeable ? 'AI玩具处于等待状态，重新唤醒' : 'AI玩具唤醒失败，正在重试'} ${wakeFailCountRef.current}/${MAX_WAKE_RETRIES}`);
+            logWake('ai_toy.wake.retry', { cursor, caseId, retryCount: wakeFailCountRef.current });
+            cursor -= 1;
+            continue;
+          }
+          if (fallbackRebootUsed) {
+            throw new Error(`${failReason}，重启恢复后仍未收音，已停止测试`);
+          }
+          fallbackRebootUsed = true;
+          await rebootAndReconnect(cursor, caseId, failReason);
+          if (shouldStop()) return;
+          cursor -= 1;
+          continue;
+        }
         firstWake = false;
         wakeFailCountRef.current = 0;
         wakeResult = {
@@ -149,6 +216,7 @@ export async function runAiToyTest({
       let success = true;
       let failStage = '';
       let failReason = '';
+      let requiresReboot = false;
       dispatch(actions.setPlaybackState({ currentType: 'test', currentIndex: cursor,
         currentListIndex: item.listIndex, currentAudioId: item.audio.id }));
       setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · ${item.audio.text}`);
@@ -179,14 +247,27 @@ export async function runAiToyTest({
         dispatch(actions.setPlaybackState({ currentType: 'response-detect' }));
         setCurrentAudioText('AI玩具正在响应，等待播完并开始收音');
         // ASR and response evaluation toggles never disable the device readiness gate.
-        await waitForSession(current => current.ready || current.interrupted);
+        const response = await waitForSession(current => current.ready || current.interrupted, { turnTimeout: true });
         if (shouldStop()) return;
+        if (!response) {
+          success = false;
+          requiresReboot = true;
+          const hasInputEvidence = sessionState.inputDetected || sessionState.firstAudioDetected || sessionState.playbackDone;
+          failStage = !hasInputEvidence ? 'AI_TOY_INPUT_TIMEOUT'
+            : sessionState.playbackDone ? 'AI_TOY_LISTENING_TIMEOUT' : 'AI_TOY_RESPONSE_TIMEOUT';
+          failReason = !hasInputEvidence ? '测试音频已播放，但超时未检测到设备输入或回复'
+            : sessionState.playbackDone ? '回复已播完，但超时未恢复收音'
+              : '设备回复超时，未检测到完整播报';
+        }
       }
       const interrupted = Boolean(sessionState.interrupted);
       if (interrupted) {
         success = false;
         failStage = 'AI_TOY_INTERRUPTED';
         failReason = sessionState.interruptionReason || 'AI玩具会话被中断';
+        if (/WS response timeout \(no_tts_start\)/i.test(failReason) && !sessionState.wakeable) {
+          requiresReboot = true;
+        }
       }
       const inputEnabled = Boolean(testOptions.autonomousInput?.enabled);
       const inputChainPassed = !inputEnabled || Boolean(sessionState.inputDetected);
@@ -272,40 +353,14 @@ export async function runAiToyTest({
         ...(failReason ? [`原因：${failReason}`] : []),
         ...(interrupted ? [`当前已重试：${Number(item.retryCount || 0)} 次`] : []),
       ]);
-      if (interrupted) {
-        if (Number(item.retryCount || 0) >= MAX_TURN_RETRIES) {
+      if (interrupted || requiresReboot) {
+        if (requiresReboot || Number(item.retryCount || 0) >= MAX_TURN_RETRIES) {
           if (fallbackRebootUsed) {
-            throw new Error(`AI玩具重启恢复后仍中断，已停止测试：${failReason}`);
+            throw new Error(`AI玩具重启恢复后仍${requiresReboot ? '异常' : '中断'}，已停止测试：${failReason}`);
           }
           fallbackRebootUsed = true;
-          setCurrentAudioText('AI玩具连续中断，正在重启并等待启动完成日志');
-          logWake('ai_toy.reboot.start', { cursor, caseId, failReason });
-          rebootInProgress = true;
-          notify('AI_TOY_REBOOT_STARTED', ['连续中断，开始兜底重启；等待启动完成日志']);
-          // The session owns the serial lock for its lifetime. Release it before reset.
-          await adbWakeService.closeAiToySession({ ...sessionOptions(), signal: undefined });
-          sessionId = undefined;
+          await rebootAndReconnect(cursor, caseId, failReason);
           if (shouldStop()) return;
-          const recovery = await adbWakeService.rebootSpeaker({
-            ...bridgeOptions, recoveryTimeoutMs: 35000,
-          });
-          if (shouldStop()) return;
-          if (recovery.success !== true || recovery.bootCompleted !== true || recovery.rebootCommandOk === false) {
-            throw new Error(`AI玩具重启恢复失败，已停止测试：${recovery.message || recovery.rebootCommandError || '串口未恢复'}`);
-          }
-          rebootInProgress = false;
-          notify('AI_TOY_REBOOT_SUCCESS', ['已确认启动完成，将重新连接并唤醒',
-            `恢复串口：${recovery.recoveredDeviceId || bridgeOptions.serialPort}`]);
-          if (recovery.recoveredDeviceId) {
-            bridgeOptions.serialPort = recovery.recoveredDeviceId;
-            bridgeOptions.deviceId = recovery.recoveredDeviceId;
-            deviceRuntime.serialPort = recovery.recoveredDeviceId;
-            dispatch(actions.setDeviceOptions({ serialPort: recovery.recoveredDeviceId }));
-          }
-          ({ sessionId } = await adbWakeService.openAiToySession(bridgeOptions));
-          if (shouldStop()) return;
-          firstWake = true;
-          logWake('ai_toy.reboot.recovered', { cursor, caseId, serialPort: bridgeOptions.serialPort });
         }
         queue[cursor] = buildRetryQueueItem(item, { failureEvent: failStage, failureLog: failReason });
         logWake('ai_toy.retry.same_turn', { cursor, failStage, failReason,
@@ -322,16 +377,21 @@ export async function runAiToyTest({
     isPausedRef.current = false;
   } catch (error) {
     if (shouldStop()) return;
-    if (rebootInProgress) notify('AI_TOY_REBOOT_FAILED', [error?.message || '未确认启动完成']);
+    if (rebootInProgress) notify('AI_TOY_REBOOT_FAILED', [error?.message || '恢复未完成']);
     throw error;
   } finally {
     if (sessionId) {
       // Cleanup must still run when the test's AbortSignal is already aborted.
       try {
-        await adbWakeService.closeAiToySession({ ...bridgeOptions, signal: undefined, sessionId });
+        await closeSession();
       } catch (error) {
         logWake('ai_toy.session.close.error', { sessionId, message: error.message });
       }
+    }
+    if (serialLogs.length) {
+      dispatch(actions.setReport({
+        aiToySerialLog: { runId: reportRunId, serialLog: serialLogs.join('') },
+      }));
     }
   }
   notificationCaseId = undefined;

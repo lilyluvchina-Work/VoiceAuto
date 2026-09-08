@@ -186,6 +186,7 @@ const initialState = {
 
   // 测试报告
   report: {
+    aiToySerialLog: null,
     runId: '',
     startTime: null,
     endTime: null,
@@ -465,6 +466,7 @@ function testReducer(state, action) {
         report: {
           ...state.report,
           runId: action.payload?.runId || '',
+          aiToySerialLog: null,
           startTime: playbackStartTime,
           endTime: null,
           firstTestAudioTime: null,

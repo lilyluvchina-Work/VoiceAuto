@@ -17,7 +17,8 @@ globalThis.fetch = async (url, options) => {
       ok: true,
       text: async () => JSON.stringify({
         success: true,
-        bootCompleted: true,
+        bootCompleted: false,
+        serialConnected: true,
         recoveredDeviceId: 'COM8',
         health: {
           usbDiagnostics: [{ friendlyName: '未知 USB 设备(设备描述符请求失败)' }]
@@ -56,3 +57,6 @@ assert.equal(calls[3].body.logSource, LOG_SOURCES.SERIAL);
 assert.equal(calls[4].body.logSource, LOG_SOURCES.SERIAL);
 assert.equal(rebootResult.recoveredDeviceId, 'COM8');
 assert.equal(rebootResult.health.usbDiagnostics[0].friendlyName, '未知 USB 设备(设备描述符请求失败)');
+
+assert.equal(rebootResult.serialConnected, true);
+assert.equal(rebootResult.bootCompleted, false);

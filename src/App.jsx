@@ -16,6 +16,7 @@ import { AuthGate, useAuth } from './components/AuthGate';
 import { getDefaultLangfuseEnvironmentKey } from './modules/langfuse/services/langfuseService';
 import { APP_VERSION } from './constants';
 import { recordToolUsage } from './utils/toolUsageStore';
+import { downloadAiToySerialLog } from './services/adbWakeService';
 
 // Logo SVG
 const Logo = () => (
@@ -57,6 +58,8 @@ function AppContent() {
   const auth = useAuth();
   const [activeMode, setActiveMode] = useState(MODES.cases);
   const [pendingLangfuseJump, setPendingLangfuseJump] = useState(false);
+  const [serialLogDownloadError, setSerialLogDownloadError] = useState('');
+  const aiToySerialLog = state.report?.aiToySerialLog;
   const autoJumpTimerRef = useRef(null);
   const recordedUsageIdsRef = useRef(new Set());
   const isTesting = state.playback.isPlaying || state.playback.isPaused;
@@ -133,9 +136,37 @@ function AppContent() {
     setActiveMode(MODES.voice);
   };
 
+  useEffect(() => {
+    setSerialLogDownloadError('');
+  }, [aiToySerialLog]);
+
+  const handleDownloadSerialLog = () => {
+    try {
+      downloadAiToySerialLog(aiToySerialLog);
+      setSerialLogDownloadError('');
+    } catch (error) {
+      setSerialLogDownloadError(`串口日志下载失败，请重试：${error.message}`);
+    }
+  };
+
   const renderMainContent = () => {
     return (
       <div className="space-y-6">
+        {aiToySerialLog && (
+          <div className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-blue-100">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div role="status">
+                <p>AI玩具测试已结束，请下载本次串口日志。</p>
+                <p className="mt-1 text-xs text-gray-400">刷新页面、重置或开始下一次测试前，请先下载保存。</p>
+              </div>
+              <button type="button" onClick={handleDownloadSerialLog}
+                className="rounded-lg bg-primary px-4 py-2 font-medium text-white hover:bg-primary/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                下载串口日志
+              </button>
+            </div>
+            {serialLogDownloadError && <p role="alert" className="mt-2 text-red-300">{serialLogDownloadError}</p>}
+          </div>
+        )}
         {/* 保持挂载：切换左侧菜单时只隐藏页面，避免已展示数据或编辑内容被重置 */}
         <div className={activeMode === MODES.langfuse ? 'block' : 'hidden'}>
           <LangfuseFetcher />

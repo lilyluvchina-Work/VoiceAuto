@@ -443,6 +443,7 @@ function buildSerialOpenOptions(serialPort, baudrate, autoOpen = false) {
     stopBits: 1,
     parity: 'none',
     rtscts: false,
+    hupcl: false,
     xon: false,
     xoff: false,
     xany: false,
@@ -2066,11 +2067,16 @@ async function rebootAiToyViaSerial(body = {}) {
         const current = await resolveSerialDeviceSelection({ ...body, serialPort });
         if (!current.success) throw new Error(current.message);
         serialPort = current.serialPort;
-        return { serialPort, port: await openSerialDevice(serialModule, serialPort, Number(body.baudrate) || 115200) };
+        const ports = await serialModule.SerialPort.list();
+        const hardware = ports.find(item => item.path.toLowerCase() === serialPort.toLowerCase());
+        if (String(hardware?.vendorId || '').toLowerCase() !== '303a'
+          || String(hardware?.productId || '').toLowerCase() !== '1001') {
+          throw new Error(`串口 ${serialPort} 不是已验证的 Espressif 303A:1001 设备，未发送复位信号`);
+        }
+        return { serialPort, port: await openSerialDevice(serialModule, serialPort, 115200) };
       },
       close: closeSerialQuietly,
       timeoutMs: Math.max(10000, Number(body.recoveryTimeoutMs) || 35000),
-      command: body.serialRebootCommand || 'reboot\n',
       log: appendBridgeLog,
     });
     appendBridgeLog('serial.reboot.completed', result);
@@ -2121,7 +2127,7 @@ const server = http.createServer(async (req, res) => {
       if (body.action === 'open') data = await aiToySessions.open(body);
       else if (body.action === 'read') data = aiToySessions.read(body.sessionId);
       else if (body.action === 'arm') data = aiToySessions.arm(body.sessionId, body);
-      else if (body.action === 'close') { await aiToySessions.close(body.sessionId); data = {}; }
+      else if (body.action === 'close') { data = await aiToySessions.close(body.sessionId) || {}; }
       else throw new Error('Invalid AI toy session action');
       sendJson(res, 200, { success: true, ...data });
       return;

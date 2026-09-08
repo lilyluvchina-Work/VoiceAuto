@@ -263,6 +263,7 @@ export async function rebootSpeaker({
   return {
     success: data?.success !== false,
     bootCompleted: data?.bootCompleted === true,
+    serialConnected: data?.serialConnected === true,
     recoveredDeviceId: data?.recoveredDeviceId || '',
     rebootCommandOk: data?.rebootCommandOk !== false,
     rebootCommandError: data?.rebootCommandError || '',
@@ -390,11 +391,25 @@ export const readAiToySession = options => aiToySessionRequest('read', options);
 export const armAiToySession = options => aiToySessionRequest('arm', options);
 export const closeAiToySession = options => aiToySessionRequest('close', options);
 
+export function downloadAiToySerialLog({ runId, serialLog }) {
+  const url = URL.createObjectURL(new Blob([serialLog], { type: 'text/plain;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `ai-toy-serial-${String(runId).replace(/[^a-zA-Z0-9_-]/g, '_')}.log`;
+  document.body.appendChild(link);
+  try { link.click(); }
+  finally {
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+
 export const adbWakeService = {
   openAiToySession,
   readAiToySession,
   armAiToySession,
   closeAiToySession,
+  downloadAiToySerialLog,
   DEFAULT_BRIDGE_URL,
   WAKEUP_KEYWORDS,
   ASR_KEYWORDS,

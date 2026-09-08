@@ -75,6 +75,43 @@ test('generic hardware timeout cannot authorize re-wake', async t => {
   assert.throws(() => f.arm('wake'), /未中断/);
 });
 
+test('failed wake can be armed again while still waiting for first listening', async t => {
+  const f = await fixture(t);
+  f.arm('wake');
+  for (let i = 0; i < 5; i++) f.arm('wake');
+  f.emit('Cedar: Start listening');
+  assert.equal(f.read().ready, true);
+  assert.throws(() => f.arm('wake'), /未中断/);
+  f.arm('turn');
+  assert.throws(() => f.arm('wake'), /未中断/);
+});
+
+test('idle after test input without a reply is an interruption, never completion', async t => {
+  const f = await fixture(t);
+  f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn');
+  f.emit('Cedar: Input Text: 你好');
+  f.emit('Application: New State: idle');
+  assert.equal(f.read().interrupted, true);
+  assert.equal(f.read().wakeable, true);
+  assert.equal(f.read().ready, false);
+  assert.equal(f.read().playbackDone, false);
+  assert.equal(f.read().actualAsrText, '你好');
+});
+
+test('only explicit idle makes an interrupted device wakeable', async t => {
+  const f = await fixture(t);
+  f.arm('wake');
+  f.emit('WS response timeout (no_tts_start)');
+  assert.equal(f.read().wakeable, false);
+  f.emit('Application: New State: idle');
+  assert.equal(f.read().wakeable, true);
+  f.arm('wake');
+  assert.equal(Boolean(f.read().wakeable), false);
+  f.emit('Rebooting.');
+  assert.equal(f.read().wakeable, false);
+  assert.throws(() => f.arm('wake'), /尚未完成重启/);
+});
+
 test('non-voice case waits for input then a new listening event', async t => {
   const f = await fixture(t);
   f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn', false);
@@ -119,4 +156,13 @@ test('boot banners require idle before re-wake and timeout logs cannot clear boo
   assert.equal(f.read().ready, false);
   f.emit('Cedar: Start listening');
   assert.equal(f.read().ready, true);
+});
+
+test('closing exports all raw serial data including partial UTF-8 and more than 30 lines', async t => {
+  const f = await fixture(t);
+  const rawLog = Array.from({ length: 100 }, (_, i) => `日志 ${i}\r\n`).join('') + '末尾';
+  for (const byte of Buffer.from(rawLog)) f.port.emit('data', Buffer.from([byte]));
+  assert.equal(f.read().sampleLines.length, 30);
+  const result = await f.manager.close(f.sessionId);
+  assert.equal(result.serialLog, rawLog);
 });

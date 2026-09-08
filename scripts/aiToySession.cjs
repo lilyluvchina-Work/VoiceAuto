@@ -28,7 +28,9 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
     if (mode === 'turn' && !session.state.ready) {
       throw new Error('AI玩具尚未开始收音，不能播放测试音频');
     }
-    if (mode === 'wake' && session.armed && !session.state.interrupted) {
+    // The runner may retry a timed-out wake before the first listening event.
+    // An active input/response turn must still never be interrupted by re-waking.
+    if (mode === 'wake' && session.armed && !session.state.interrupted && session.state.phase !== 'waking') {
       throw new Error('AI玩具会话未中断，不能重复唤醒');
     }
     if (mode === 'wake' && session.state.rebootPending) {
@@ -53,9 +55,11 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
       return;
     }
     // A generic hardware warning or elapsed timer is not evidence of a lost session.
-    if (BOOT_START.test(line) || /Application:.*New State:\s*idle|WS response timeout \(no_tts_start\)/i.test(line)) {
+    const idle = /Application:.*New State:\s*idle\b/i.test(line);
+    if (BOOT_START.test(line) || idle || /WS response timeout \(no_tts_start\)/i.test(line)) {
       Object.assign(state, { phase: 'interrupted', ready: false, interrupted: true,
         rebootPending: state.rebootPending || BOOT_START.test(line),
+        wakeable: idle && !state.rebootPending,
         interruptionReason: line, listeningDetected: false });
       return;
     }
@@ -88,7 +92,10 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
     session.closed = true;
     clearTimeout(session.timer);
     session.closing = (async () => {
-      try { await closePort(session.port); }
+      try {
+        await closePort(session.port);
+        return { serialLog: Buffer.concat(session.rawChunks).toString('utf8') };
+      }
       finally {
         sessions.delete(sessionId);
         activePorts.delete(session.key);
@@ -111,11 +118,12 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
           let release;
           const lifetime = new Promise(done => { release = done; });
           const sessionId = randomUUID();
-          const session = { key, port, release, lines: [], state: { phase: 'unknown', ready: false,
+          const session = { key, port, release, rawChunks: [], lines: [], state: { phase: 'unknown', ready: false,
             interrupted: false }, armed: false, expectsVoiceResponse: true };
           const decoder = new StringDecoder('utf8');
           let buffered = '';
           port.on('data', chunk => {
+            session.rawChunks.push(Buffer.from(chunk));
             buffered += decoder.write(chunk);
             const lines = buffered.split(/\r?\n/);
             buffered = (lines.pop() || '').slice(-65536);
