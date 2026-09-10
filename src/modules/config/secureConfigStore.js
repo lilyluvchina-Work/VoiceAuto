@@ -88,10 +88,12 @@ export const CONFIG_SCHEMAS = {
     },
   },
   [CONFIG_TYPES.MINIMAX]: {
-    label: 'MiniMax 大模型配置',
+    // Retain the existing database key so saved MiniMax settings need no migration.
+    label: '大模型配置',
     required: ['apiKey'],
-    sensitive: ['apiKey'],
+    sensitive: ['apiKey', 'codexApiKey'],
     defaults: {
+      activeProvider: 'minimax',
       configName: 'MiniMax 评测模型',
       baseUrl: 'https://api.minimax.io/v1',
       apiKey: '',
@@ -99,6 +101,11 @@ export const CONFIG_SCHEMAS = {
       temperature: 1,
       maxCompletionTokens: 2048,
       timeout: 60000,
+      codexBaseUrl: 'https://api.openai.com/v1',
+      codexApiKey: '',
+      codexModel: 'gpt-5.3-codex',
+      codexMaxOutputTokens: 8192,
+      codexTimeout: 120000,
       enabled: false,
     },
   },
@@ -480,7 +487,10 @@ export function listConfigs(options = {}) {
 export function getConfigStatus(type, options = {}) {
   const schema = getSchema(type);
   const config = readConfig(type, { ...options, includeSecrets: true });
-  const missingRequiredFields = schema.required.filter((field) => !normalizeText(config[field]));
+  const required = type === CONFIG_TYPES.MINIMAX && config.activeProvider === 'codex'
+    ? ['codexApiKey']
+    : schema.required;
+  const missingRequiredFields = required.filter((field) => !normalizeText(config[field]));
   return {
     type,
     label: schema.label,

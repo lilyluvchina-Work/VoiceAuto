@@ -149,6 +149,24 @@ try {
   assert.equal(loadedMiniMax.body.config.model, 'MiniMax-M2.7');
   assert.equal(loadedMiniMax.body.config.apiKey, 'sk-minimax-db-secret');
 
+  const savedCodex = await request(server, 'PUT', '/api/configs/minimax', {
+    config: {
+      ...loadedMiniMax.body.config,
+      activeProvider: 'codex',
+      codexApiKey: 'sk-codex-db-secret',
+      codexBaseUrl: 'https://api.openai.com/v1',
+      codexModel: 'gpt-5.3-codex',
+      codexMaxOutputTokens: 8192,
+      codexTimeout: 120000,
+    },
+  }, cookie);
+  assert.equal(savedCodex.status, 200);
+  const loadedCodex = await request(server, 'GET', '/api/configs/minimax', null, cookie);
+  assert.equal(loadedCodex.body.config.activeProvider, 'codex');
+  assert.equal(loadedCodex.body.config.codexApiKey, 'sk-codex-db-secret');
+  assert.equal(loadedCodex.body.config.apiKey, 'sk-minimax-db-secret');
+  assert.equal(loadedCodex.body.config.model, 'MiniMax-M2.7');
+
   const leadLogin = await request(server, 'POST', '/api/auth/login', {
     loginAccount: 'LeadOps',
     password: 'Sdmc1234',

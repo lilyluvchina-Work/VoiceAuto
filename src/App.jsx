@@ -102,12 +102,13 @@ function AppContent() {
     if (recordedUsageIdsRef.current.has(usageId)) return;
     const record = recordToolUsage({
       runId: state.report?.runId,
+      deviceType: state.report?.deviceType,
       startTime,
       endTime,
       user: auth.currentUser,
     });
     if (record) recordedUsageIdsRef.current.add(usageId);
-  }, [auth?.currentUser, state.report?.endTime, state.report?.runId, state.report?.startTime]);
+  }, [auth?.currentUser, state.report?.endTime, state.report?.runId, state.report?.startTime, state.report?.deviceType]);
 
   const handleTestComplete = () => {
     if (autoJumpTimerRef.current) {

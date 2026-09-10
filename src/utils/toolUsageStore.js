@@ -1,3 +1,5 @@
+import { DEVICE_PROFILES } from '../config/deviceProfiles.js';
+
 export const TOOL_USAGE_STORAGE_KEY = 'voiceauto_tool_usage_records_v1';
 export const TOOL_USAGE_UPDATED_EVENT = 'voiceauto-tool-usage-updated';
 
@@ -49,7 +51,7 @@ export function getToolUsageRecords(options = {}) {
   }
 }
 
-export function recordToolUsage({ runId, startTime, endTime, user } = {}, options = {}) {
+export function recordToolUsage({ runId, startTime, endTime, user, deviceType } = {}, options = {}) {
   const start = toTimestamp(startTime);
   const end = toTimestamp(endTime);
   const loginAccount = normalizeText(user?.loginAccount || user?.login_account || user?.account);
@@ -63,6 +65,8 @@ export function recordToolUsage({ runId, startTime, endTime, user } = {}, option
       end,
     ].join('|'),
     runId: normalizeText(runId),
+    deviceType: normalizeText(deviceType),
+    testProject: DEVICE_PROFILES[deviceType]?.label || '未记录',
     userName: normalizeText(user?.username || user?.name) || loginAccount,
     loginAccount,
     startTime: start,
@@ -89,6 +93,12 @@ export function recordToolUsage({ runId, startTime, endTime, user } = {}, option
   }
 
   return record;
+}
+
+export function filterToolUsageByUserName(records = [], query = '') {
+  const keyword = normalizeText(query).toLocaleLowerCase();
+  if (!keyword) return records;
+  return records.filter((record) => normalizeText(record?.userName).toLocaleLowerCase().includes(keyword));
 }
 
 export function summarizeToolUsageByUser(records = []) {

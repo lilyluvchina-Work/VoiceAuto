@@ -11,7 +11,7 @@ import {
   normalizeSubmissionParams,
 } from '../utils/summaryReportBuilder';
 import {
-  evaluateReportWithMiniMax,
+  evaluateReportWithLargeModel,
   getSavedEvaluationResult,
   REPORT_EVALUATION_EVENT,
 } from '../services/reportEvaluatorService';
@@ -471,7 +471,7 @@ export default function SummaryReport() {
     if (!report || evaluating) return;
     setEvaluating(true);
     setEvaluationError('');
-    const result = await evaluateReportWithMiniMax(report);
+    const result = await evaluateReportWithLargeModel(report);
     setEvaluating(false);
     if (result.success) {
       setEvaluation(result.evaluation);

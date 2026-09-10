@@ -466,6 +466,7 @@ function testReducer(state, action) {
         report: {
           ...state.report,
           runId: action.payload?.runId || '',
+          deviceType: state.testOptions.device?.type || DEVICE_TYPES.SPEAKER,
           aiToySerialLog: null,
           startTime: playbackStartTime,
           endTime: null,

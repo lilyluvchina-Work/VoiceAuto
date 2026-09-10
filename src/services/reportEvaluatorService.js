@@ -257,6 +257,32 @@ function loadMiniMaxConfig(options = {}) {
   return options.config || readSecureConfig(CONFIG_TYPES.MINIMAX, { includeSecrets: true });
 }
 
+function resolveSelectedModel(config) {
+  const provider = config.activeProvider || 'minimax';
+  if (!['minimax', 'codex'].includes(provider)) throw new Error('不支持的大模型，请到配置中心重新选择。');
+  return provider === 'codex'
+    ? { provider, label: 'Codex', enabled: config.enabled, apiKey: config.codexApiKey,
+      baseUrl: config.codexBaseUrl || 'https://api.openai.com/v1', model: config.codexModel || 'gpt-5.3-codex',
+      maxTokens: config.codexMaxOutputTokens ?? 8192, timeout: config.codexTimeout ?? 120000 }
+    : { provider, label: 'MiniMax', ...config, maxTokens: config.maxCompletionTokens ?? 2048 };
+}
+
+function selectedModelStatus(config) {
+  const enabled = Boolean(config.enabled);
+  const hasApiKey = Boolean(normalizeText(config.apiKey));
+  return {
+    ready: enabled && hasApiKey,
+    enabled,
+    hasApiKey,
+    message: !enabled ? `${config.label} 大模型配置未启用，请先到配置中心启用。`
+      : !hasApiKey ? `${config.label} API Key 未配置，请先到配置中心填写并保存。` : '',
+  };
+}
+
+export function getLargeModelEvaluationConfigStatus(options = {}) {
+  return selectedModelStatus(resolveSelectedModel(loadMiniMaxConfig(options)));
+}
+
 export function getMiniMaxEvaluationConfigStatus(options = {}) {
   const config = loadMiniMaxConfig(options);
   const enabled = Boolean(config?.enabled);
@@ -289,21 +315,47 @@ export function getMiniMaxEvaluationConfigStatus(options = {}) {
 }
 
 export async function evaluateReportWithMiniMax(report, options = {}) {
+  return evaluateReportWithLargeModel(report, {
+    ...options, config: { ...loadMiniMaxConfig(options), activeProvider: 'minimax' },
+  });
+}
+
+export async function evaluateReportWithLargeModel(report, options = {}) {
   const input = buildEvaluationInput(report);
+  let timeoutId;
   try {
-    const config = loadMiniMaxConfig(options);
-    const configStatus = getMiniMaxEvaluationConfigStatus({ ...options, config });
+    const config = resolveSelectedModel(loadMiniMaxConfig(options));
+    const configStatus = selectedModelStatus(config);
     if (!configStatus.ready) throw new Error(configStatus.message);
     const fetchImpl = options.fetchImpl || globalThis.fetch;
     if (typeof fetchImpl !== 'function') throw new Error('当前环境不支持 fetch');
 
-    const response = await fetchImpl(buildEndpoint(config.baseUrl), {
+    const isCodex = config.provider === 'codex';
+    const baseUrl = normalizeText(config.baseUrl).replace(/\/+$/, '');
+    const endpoint = isCodex
+      ? (baseUrl.endsWith('/responses') ? baseUrl : `${baseUrl}/responses`)
+      : buildEndpoint(config.baseUrl);
+    const maxTokens = Number(config.maxTokens);
+    const timeout = Number(config.timeout ?? 60000);
+    if (!Number.isInteger(maxTokens) || maxTokens <= 0) throw new Error('最大输出 Tokens 必须是正整数');
+    if (!Number.isInteger(timeout) || timeout <= 0 || timeout > 2147483647) throw new Error('超时时间必须是有效的正整数');
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), timeout);
+    const response = await fetchImpl(endpoint, {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${normalizeText(config.apiKey)}`,
       },
-      body: JSON.stringify({
+      body: JSON.stringify(isCodex ? {
+        model: normalizeText(config.model),
+        instructions: '你是一个资深测试专家，只能基于输入的自动化测试报告数据输出 JSON 评测结果。',
+        input: buildEvaluationPrompt(input),
+        max_output_tokens: maxTokens,
+        store: false,
+        stream: false,
+      } : {
         model: normalizeText(config.model) || 'MiniMax-M2.7',
         messages: [
           {
@@ -316,26 +368,37 @@ export async function evaluateReportWithMiniMax(report, options = {}) {
           },
         ],
         temperature: toNumber(config.temperature, 1),
-        max_completion_tokens: toNumber(config.maxCompletionTokens, 2048),
+        max_completion_tokens: maxTokens,
         stream: false,
       }),
     });
 
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(body.message || body.error?.message || `MiniMax 调用失败：HTTP ${response.status}`);
+      throw new Error(body.message || body.error?.message || `${config.label} 调用失败：HTTP ${response.status}`);
     }
 
-    const messageContent = getMessageContent(body);
-    if (!messageContent) throw new Error('MiniMax 未返回评测内容');
+    if (isCodex && body.status === 'incomplete') {
+      throw new Error(body.incomplete_details?.reason === 'max_output_tokens'
+        ? 'Codex 输出未完成，请增大最大输出 Tokens 后重试。' : 'Codex 输出未完成，请重试。');
+    }
+    if (isCodex && body.error) throw new Error(body.error.message || 'Codex 调用失败');
+    const messageContent = isCodex
+      ? (body.output || []).filter((item) => item.type === 'message')
+        .flatMap((item) => item.content || []).filter((item) => item.type === 'output_text')
+        .map((item) => item.text || '').join('\n')
+      : getMessageContent(body);
+    if (!messageContent) throw new Error(`${config.label} 未返回评测内容`);
     const evaluation = normalizeEvaluationResult(extractJsonPayload(messageContent), input);
     const saved = saveEvaluationResult(report?.runId || report?.id || input.taskName, evaluation, options);
     return { success: true, evaluation: saved, input };
   } catch (error) {
     return {
       success: false,
-      error: error?.message || '大模型评测失败',
+      error: error?.name === 'AbortError' ? '大模型评测超时，请调整超时时间或稍后重试。' : error?.message || '大模型评测失败',
       input,
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

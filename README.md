@@ -31,6 +31,9 @@
 4. AI玩具使用持续 USB 串口会话：唤醒后确认收音，完播并再次收音后进入下一条。中断后重唤醒，重试耗尽后提供一次重启兜底，启动日志确认后再唤醒。
 5. Speaker 连续对话等待播报结束；监听超时重新唤醒并重试当前用例，连续 5 次唤醒失败进入有上限的重启恢复。
 6. 在测试过程记录、Langfuse 日志及总结报告查看结果。需要钉钉通知时配置机器人并开启页面“发送钉钉群消息”。
+7. 在“配置中心 → 大模型配置”填写 MiniMax 或 Codex 参数，勾选“启用”并单选当前模型，点击“保存配置”。两套配置独立保留，总结报告中的“开始评测”使用已保存的选择。Codex 默认模型为 `gpt-5.3-codex`，模型名称可修改，使用 OpenAI API Key 和 Responses API；若输出未完成，可增大“最大输出 Tokens”。
+
+大模型配置沿用数据库中的 `minimax` 记录，旧记录默认选择 MiniMax，无需迁移；新增 `activeProvider` 和 `codex*` 参数与原参数一起保存。Codex API 说明参见 [OpenAI 官方模型文档](https://developers.openai.com/api/docs/models/gpt-5.3-codex)及 [Responses API 指南](https://developers.openai.com/api/docs/guides/migrate-to-responses)。
 
 日志来源由设备类型确定：Speaker 使用 ADB，AI玩具使用 USB串口。低频设置按需展开，AI玩具不显示无效的 Speaker 参数。唤醒间延迟仅在固定节奏重新唤醒时显示并生效。
 

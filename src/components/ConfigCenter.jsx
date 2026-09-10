@@ -22,6 +22,8 @@ import { refreshLangfuseEnvironments } from '../modules/langfuse/services/langfu
 import { useAuth } from './AuthGate';
 import {
   getToolUsageRecords,
+  filterToolUsageByUserName,
+  formatToolUsageDuration,
   summarizeToolUsageByUser,
   TOOL_USAGE_UPDATED_EVENT,
 } from '../utils/toolUsageStore';
@@ -51,6 +53,11 @@ const FIELD_LABELS = {
   model: '模型',
   temperature: '温度',
   maxCompletionTokens: '最大输出 Tokens',
+  codexBaseUrl: 'Base URL',
+  codexApiKey: 'API Key',
+  codexModel: '模型',
+  codexMaxOutputTokens: '最大输出 Tokens',
+  codexTimeout: '超时时间(ms)',
   secret: 'Secret',
   proxyPath: '代理路径',
   groupName: '群名称',
@@ -97,16 +104,22 @@ const CONFIG_TABS = [
   CONFIG_TYPES.MINIMAX,
 ];
 const USER_MANAGEMENT_TAB = 'userManagement';
+const USAGE_RECORDS_TAB = 'usageRecords';
 
 const FIELD_ORDER = {
   [CONFIG_TYPES.LANGFUSE]: ['envKey', 'label', 'baseUrl', 'proxyBase', 'publicKey', 'secretKey', 'projectId', 'defaultTimeRange', 'maxLimit', 'timeout', 'enabled'],
   [CONFIG_TYPES.TAPD]: ['configName', 'baseUrl', 'workspaceId', 'companyId', 'tapdProjectId', 'apiUser', 'apiPassword', 'defaultTestPlanId', 'timeout', 'debugDirectoryMapping', 'enabled'],
   [CONFIG_TYPES.DINGTALK]: ['groupName', 'proxyPath', 'webhook', 'accessToken', 'secret', 'enabled'],
   [CONFIG_TYPES.DOUBAO_TTS]: ['apiKeyId', 'apiKeySecret', 'secretKey', 'resourceId'],
-  [CONFIG_TYPES.MINIMAX]: ['configName', 'baseUrl', 'apiKey', 'model', 'temperature', 'maxCompletionTokens', 'timeout', 'enabled'],
+  [CONFIG_TYPES.MINIMAX]: ['activeProvider', 'configName', 'baseUrl', 'apiKey', 'model', 'temperature', 'maxCompletionTokens', 'timeout', 'codexBaseUrl', 'codexApiKey', 'codexModel', 'codexMaxOutputTokens', 'codexTimeout', 'enabled'],
   [CONFIG_TYPES.DATABASE]: ['type', 'host', 'port', 'databaseName', 'username', 'password', 'poolSize', 'sslConfig', 'backupStrategy', 'retentionDays', 'enabled'],
   [CONFIG_TYPES.SERVER]: ['serverName', 'host', 'os', 'servicePort', 'deployPath', 'sshPort', 'sshUser', 'sshPassword', 'sshPrivateKey', 'logPath', 'storagePath', 'adbPath', 'adbDeviceId', 'chromePath', 'startCommand', 'serviceStatus', 'enabled'],
 };
+
+const LARGE_MODEL_SECTIONS = [
+  { provider: 'minimax', label: 'MiniMax', fields: ['configName', 'baseUrl', 'apiKey', 'model', 'temperature', 'maxCompletionTokens', 'timeout'] },
+  { provider: 'codex', label: 'Codex', fields: ['codexBaseUrl', 'codexApiKey', 'codexModel', 'codexMaxOutputTokens', 'codexTimeout'] },
+];
 
 function buildEditableFormFields(type, config) {
   const sensitive = new Set(CONFIG_SCHEMAS[type].sensitive);
@@ -470,8 +483,9 @@ function ConfigForm({ type, onSaved, canManage }) {
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const sensitiveFields = new Set(schema.sensitive);
-  const requiredFields = new Set(schema.required);
+  const requiredFields = new Set(type === CONFIG_TYPES.MINIMAX && form.activeProvider === 'codex' ? ['codexApiKey'] : schema.required);
   const previewConfig = {
     ...storedConfig,
     ...Object.fromEntries(Object.entries(form).filter(([field, value]) => !sensitiveFields.has(field) || String(value ?? '').trim())),
@@ -506,6 +520,7 @@ function ConfigForm({ type, onSaved, canManage }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (loading || saving) return;
     if (!canManage) {
       setMessageType('error');
       setMessage('当前账号无配置修改权限');
@@ -513,6 +528,7 @@ function ConfigForm({ type, onSaved, canManage }) {
     }
     setMessage('');
     setMessageType('');
+    setSaving(true);
     try {
       const saved = await saveDatabaseConfig(type, buildConfigSubmitPayload(type, form, storedConfig));
       setStoredConfig(saved);
@@ -523,6 +539,8 @@ function ConfigForm({ type, onSaved, canManage }) {
     } catch (error) {
       setMessageType('error');
       setMessage(error.message || '配置保存失败');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -573,7 +591,7 @@ function ConfigForm({ type, onSaved, canManage }) {
         <button
           className="px-4 py-2 rounded-lg bg-primary hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-sm font-medium text-white"
           type="submit"
-          disabled={!canManage}
+          disabled={!canManage || loading || saving}
         >
           保存配置
         </button>
@@ -588,7 +606,30 @@ function ConfigForm({ type, onSaved, canManage }) {
       />
 
       {loading && <p className="text-sm text-gray-400">正在从数据库加载配置...</p>}
-      {![CONFIG_TYPES.TAPD, CONFIG_TYPES.DINGTALK].includes(type) && (
+      {type === CONFIG_TYPES.MINIMAX && (
+        <fieldset disabled={!canManage || loading || saving} className="space-y-4">
+          <legend className="text-sm text-gray-300 mb-3">选择当前使用的模型（保存后生效）</legend>
+          {renderConfigField('enabled')}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {LARGE_MODEL_SECTIONS.map((section) => (
+              <section key={section.provider} className={`rounded-lg border p-4 space-y-4 ${form.activeProvider === section.provider ? 'border-primary bg-blue-950/15' : 'border-gray-700'}`}>
+                <label className="flex items-center gap-3 text-white font-medium cursor-pointer">
+                  <input type="radio" name="large-model-provider" value={section.provider}
+                    checked={form.activeProvider === section.provider}
+                    onChange={() => handleChange('activeProvider', section.provider)}
+                    className="accent-blue-500" />
+                  {section.label}
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {section.fields.map(renderConfigField)}
+                </div>
+              </section>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400">两套参数独立保留，评测仅调用所选模型。Codex 使用 OpenAI API Key。</p>
+        </fieldset>
+      )}
+      {![CONFIG_TYPES.TAPD, CONFIG_TYPES.DINGTALK, CONFIG_TYPES.MINIMAX].includes(type) && (
       <>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {(FIELD_ORDER[type] || []).filter(field => !advancedFields.has(field)).map(renderConfigField)}
@@ -645,9 +686,12 @@ function OperationLogPanel({ refreshKey }) {
 }
 
 function ToolUsagePanel({ refreshKey }) {
+  const [userNameQuery, setUserNameQuery] = useState('');
   const records = useMemo(() => getToolUsageRecords(), [refreshKey]);
-  const summaryRows = useMemo(() => summarizeToolUsageByUser(records), [records]);
-  const recentRecords = records.slice(0, 12);
+  const filteredRecords = useMemo(() => filterToolUsageByUserName(records, userNameQuery), [records, userNameQuery]);
+  const summaryRows = useMemo(() => summarizeToolUsageByUser(filteredRecords), [filteredRecords]);
+  const recentRecords = filteredRecords.slice(0, 12);
+  const totalDuration = summaryRows.reduce((total, row) => total + row.totalDurationMs, 0);
 
   return (
     <section className="rounded-lg border border-gray-700 bg-dark p-5 space-y-4">
@@ -656,11 +700,23 @@ function ToolUsagePanel({ refreshKey }) {
           <h3 className="text-sm font-semibold text-gray-200">测试信息统计</h3>
           <p className="text-xs text-gray-500 mt-1">记录每次测试的开始测试、结束测试、测试时长和测试人</p>
         </div>
-        <span className="text-xs text-gray-500">共 {records.length} 次测试记录</span>
+        <span className="text-xs text-gray-400" role="status">共 {filteredRecords.length} 次测试记录 · 累计使用时长：{formatToolUsageDuration(totalDuration)}</span>
+      </div>
+
+      <div className="flex items-end gap-3 flex-wrap">
+        <label className="space-y-1.5 flex-1 min-w-0 max-w-sm">
+          <span className="text-xs text-gray-300">用户名称</span>
+          <input type="search" value={userNameQuery}
+            onChange={(event) => setUserNameQuery(event.target.value)}
+            placeholder="输入用户名称查询时长，支持模糊匹配"
+            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:border-primary focus:ring-1 focus:ring-primary" />
+        </label>
+        <button type="button" onClick={() => setUserNameQuery('')} disabled={!userNameQuery}
+          className="px-3 py-2 rounded-lg border border-gray-700 text-sm text-gray-300 hover:border-gray-500 disabled:opacity-50">清空</button>
       </div>
 
       {summaryRows.length === 0 ? (
-        <p className="text-xs text-gray-500">暂无工具使用记录</p>
+        <p className="text-xs text-gray-500">{userNameQuery.trim() ? '未找到匹配用户的使用记录' : '暂无工具使用记录'}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-[760px] w-full text-xs">
@@ -692,12 +748,13 @@ function ToolUsagePanel({ refreshKey }) {
 
       {recentRecords.length > 0 && (
         <div className="border-t border-gray-800 pt-4">
-          <h4 className="text-xs font-semibold text-gray-300 mb-2">测试明细</h4>
+          <h4 className="text-xs font-semibold text-gray-300 mb-2">测试明细（最近 {recentRecords.length} 条）</h4>
           <div className="overflow-x-auto">
             <table className="min-w-[760px] w-full text-xs">
               <thead className="bg-gray-950/70 text-gray-400">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">测试人</th>
+                  <th className="px-3 py-2 text-left font-medium">测试项目</th>
                   <th className="px-3 py-2 text-left font-medium">登录账号</th>
                   <th className="px-3 py-2 text-left font-medium">开始测试</th>
                   <th className="px-3 py-2 text-left font-medium">结束测试</th>
@@ -708,6 +765,7 @@ function ToolUsagePanel({ refreshKey }) {
                 {recentRecords.map((record) => (
                   <tr key={record.id} className="hover:bg-gray-900/60">
                     <td className="px-3 py-2 text-gray-200">{record.userName}</td>
+                    <td className="px-3 py-2 text-gray-300">{record.testProject || '未记录'}</td>
                     <td className="px-3 py-2 text-gray-300">{record.loginAccount}</td>
                     <td className="px-3 py-2 text-gray-400">{record.startTimeText}</td>
                     <td className="px-3 py-2 text-gray-400">{record.endTimeText}</td>
@@ -1160,20 +1218,28 @@ export default function ConfigCenter() {
         >
           账号管理
         </button>
+        <button
+          onClick={() => setActiveType(USAGE_RECORDS_TAB)}
+          className={`px-3 py-2 rounded-lg border text-sm transition-colors ${
+            activeType === USAGE_RECORDS_TAB
+              ? 'bg-primary border-primary text-white'
+              : 'bg-dark border-gray-700 text-gray-300 hover:border-gray-500'
+          }`}
+        >
+          使用统计与操作记录
+        </button>
       </div>
 
       {activeType === USER_MANAGEMENT_TAB ? (
         <UserManagementPanel canManageUsers={canManageUsers} />
-      ) : (
-        <ConfigForm key={`${activeType}-${refreshKey}`} type={activeType} onSaved={refresh} canManage={canManage} />
-      )}
-      <details className="rounded-xl border border-gray-700 bg-dark p-4">
-        <summary className="cursor-pointer text-sm text-gray-300">使用统计与操作记录</summary>
-        <div className="mt-4 space-y-4">
+      ) : activeType === USAGE_RECORDS_TAB ? (
+        <div className="space-y-4">
           <ToolUsagePanel refreshKey={refreshKey} />
           <OperationLogPanel refreshKey={refreshKey} />
         </div>
-      </details>
+      ) : (
+        <ConfigForm key={activeType} type={activeType} onSaved={refresh} canManage={canManage} />
+      )}
     </div>
   );
 }
