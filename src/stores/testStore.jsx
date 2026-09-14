@@ -5,6 +5,7 @@
 
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { generateId } from '../utils/formatters';
+import { normalizeLoopCount } from '../utils/loopCount.js';
 import { getDefaultLangfuseEnvironmentKey } from '../modules/langfuse/services/langfuseService';
 import { sanitizePersistedVoiceAutoState } from './stateSanitizer';
 import { normalizeVoiceConfigByLang } from '../constants';
@@ -336,7 +337,7 @@ function testReducer(state, action) {
         ...state,
         testOptions: {
           ...state.testOptions,
-          loopCount: Math.max(1, Math.min(99, action.payload))
+          loopCount: normalizeLoopCount(action.payload)
         }
       };
 
@@ -608,7 +609,7 @@ export function TestProvider({ children }) {
           testAudios: parsed.testAudios || [],
           testOptions: {
             ...init.testOptions,
-            loopCount: Math.max(1, Math.min(99, parsed.testOptions?.loopCount || init.testOptions.loopCount)),
+            loopCount: normalizeLoopCount(parsed.testOptions?.loopCount ?? init.testOptions.loopCount),
             debugSequence: Boolean(parsed.testOptions?.debugSequence),
             dingTalkEnabled: Boolean(parsed.testOptions?.dingTalkEnabled),
             autoFetchLangfuseLogs: parsed.testOptions?.autoFetchLangfuseLogs !== false,

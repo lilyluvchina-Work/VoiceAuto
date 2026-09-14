@@ -3,6 +3,75 @@ import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import { createAiToySessionManager } from '../scripts/aiToySession.cjs';
 
+test('monitor shares the port with tests and keeps collecting after test close', async t => {
+  const port = new EventEmitter();
+  let opens = 0;
+  const manager = createAiToySessionManager({
+    openPort: async () => { opens++; return port; },
+    closePort: async () => port.emit('close'),
+    withPortLock: async (_, operation) => operation(),
+  });
+  const monitoring = await manager.monitor({ serialPort: 'COM1' });
+  t.after(() => manager.disconnect('COM1'));
+  port.emit('data', Buffer.from('before test\n'));
+  const running = await manager.open({ serialPort: 'COM1' });
+  assert.equal(running.sessionId, monitoring.sessionId);
+  port.emit('data', Buffer.from('during test\n'));
+  assert.equal((await manager.close(running.sessionId)).serialLog, 'during test\n');
+  port.emit('data', Buffer.from('after test\n'));
+  const status = await manager.monitor({ serialPort: 'COM1' });
+  assert.equal(opens, 1);
+  assert.ok(status.sampleLines.includes('after test'));
+  assert.equal(status.testing, false);
+});
+
+test('monitor reconnects a disconnected idle port', async t => {
+  const ports = [];
+  const manager = createAiToySessionManager({
+    openPort: async () => { const port = new EventEmitter(); ports.push(port); return port; },
+    closePort: async port => port.emit('close'),
+    withPortLock: async (_, operation) => operation(),
+  });
+  const first = await manager.monitor({ serialPort: 'COM2' });
+  t.after(() => manager.disconnect('COM2'));
+  ports[0].emit('close');
+  const next = await manager.monitor({ serialPort: 'COM2' });
+  assert.notEqual(first.sessionId, next.sessionId);
+  assert.equal(ports.length, 2);
+});
+
+test('simultaneous health and monitor requests share a single pending connection', async t => {
+  let opens = 0;
+  const manager = createAiToySessionManager({
+    openPort: async () => { opens++; await new Promise(resolve => setTimeout(resolve, 5)); return new EventEmitter(); },
+    closePort: async () => {}, withPortLock: async (_, operation) => operation(),
+  });
+  t.after(() => manager.disconnect('COM1'));
+  const [a, b, run] = await Promise.all([
+    manager.monitor({ serialPort: 'COM1' }), manager.monitor({ serialPort: 'COM1' }),
+    manager.open({ serialPort: 'COM1' }),
+  ]);
+  assert.equal(a.sessionId, b.sessionId);
+  assert.equal(a.sessionId, run.sessionId);
+  assert.equal(opens, 1);
+});
+
+test('changing idle baudrate reopens port and starting test preserves pending boot', async t => {
+  const rates = [];
+  let port;
+  const manager = createAiToySessionManager({
+    openPort: async options => { rates.push(options.baudrate); port = new EventEmitter(); return port; },
+    closePort: async () => {}, withPortLock: async (_, operation) => operation(),
+  });
+  t.after(() => manager.disconnect('COM1'));
+  await manager.monitor({ serialPort: 'COM1', baudrate: 115200 });
+  await manager.monitor({ serialPort: 'COM1', baudrate: 9600 });
+  assert.deepEqual(rates, [115200, 9600]);
+  port.emit('data', Buffer.from('ESP-ROM:esp32s3\n'));
+  const { sessionId } = await manager.open({ serialPort: 'COM1', baudrate: 9600 });
+  assert.throws(() => manager.arm(sessionId, { mode: 'wake' }), /未完成重启/);
+});
+
 async function fixture(t) {
   const port = new EventEmitter();
   let opens = 0;

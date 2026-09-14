@@ -6,19 +6,22 @@ const { StringDecoder } = require('node:string_decoder');
 function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs = 300000 }) {
   const sessions = new Map();
   const activePorts = new Set();
+  const openings = new Map();
 
   function get(sessionId) {
     const session = sessions.get(sessionId);
     if (!session) throw new Error('AI玩具监听会话已关闭，请重新开始测试');
     clearTimeout(session.timer);
-    session.timer = setTimeout(() => { void close(sessionId); }, leaseMs);
+    session.timer = setTimeout(() => { void close(sessionId, true); }, leaseMs);
     session.timer.unref?.();
     return session;
   }
 
   function read(sessionId) {
     const session = get(sessionId);
-    return { ...session.state, sampleLines: [...session.lines] };
+    return { ...session.state, sessionId, testing: session.testing,
+      logPath: session.port.serialLogPath || '', logError: session.port.serialLogError || '',
+      sampleLines: [...session.lines] };
   }
 
   function arm(sessionId, { mode, expectsVoiceResponse = true } = {}) {
@@ -85,9 +88,16 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
     }
   }
 
-  async function close(sessionId) {
+  async function close(sessionId, force = false) {
     const session = sessions.get(sessionId);
     if (!session) return;
+    if (session.monitoring && !force) {
+      const serialLog = Buffer.concat(session.rawChunks).toString('utf8');
+      session.rawChunks = [];
+      session.testing = false;
+      session.armed = false;
+      return { serialLog, logPath: session.port.serialLogPath || '' };
+    }
     if (session.closing) return session.closing;
     session.closed = true;
     clearTimeout(session.timer);
@@ -108,9 +118,21 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
   async function open(options) {
     const key = String(options.serialPort || '').trim().toLowerCase();
     if (!key) throw new Error('AI玩具需要选择串口');
+    if (openings.has(key)) await openings.get(key);
+    const existing = [...sessions.entries()].find(([, session]) => session.key === key);
+    if (existing && existing[1].monitoring && !existing[1].testing) {
+      if (existing[1].state.error || existing[1].baudrate !== (Number(options.baudrate) || 115200)) await close(existing[0], true);
+      else {
+        existing[1].testing = !options.monitoring;
+        existing[1].armed = false;
+        existing[1].state = { phase: 'unknown', ready: false, interrupted: false,
+          rebootPending: existing[1].state.rebootPending, bootCompleted: existing[1].state.bootCompleted };
+        return { sessionId: existing[0] };
+      }
+    }
     if (activePorts.has(key)) throw new Error('AI玩具串口正在测试，请先停止现有测试');
     activePorts.add(key);
-    return new Promise((resolve, reject) => {
+    const opening = new Promise((resolve, reject) => {
       void withPortLock(key, async () => {
         let port;
         try {
@@ -118,12 +140,14 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
           let release;
           const lifetime = new Promise(done => { release = done; });
           const sessionId = randomUUID();
-          const session = { key, port, release, rawChunks: [], lines: [], state: { phase: 'unknown', ready: false,
+          const session = { key, port, release, baudrate: Number(options.baudrate) || 115200,
+            monitoring: Boolean(options.monitoring), testing: !options.monitoring,
+            rawChunks: [], lines: [], state: { phase: 'unknown', ready: false,
             interrupted: false }, armed: false, expectsVoiceResponse: true };
           const decoder = new StringDecoder('utf8');
           let buffered = '';
           port.on('data', chunk => {
-            session.rawChunks.push(Buffer.from(chunk));
+            if (session.testing) session.rawChunks.push(Buffer.from(chunk));
             buffered += decoder.write(chunk);
             const lines = buffered.split(/\r?\n/);
             buffered = (lines.pop() || '').slice(-65536);
@@ -144,9 +168,32 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
         }
       }).catch(reject);
     });
+    openings.set(key, opening);
+    try { return await opening; }
+    finally { openings.delete(key); }
   }
 
-  return { open, read, arm, close };
+  async function monitor(options) {
+    const key = String(options.serialPort || '').trim().toLowerCase();
+    if (openings.has(key)) await openings.get(key);
+    const existing = [...sessions.entries()].find(([, session]) => session.key === key);
+    if (existing) {
+      existing[1].monitoring = true;
+      if (existing[1].testing || (!existing[1].state.error && existing[1].baudrate === (Number(options.baudrate) || 115200))) return read(existing[0]);
+      await close(existing[0], true);
+    }
+    const { sessionId } = await open({ ...options, monitoring: true });
+    return read(sessionId);
+  }
+
+  async function disconnect(serialPort) {
+    const key = String(serialPort || '').trim().toLowerCase();
+    if (openings.has(key)) await openings.get(key).catch(() => {});
+    const existing = [...sessions.entries()].find(([, session]) => session.key === key);
+    if (existing) return close(existing[0], true);
+  }
+
+  return { open, read, arm, close, monitor, disconnect };
 }
 
 module.exports = { createAiToySessionManager };

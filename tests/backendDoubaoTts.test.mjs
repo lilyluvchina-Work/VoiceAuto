@@ -124,6 +124,18 @@ try {
   assert.equal(doubaoCalls[0].body.req_params.speed_ratio, 2);
   assert.equal(doubaoCalls[0].body.req_params.volume_ratio, 2);
 
+  doubaoResponseStatus = 403;
+  doubaoResponseBody = JSON.stringify({ message: '[resource_id=volc.seedtts.default] requested resource not granted' });
+  const callsBeforeDenied = doubaoCalls.length;
+  const deniedResponse = await request(server, 'POST', '/api/tts/doubao-v3', {
+    text: 'permission denied', voiceType: 'zh_female_vv_uranus_bigtts',
+  }, cookie);
+  assert.equal(deniedResponse.status, 502);
+  assert.match(deniedResponse.json().message, /资源未授权/);
+  assert.match(deniedResponse.json().message, /配置中心/);
+  assert.match(deniedResponse.json().message, /volc.seedtts.default/);
+  assert.equal(doubaoCalls.length, callsBeforeDenied + 1);
+
   doubaoResponseStatus = 200;
   doubaoResponseContentType = 'audio/mpeg';
   doubaoResponseBody = 'direct-mp3-bytes';

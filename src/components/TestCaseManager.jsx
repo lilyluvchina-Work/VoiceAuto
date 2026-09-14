@@ -177,6 +177,8 @@ export default function TestCaseManager() {
     getVoiceForLangAndGender(initialGenerationLang, state?.defaultVoiceConfig?.gender || 'female')?.value || ''
   );
   const [generatingIds, setGeneratingIds] = useState(() => new Set());
+  const [generationProgress, setGenerationProgress] = useState(null);
+  const batchRunning = React.useRef(false);
   const [savingIds, setSavingIds] = useState(() => new Set());
   const [isSavingAll, setIsSavingAll] = useState(false);
 
@@ -315,6 +317,7 @@ export default function TestCaseManager() {
       const request = createGenerationRequest(item);
       const blob = await synthesizeTestAudioBlob(request);
       applyGeneratedAudio(item, blob);
+      return true;
     } catch (error) {
       console.warn('Test audio generation failed:', error);
       dispatch(actions.updateTestAudio(buildLocalGeneratedPatch(item, {
@@ -323,6 +326,7 @@ export default function TestCaseManager() {
         audioUrl: null,
         storageError: error?.message || '音频生成失败',
       })));
+      return false;
     } finally {
       setGeneratingIds((current) => {
         const next = new Set(current);
@@ -333,16 +337,26 @@ export default function TestCaseManager() {
   };
 
   const handleGenerateByGroup = async (groupName) => {
+    if (batchRunning.current || generatingIds.size > 0) return;
     const items = sortTestCasesByDirectoryOrder(sortedCases, { directory: groupName });
+    batchRunning.current = true;
+    let completed = 0;
+    let failed = 0;
+    setGenerationProgress({ completed, failed, total: items.length, running: true });
+    try {
     for (const item of items) {
-      await handleGenerateOne(item);
+      if (!await handleGenerateOne(item)) failed++;
+      completed++;
+      setGenerationProgress({ completed, failed, total: items.length, running: true });
+    }
+    } finally {
+      batchRunning.current = false;
+      setGenerationProgress({ completed, failed, total: items.length, running: false });
     }
   };
 
   const handleGenerateAll = async () => {
-    for (const item of sortedCases) {
-      await handleGenerateOne(item);
-    }
+    await handleGenerateByGroup('all');
   };
 
   const handleSaveAudio = async (item) => {
@@ -409,7 +423,7 @@ export default function TestCaseManager() {
           </span>
           <button
             onClick={handleGenerateAll}
-            disabled={state.testAudios.length === 0 || generatingIds.size > 0}
+            disabled={state.testAudios.length === 0 || generatingIds.size > 0 || generationProgress?.running}
             className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-medium transition-colors text-sm whitespace-nowrap"
           >
             <span>⚡</span> {generatingIds.size > 0 ? `生成中 ${generatingIds.size}` : '全部生成测试音频'}
@@ -426,7 +440,7 @@ export default function TestCaseManager() {
           </button>
           <button
             onClick={handleClearCases}
-            disabled={state.testAudios.length === 0}
+            disabled={state.testAudios.length === 0 || generatingIds.size > 0 || generationProgress?.running}
             className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-medium transition-colors text-sm whitespace-nowrap"
           >
             <span>🗑️</span> 清空测试用例
@@ -496,8 +510,16 @@ export default function TestCaseManager() {
                   <option key={name} value={name}>{name}</option>
                 ))}
             </select>
+            <button
+              onClick={() => handleGenerateByGroup(selectedDirectory)}
+              disabled={selectedDirectory === 'all' || visibleCases.length === 0 || generatingIds.size > 0 || generationProgress?.running}
+              className="px-3 py-2 bg-primary rounded-lg text-sm disabled:bg-gray-700 disabled:text-gray-500"
+            >按所选目录生成音频</button>
           </div>
         </div>
+        {generationProgress && <p role="status" className="mb-3 text-sm text-gray-400">
+          {generationProgress.running ? '生成中' : '生成完成'}：{generationProgress.completed}/{generationProgress.total}，失败 {generationProgress.failed} 条
+        </p>}
 
         {state.testAudios.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
@@ -551,7 +573,7 @@ export default function TestCaseManager() {
                       </span>
                       <button
                         onClick={() => handleGenerateOne(item)}
-                        disabled={isGenerating}
+                        disabled={isGenerating || generationProgress?.running}
                         className="px-2 py-1 bg-primary hover:bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 rounded text-xs transition-colors"
                       >
                         {isGenerating ? '生成中...' : generated ? '重新生成测试音频' : '生成测试音频'}
@@ -577,7 +599,7 @@ export default function TestCaseManager() {
                     {generated && item.config?.voiceName ? <span>音色：{item.config.voiceName}</span> : null}
                     {generated && item.config?.lang ? <span>语言：{item.config.lang}</span> : null}
                     {generated && item.fileSize ? <span>临时音频：{Math.ceil(item.fileSize / 1024)} KB</span> : null}
-                    {item.storageError ? <span className="text-amber-300">保存提示：{item.storageError}</span> : null}
+                    {item.storageError ? <span className="text-amber-300">{generated ? '保存提示' : '音频生成失败'}：{item.storageError}</span> : null}
                     {item.workspaceName ? <span>项目：{item.workspaceName}</span> : null}
                     {item.tapdCaseId ? <span>用例ID：{item.tapdCaseId}</span> : null}
                     {item.tapdTestPlanName ? <span>计划：{item.tapdTestPlanName}</span> : null}

@@ -2,6 +2,7 @@
  * 播放控制台组件
  */
 import React, { useEffect, useState } from 'react';
+import { MAX_LOOP_COUNT, normalizeLoopCount } from '../utils/loopCount.js';
 import useTestRunner from '../hooks/useTestRunner';
 import { formatTime } from '../utils/formatters';
 import { useTest, actions } from '../stores/testStore';
@@ -45,6 +46,8 @@ export default function PlaybackConsole({ onTestComplete }) {
   const { state, dispatch } = useTest();
   const { wakeWord, defaultVoiceConfig } = state;
   const loopCount = state.testOptions?.loopCount || 1;
+  const [loopCountDraft, setLoopCountDraft] = useState(String(loopCount));
+  useEffect(() => setLoopCountDraft(String(loopCount)), [loopCount]);
   const dingTalkEnabled = Boolean(state.testOptions?.dingTalkEnabled);
   const autoFetchLangfuseLogs = Boolean(state.testOptions?.autoFetchLangfuseLogs ?? true);
   const selectedLangfuseEnv = state.testOptions?.selectedLangfuseEnv || getDefaultLangfuseEnvironmentKey();
@@ -80,6 +83,27 @@ export default function PlaybackConsole({ onTestComplete }) {
   const [listenerRecovering, setListenerRecovering] = useState(false);
   const [aiToyRebooting, setAiToyRebooting] = useState(false);
   const [aiToyRebootStatus, setAiToyRebootStatus] = useState('');
+  const [serialMonitor, setSerialMonitor] = useState(null);
+  useEffect(() => {
+    if (!isAiToy || !deviceRuntime.serialPort?.trim()) { setSerialMonitor(null); return; }
+    let cancelled = false;
+    let timer;
+    const poll = async () => {
+      try {
+        const result = await adbWakeService.monitorAiToySerial({
+          bridgeUrl: autonomousWake.bridgeUrl, deviceType: deviceRuntime.deviceType,
+          logSource: deviceRuntime.logSource, serialPort: deviceRuntime.serialPort,
+          baudrate: deviceRuntime.baudrate,
+        });
+        if (!cancelled) setSerialMonitor(result);
+      } catch (error) {
+        if (!cancelled) setSerialMonitor(previous => ({ ...previous, error: error.message }));
+      }
+      if (!cancelled) timer = setTimeout(poll, 2000);
+    };
+    poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [isAiToy, deviceRuntime.serialPort, deviceRuntime.baudrate, autonomousWake.bridgeUrl]);
   const aiToyRebootingRef = React.useRef(false);
   const [wakePreviewPlaying, setWakePreviewPlaying] = useState(false);
   const [langfuseEnvVersion, setLangfuseEnvVersion] = useState(0);
@@ -110,7 +134,16 @@ export default function PlaybackConsole({ onTestComplete }) {
   } = useTestRunner({ onTestComplete });
 
   const handleLoopCountChange = (e) => {
-    dispatch(actions.setLoopCount(parseInt(e.target.value, 10) || 1));
+    const value = e.target.value;
+    setLoopCountDraft(value);
+    if (/^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= MAX_LOOP_COUNT) {
+      dispatch(actions.setLoopCount(Number(value)));
+    }
+  };
+  const commitLoopCount = () => {
+    const value = normalizeLoopCount(loopCountDraft);
+    setLoopCountDraft(String(value));
+    dispatch(actions.setLoopCount(value));
   };
 
   const handleDingTalkEnabledChange = (e) => {
@@ -762,6 +795,16 @@ export default function PlaybackConsole({ onTestComplete }) {
                 {aiToyRebooting ? '重启中…' : '重启AI玩具'}
               </button>
             )}
+            {isAiToy && serialMonitor && (
+              <div className="mt-3 text-xs text-gray-300" role="status">
+                <p>{serialMonitor.error || serialMonitor.logError || '串口已连接，正在监听并实时保存原始日志'}</p>
+                {serialMonitor.logPath && <p className="mt-1 break-all">本地文件（桥接电脑）：{serialMonitor.logPath}</p>}
+                <details className="mt-2">
+                  <summary className="cursor-pointer">查看最近串口日志（文件保存全部原始数据）</summary>
+                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap">{serialMonitor.sampleLines?.join('\n') || '等待串口输出…'}</pre>
+                </details>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -843,14 +886,23 @@ export default function PlaybackConsole({ onTestComplete }) {
       </div>
 
       <div className="mb-6 p-4 bg-gray-800/40 rounded-lg border border-gray-700">
-        <div className="flex items-center justify-between gap-3">
-          <label className="text-sm text-gray-300">循环播放次数</label>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <label htmlFor="loop-count" className="text-sm text-gray-300">循环播放次数</label>
+          <div className="flex items-center gap-2 flex-wrap">
+          <input id="loop-count" type="number" min={1} max={MAX_LOOP_COUNT} step={1}
+            value={loopCountDraft} onChange={handleLoopCountChange} onBlur={commitLoopCount}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
+            disabled={isLocked} aria-describedby="loop-count-hint"
+            className="w-24 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50" />
+          <span className="text-sm text-gray-400">次</span>
           <select
-            value={loopCount}
+            aria-label="循环次数快捷选择"
+            value={[1, 2, 3, 5, 10, 20, 50, 1000].includes(loopCount) ? loopCount : ''}
             onChange={handleLoopCountChange}
             disabled={isLocked}
             className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
           >
+            <option value="" disabled>自定义次数</option>
             <option value={1}>1 次（默认）</option>
             <option value={2}>2 次</option>
             <option value={3}>3 次</option>
@@ -858,8 +910,11 @@ export default function PlaybackConsole({ onTestComplete }) {
             <option value={10}>10 次</option>
             <option value={20}>20 次</option>
             <option value={50}>50 次</option>
+            <option value={1000}>1000 次</option>
           </select>
+          </div>
         </div>
+        <p id="loop-count-hint" className="mt-2 text-xs text-gray-500">可手动输入 1～1000 次，或使用快捷选择。</p>
         <p className="mt-2 text-xs text-gray-500">
           总播放条数 = 测试音频条数 x 循环次数（当前 {testAudios.length} x {loopCount} = {totalCases}）
         </p>

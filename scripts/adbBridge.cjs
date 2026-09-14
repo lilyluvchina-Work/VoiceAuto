@@ -4,6 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createAiToySessionManager } = require('./aiToySession.cjs');
 const { rebootAndObserve } = require('./aiToyReboot.cjs');
+const { attachSerialLog } = require('./serialLog.cjs');
+const serialLogDirectory = path.resolve(process.env.AI_TOY_LOG_DIR || path.join(__dirname, '..', 'logs', 'ai-toy'));
+const rebootingSerialPorts = new Set();
 
 const PORT = Number(process.env.ADB_BRIDGE_PORT) || 17321;
 const HOST = process.env.ADB_BRIDGE_HOST || '127.0.0.1';
@@ -456,6 +459,7 @@ function openSerialDevice(serialModule, serialPort, baudrate) {
     let serialDevice;
     try {
       serialDevice = new serialModule.SerialPort(buildSerialOpenOptions(serialPort, baudrate, false));
+      attachSerialLog(serialDevice, serialPort, serialLogDirectory);
     } catch (err) {
       reject(err);
       return;
@@ -471,44 +475,21 @@ function openSerialDevice(serialModule, serialPort, baudrate) {
   });
 }
 
-async function probeSerialReadable({ serialPort, baudrate }) {
-  const safeSerialPort = String(serialPort || '').trim();
-  const safeBaudrate = Number(baudrate) || 115200;
-
-  if (!safeSerialPort) {
-    return {
-      ok: false,
-      error: 'USB串口模式需要填写串口号'
-    };
-  }
-
-  return withSerialPortLock(safeSerialPort, async () => {
-    let serialDevice;
-    try {
-      const serialModule = await loadSerialPort();
-      serialDevice = await openSerialDevice(serialModule, safeSerialPort, safeBaudrate);
-      return {
-        ok: true,
-        error: ''
-      };
-    } catch (err) {
-      const serialModeDiagnostics = await collectWindowsSerialMode(safeSerialPort);
-      const error = formatSerialOpenError(err, safeSerialPort, safeBaudrate, serialModeDiagnostics);
-      appendBridgeLog('serial.open.failed', {
-        serialPort: safeSerialPort,
-        baudrate: safeBaudrate,
-        error: err?.message || String(err),
-        serialModeDiagnostics
+async function probeSerialReadable({ serialPort, baudrate, continuous = false }) {
+  try {
+    if (rebootingSerialPorts.has(String(serialPort).toLowerCase())) return { ok: false, error: 'AI玩具正在重启' };
+    if (!continuous) {
+      return await withSerialPortLock(serialPort, async () => {
+        const port = await openSerialDevice(await loadSerialPort(), serialPort, Number(baudrate) || 115200);
+        await closeSerialQuietly(port);
+        return { ok: true, error: '' };
       });
-      return {
-        ok: false,
-        error,
-        serialModeDiagnostics
-      };
-    } finally {
-      await closeSerialQuietly(serialDevice);
     }
-  });
+    const status = await aiToySessions.monitor({ serialPort, baudrate });
+    return { ok: !status.error, error: status.error || '', logPath: status.logPath };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 }
 
 function detectFromSerial({
@@ -974,7 +955,8 @@ async function getSerialHealth(body = {}) {
   const probe = selection.success && selectedDeviceId
     ? await probeSerialReadable({
         serialPort: selectedDeviceId,
-        baudrate: body.baudrate
+        baudrate: body.baudrate,
+        continuous: isAiToy(body)
       })
     : {
         ok: false,
@@ -2059,29 +2041,37 @@ async function rebootAiToyViaSerial(body = {}) {
   if (!selection.success) return { success: false, bootCompleted: false,
     rebootCommandOk: false, message: selection.message };
   let serialPort = selection.serialPort;
-  appendBridgeLog('serial.reboot.start', { serialPort });
-  return withSerialPortLock(serialPort, async () => {
-    const serialModule = await loadSerialPort();
-    const result = await rebootAndObserve({
-      open: async () => {
-        const current = await resolveSerialDeviceSelection({ ...body, serialPort });
-        if (!current.success) throw new Error(current.message);
-        serialPort = current.serialPort;
-        const ports = await serialModule.SerialPort.list();
-        const hardware = ports.find(item => item.path.toLowerCase() === serialPort.toLowerCase());
-        if (String(hardware?.vendorId || '').toLowerCase() !== '303a'
-          || String(hardware?.productId || '').toLowerCase() !== '1001') {
-          throw new Error(`串口 ${serialPort} 不是已验证的 Espressif 303A:1001 设备，未发送复位信号`);
-        }
-        return { serialPort, port: await openSerialDevice(serialModule, serialPort, 115200) };
-      },
-      close: closeSerialQuietly,
-      timeoutMs: Math.max(10000, Number(body.recoveryTimeoutMs) || 35000),
-      log: appendBridgeLog,
+  const rebootKey = serialPort.toLowerCase();
+  if (rebootingSerialPorts.has(rebootKey)) throw new Error('AI玩具正在重启');
+  rebootingSerialPorts.add(rebootKey);
+  try {
+    await aiToySessions.disconnect(serialPort);
+    appendBridgeLog('serial.reboot.start', { serialPort });
+    return await withSerialPortLock(serialPort, async () => {
+      const serialModule = await loadSerialPort();
+      const result = await rebootAndObserve({
+        open: async () => {
+          const current = await resolveSerialDeviceSelection({ ...body, serialPort });
+          if (!current.success) throw new Error(current.message);
+          serialPort = current.serialPort;
+          const ports = await serialModule.SerialPort.list();
+          const hardware = ports.find(item => item.path.toLowerCase() === serialPort.toLowerCase());
+          if (String(hardware?.vendorId || '').toLowerCase() !== '303a'
+            || String(hardware?.productId || '').toLowerCase() !== '1001') {
+            throw new Error(`串口 ${serialPort} 不是已验证的 Espressif 303A:1001 设备，未发送复位信号`);
+          }
+          return { serialPort, port: await openSerialDevice(serialModule, serialPort, 115200) };
+        },
+        close: closeSerialQuietly,
+        timeoutMs: Math.max(10000, Number(body.recoveryTimeoutMs) || 35000),
+        log: appendBridgeLog,
+      });
+      appendBridgeLog('serial.reboot.completed', result);
+      return result;
     });
-    appendBridgeLog('serial.reboot.completed', result);
-    return result;
-  });
+    } finally {
+    rebootingSerialPorts.delete(rebootKey);
+  }
 }
 
 async function rebootDeviceAndWait(body = {}) {
@@ -2124,7 +2114,9 @@ const server = http.createServer(async (req, res) => {
 
     if (req.url === '/api/adb/ai-toy/session') {
       let data;
-      if (body.action === 'open') data = await aiToySessions.open(body);
+      if (rebootingSerialPorts.has(normalizeSerialPath(body).toLowerCase())) throw new Error('AI玩具正在重启，日志仍在保存');
+      if (body.action === 'monitor') data = await aiToySessions.monitor(body);
+      else if (body.action === 'open') data = await aiToySessions.open(body);
       else if (body.action === 'read') data = aiToySessions.read(body.sessionId);
       else if (body.action === 'arm') data = aiToySessions.arm(body.sessionId, body);
       else if (body.action === 'close') { data = await aiToySessions.close(body.sessionId) || {}; }

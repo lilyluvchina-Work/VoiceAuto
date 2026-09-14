@@ -72,8 +72,13 @@ export const CONFIG_SCHEMAS = {
   [CONFIG_TYPES.DOUBAO_TTS]: {
     label: '豆包 TTS 配置',
     required: ['apiKeyId', 'apiKeySecret'],
-    sensitive: ['apiKeyId', 'apiKeySecret', 'secretKey'],
+    sensitive: ['apiKeyId', 'apiKeySecret', 'secretKey', 'personalApiKeyId', 'personalApiKeySecret', 'personalSecretKey'],
     defaults: {
+      activeAccount: 'company',
+      personalApiKeyId: '',
+      personalApiKeySecret: '',
+      personalSecretKey: '',
+      personalResourceId: 'seed-tts-2.0',
       provider: 'doubao',
       apiVersion: 'v3',
       v3Url: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
@@ -489,6 +494,8 @@ export function getConfigStatus(type, options = {}) {
   const config = readConfig(type, { ...options, includeSecrets: true });
   const required = type === CONFIG_TYPES.MINIMAX && config.activeProvider === 'codex'
     ? ['codexApiKey']
+    : type === CONFIG_TYPES.DOUBAO_TTS && config.activeAccount === 'personal'
+    ? ['personalApiKeyId', 'personalApiKeySecret']
     : schema.required;
   const missingRequiredFields = required.filter((field) => !normalizeText(config[field]));
   return {

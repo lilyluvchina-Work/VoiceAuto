@@ -387,6 +387,7 @@ async function aiToySessionRequest(action, options = {}) {
 }
 
 export const openAiToySession = options => aiToySessionRequest('open', options);
+export const monitorAiToySerial = options => aiToySessionRequest('monitor', options);
 export const readAiToySession = options => aiToySessionRequest('read', options);
 export const armAiToySession = options => aiToySessionRequest('arm', options);
 export const closeAiToySession = options => aiToySessionRequest('close', options);
@@ -405,6 +406,7 @@ export function downloadAiToySerialLog({ runId, serialLog }) {
 }
 
 export const adbWakeService = {
+  monitorAiToySerial,
   openAiToySession,
   readAiToySession,
   armAiToySession,

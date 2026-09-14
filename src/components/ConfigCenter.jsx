@@ -50,6 +50,10 @@ const FIELD_LABELS = {
   apiKey: 'API Key',
   apiKeyId: 'APP ID',
   apiKeySecret: 'Access Token',
+  personalApiKeyId: 'APP ID',
+  personalApiKeySecret: 'Access Token',
+  personalSecretKey: 'Secret Key',
+  personalResourceId: 'Resource ID',
   model: '模型',
   temperature: '温度',
   maxCompletionTokens: '最大输出 Tokens',
@@ -110,7 +114,7 @@ const FIELD_ORDER = {
   [CONFIG_TYPES.LANGFUSE]: ['envKey', 'label', 'baseUrl', 'proxyBase', 'publicKey', 'secretKey', 'projectId', 'defaultTimeRange', 'maxLimit', 'timeout', 'enabled'],
   [CONFIG_TYPES.TAPD]: ['configName', 'baseUrl', 'workspaceId', 'companyId', 'tapdProjectId', 'apiUser', 'apiPassword', 'defaultTestPlanId', 'timeout', 'debugDirectoryMapping', 'enabled'],
   [CONFIG_TYPES.DINGTALK]: ['groupName', 'proxyPath', 'webhook', 'accessToken', 'secret', 'enabled'],
-  [CONFIG_TYPES.DOUBAO_TTS]: ['apiKeyId', 'apiKeySecret', 'secretKey', 'resourceId'],
+  [CONFIG_TYPES.DOUBAO_TTS]: ['activeAccount', 'apiKeyId', 'apiKeySecret', 'secretKey', 'resourceId', 'personalApiKeyId', 'personalApiKeySecret', 'personalSecretKey', 'personalResourceId'],
   [CONFIG_TYPES.MINIMAX]: ['activeProvider', 'configName', 'baseUrl', 'apiKey', 'model', 'temperature', 'maxCompletionTokens', 'timeout', 'codexBaseUrl', 'codexApiKey', 'codexModel', 'codexMaxOutputTokens', 'codexTimeout', 'enabled'],
   [CONFIG_TYPES.DATABASE]: ['type', 'host', 'port', 'databaseName', 'username', 'password', 'poolSize', 'sslConfig', 'backupStrategy', 'retentionDays', 'enabled'],
   [CONFIG_TYPES.SERVER]: ['serverName', 'host', 'os', 'servicePort', 'deployPath', 'sshPort', 'sshUser', 'sshPassword', 'sshPrivateKey', 'logPath', 'storagePath', 'adbPath', 'adbDeviceId', 'chromePath', 'startCommand', 'serviceStatus', 'enabled'],
@@ -119,6 +123,11 @@ const FIELD_ORDER = {
 const LARGE_MODEL_SECTIONS = [
   { provider: 'minimax', label: 'MiniMax', fields: ['configName', 'baseUrl', 'apiKey', 'model', 'temperature', 'maxCompletionTokens', 'timeout'] },
   { provider: 'codex', label: 'Codex', fields: ['codexBaseUrl', 'codexApiKey', 'codexModel', 'codexMaxOutputTokens', 'codexTimeout'] },
+];
+
+const DOUBAO_ACCOUNT_SECTIONS = [
+  { account: 'personal', label: '个人账号', fields: ['personalApiKeyId', 'personalApiKeySecret', 'personalSecretKey', 'personalResourceId'] },
+  { account: 'company', label: '公司账号', fields: ['apiKeyId', 'apiKeySecret', 'secretKey', 'resourceId'] },
 ];
 
 function buildEditableFormFields(type, config) {
@@ -485,7 +494,8 @@ function ConfigForm({ type, onSaved, canManage }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const sensitiveFields = new Set(schema.sensitive);
-  const requiredFields = new Set(type === CONFIG_TYPES.MINIMAX && form.activeProvider === 'codex' ? ['codexApiKey'] : schema.required);
+  const requiredFields = new Set(type === CONFIG_TYPES.MINIMAX && form.activeProvider === 'codex' ? ['codexApiKey']
+    : type === CONFIG_TYPES.DOUBAO_TTS && form.activeAccount === 'personal' ? ['personalApiKeyId', 'personalApiKeySecret'] : schema.required);
   const previewConfig = {
     ...storedConfig,
     ...Object.fromEntries(Object.entries(form).filter(([field, value]) => !sensitiveFields.has(field) || String(value ?? '').trim())),
@@ -629,7 +639,26 @@ function ConfigForm({ type, onSaved, canManage }) {
           <p className="text-xs text-gray-400">两套参数独立保留，评测仅调用所选模型。Codex 使用 OpenAI API Key。</p>
         </fieldset>
       )}
-      {![CONFIG_TYPES.TAPD, CONFIG_TYPES.DINGTALK, CONFIG_TYPES.MINIMAX].includes(type) && (
+      {type === CONFIG_TYPES.DOUBAO_TTS && (
+        <fieldset disabled={!canManage || loading || saving} className="space-y-4">
+          <legend className="mb-3 text-sm text-gray-300">选择生成音频使用的账号（保存后生效）</legend>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {DOUBAO_ACCOUNT_SECTIONS.map(section => (
+              <section key={section.account} className={`rounded-lg border p-4 space-y-4 ${form.activeAccount === section.account ? 'border-primary bg-blue-950/15' : 'border-gray-700'}`}>
+                <label className="flex items-center gap-3 text-white font-medium cursor-pointer">
+                  <input type="radio" name="doubao-account" value={section.account}
+                    checked={form.activeAccount === section.account}
+                    onChange={() => handleChange('activeAccount', section.account)} className="accent-blue-500" />
+                  {section.label}
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{section.fields.map(renderConfigField)}</div>
+              </section>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400">两套账号参数独立保存，测试音频和唤醒音频使用当前选中的账号。</p>
+        </fieldset>
+      )}
+      {![CONFIG_TYPES.TAPD, CONFIG_TYPES.DINGTALK, CONFIG_TYPES.MINIMAX, CONFIG_TYPES.DOUBAO_TTS].includes(type) && (
       <>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {(FIELD_ORDER[type] || []).filter(field => !advancedFields.has(field)).map(renderConfigField)}

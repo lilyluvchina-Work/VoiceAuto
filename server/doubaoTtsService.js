@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readAppConfig } from './configRepository.js';
+import { resolveDoubaoAccountConfig } from '../src/config/doubaoAccounts.js';
 
 function clampNumber(value, min, max, fallback) {
   const numeric = Number(value);
@@ -8,7 +9,7 @@ function clampNumber(value, min, max, fallback) {
 }
 
 export function getDoubaoV3Config(config = {}) {
-  const payload = config.payload || config;
+  const payload = resolveDoubaoAccountConfig(config.payload || config);
   return {
     apiKeyId: String(payload.apiKeyId || '').trim(),
     apiKeySecret: String(payload.apiKeySecret || '').trim(),
@@ -158,6 +159,9 @@ export function extractDoubaoAudioBuffers(text) {
 }
 
 function createTtsError(status, message, details = {}) {
+  if (/requested resource not granted/i.test(message)) {
+    message = `豆包语音合成资源未授权，音频尚未生成。请在配置中心 → 豆包 TTS 核对 APP ID、Access Token、Resource ID 与所选音色，并在火山语音控制台确认该应用已获对应资源权限。原始错误：${message}`;
+  }
   const error = new Error(message);
   error.status = status;
   Object.assign(error, details);

@@ -55,14 +55,15 @@ export async function loadDatabaseConfig(type) {
 export async function saveDatabaseConfig(type, input) {
   const storage = getRuntimeStorage();
   let draftStorage = storage;
-  if (type === CONFIG_TYPES.MINIMAX) {
+  const usesSelectedConfig = [CONFIG_TYPES.MINIMAX, CONFIG_TYPES.DOUBAO_TTS].includes(type);
+  if (usesSelectedConfig) {
     // Activate the selected model only after the database confirms the save.
     const values = new Map();
     draftStorage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
     saveConfig(type, readConfig(type, { storage, includeSecrets: true }), { storage: draftStorage });
   }
   const previousConfig = readConfig(type, { storage: draftStorage, includeSecrets: true });
-  saveConfig(type, type === CONFIG_TYPES.MINIMAX ? { ...previousConfig, ...input } : input, { storage: draftStorage, actor: 'config-center' });
+  saveConfig(type, usesSelectedConfig ? { ...previousConfig, ...input } : input, { storage: draftStorage, actor: 'config-center' });
   const plainConfig = readConfig(type, { storage: draftStorage, includeSecrets: true });
   const body = await requestJson(`${API_BASE}/${encodeURIComponent(type)}`, {
     method: 'PUT',
