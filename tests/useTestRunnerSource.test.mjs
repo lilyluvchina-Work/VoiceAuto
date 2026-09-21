@@ -44,7 +44,6 @@ assert.match(source, /scheme2\.langfuse_response_timeout_continue_next_wake/);
 assert.match(source, /Langfuse response_complete 获取超时，标记本轮失败并进入下一轮唤醒/);
 assert.match(source, /if \(isSpeakerRun && \(autonomousResponseEnabled \|\| shouldGateNextSpeakerTurn\) && success\)/);
 assert.match(source, /if \(!speakerSingleTurnLangfuseWakeGateEnabled && autonomousResponseEnabled\)/);
-assert.match(source, /if \(!speakerSingleTurnLangfuseWakeGateEnabled\)/);
 assert.match(source, /if \(!isLastCase && nextItem\?\.needWakeup !== false && isSpeakerRun && autonomousResponseEnabled && !speakerSingleTurnLangfuseWakeGateEnabled\)/);
 assert.match(source, /if \(!isLastCase && speakerSingleTurnLangfuseWakeGateEnabled\)/);
 assert.match(source, /continuous_speaker\.reboot_requires_rewake/);

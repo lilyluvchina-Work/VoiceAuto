@@ -44,6 +44,10 @@ export default defineConfig({
       '/langfuse-api-test': langfuseProxy('test'),
       '/langfuse-api-prod-local': langfuseProxy('prod-local'),
       '/langfuse-api-prod': langfuseProxy('prod'),
+      '/langfuse-api-': {
+        target: API_PROXY_TARGET,
+        changeOrigin: true,
+      },
       // TAPD API 代理（避免跨域限制）
       '/tapd-api': {
         target: 'https://api.tapd.cn',

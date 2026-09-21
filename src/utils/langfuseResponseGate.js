@@ -141,11 +141,40 @@ export function resolveResponseCompleteCandidate({
   return null;
 }
 
+export function resolveSilentToolCandidate({ traces = [], observations = [], testCase = {} } = {}) {
+  const audio = testCase.audio || testCase;
+  const text = normalizeText(audio.text || testCase.targetText);
+  const caseId = normalizeText(testCase.caseId || audio.tapdCaseId);
+  for (const observation of observations) {
+    if (!/\[output_tool\]|\btool_call(?:ed)?\b/i.test(observation.name || '')
+      && String(observation.type).toUpperCase() !== 'TOOL') continue;
+    if (String(observation.level).toUpperCase() === 'ERROR') continue;
+    const output = parseJsonLike(observation.output);
+    const hasPayload = value => value != null && value !== ''
+      && (typeof value !== 'object' || Object.keys(value).length > 0);
+    if (!hasPayload(output) && !hasPayload(parseJsonLike(observation.input))) continue;
+    if (output?.success === false || output?.error || /^(error|failed)$/i.test(output?.status || '')) continue;
+    const traceId = observation.traceId || observation.trace_id;
+    const trace = traces.find(item => item.id === traceId);
+    if (!trace) continue;
+    const input = collectSearchText(trace.input);
+    const metadata = parseJsonLike(trace.metadata) || {};
+    const ids = [metadata.caseId, metadata.case_id, metadata.tapdCaseId].map(normalizeText);
+    if (!(text && input.includes(text)) && !(caseId && ids.includes(caseId))) continue;
+    return { success: true, status: 'tool_called_no_voice_expected', responseText: '',
+      toolCalled: true, matchedTraceId: traceId, matchedObservationId: observation.id || '',
+      matchedObservationName: observation.name || '',
+      message: '用例无需语音回复，已确认本轮工具调用' };
+  }
+  return null;
+}
+
 export async function waitForLangfuseResponseComplete({
   envKey,
   fromTimestamp,
   toTimestamp,
   testCase,
+  expectsVoiceResponse = true,
   fetchTraces,
   fetchObservations,
   timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -180,7 +209,9 @@ export async function waitForLangfuseResponseComplete({
         fetchTraces(envKey, fromTimestamp, toValue),
         fetchObservations(envKey, fromTimestamp, toValue),
       ]);
-      const candidate = resolveResponseCompleteCandidate({ traces, observations, testCase });
+      const candidate = expectsVoiceResponse
+        ? resolveResponseCompleteCandidate({ traces, observations, testCase })
+        : resolveSilentToolCandidate({ traces, observations, testCase });
       onAttempt?.({ attempts, tracesCount: traces.length, observationsCount: observations.length, candidate });
       if (candidate) {
         return {
@@ -203,6 +234,6 @@ export async function waitForLangfuseResponseComplete({
     success: false,
     status: 'timeout',
     attempts,
-    message: lastError?.message || 'Langfuse 未确认 response 成功',
+    message: lastError?.message || (expectsVoiceResponse ? 'Langfuse 未确认 response 成功' : '用例无需语音回复，但未确认本轮工具调用'),
   };
 }

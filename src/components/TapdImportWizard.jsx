@@ -13,7 +13,7 @@ import {
   fetchTcaseCustomFieldSettings,
   fetchCaseDetails,
 } from '../modules/tapd/services/tapdService';
-import { tapdCaseToTestAudios } from '../modules/tapd/utils/tapdParser';
+import { getTapdImportIdentity, tapdCaseToTestAudios } from '../modules/tapd/utils/tapdParser';
 import {
   CONFIG_TYPES,
   readConfig as readSecureConfig,
@@ -396,8 +396,10 @@ export default function TapdImportWizard({ onClose }) {
       setImportProgress(`共 ${caseIds.length} 条用例，正在获取详情...${targetAgentFieldText}`);
       const cases = await fetchCaseDetails(project.workspaceId, caseIds, cfg.apiUser, cfg.apiPassword, { customFieldInfo });
 
-      // 已有用例文本 set（用于重复检测）
-      const existingTexts = new Set(state.testAudios.map(a => a.text));
+      // 按项目、计划、用例及语句序号去重，保留不同目录中的同文本用例。
+      const existingCases = new Map(state.testAudios
+        .map((audio) => [getTapdImportIdentity(audio), audio])
+        .filter(([key]) => key !== null));
       const meta = {
         workspaceId: project.workspaceId,
         workspaceName: project.workspaceName,
@@ -422,12 +424,28 @@ export default function TapdImportWizard({ onClose }) {
             result.errors.push({ tapdCaseId: row.tapdCaseId, caseTitle: row.caseTitle });
             continue;
           }
-          if (!overwrite && existingTexts.has(row.audio.text)) {
+          const importKey = getTapdImportIdentity(row.audio);
+          const existingAudio = existingCases.get(importKey);
+          if (!overwrite && existingAudio) {
+            // 再次导入时同步计划目录，同时保留已有音频。
+            dispatch(actions.updateTestAudio({
+              id: existingAudio.id,
+              module: row.audio.module,
+              caseDirectory: row.audio.caseDirectory,
+              tapdPlanDirectory: row.audio.tapdPlanDirectory,
+              tapdCategoryName: row.audio.tapdCategoryName,
+              tapdCategoryPath: row.audio.tapdCategoryPath,
+              tapdCategoryId: row.audio.tapdCategoryId,
+              caseSort: row.audio.caseSort,
+              tapdCaseSort: row.audio.tapdCaseSort,
+              importIndex: row.audio.importIndex,
+              tapdImportIndex: row.audio.tapdImportIndex,
+            }));
             result.skipped++;
             continue;
           }
           dispatch(actions.addTestAudio(row.audio));
-          existingTexts.add(row.audio.text);
+          existingCases.set(importKey, row.audio);
           result.imported++;
         }
       }

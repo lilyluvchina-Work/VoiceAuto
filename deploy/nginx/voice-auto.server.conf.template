@@ -9,6 +9,14 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # Newly configured environments are resolved by the VoiceAuto Node backend.
+    # Adjust the backend address/port to your deployment; preserve the URI.
+    location /langfuse-api- {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_read_timeout 60s;
+    }
+
     location /langfuse-api-uat/ {
         proxy_pass https://monitor-live-test-cedar.sdmc.tv/;
         proxy_set_header Host monitor-live-test-cedar.sdmc.tv;

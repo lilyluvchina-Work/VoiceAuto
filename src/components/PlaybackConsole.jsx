@@ -663,7 +663,7 @@ export default function PlaybackConsole({ onTestComplete }) {
           : 'border-amber-500/30 bg-amber-500/10'
       }`}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`h-2.5 w-2.5 rounded-full ${listenerOk ? 'bg-emerald-400' : 'bg-amber-400'}`} />
               <p className="text-sm font-medium text-gray-100">{deviceLabel} 监听链路自检</p>
@@ -795,18 +795,19 @@ export default function PlaybackConsole({ onTestComplete }) {
                 {aiToyRebooting ? '重启中…' : '重启AI玩具'}
               </button>
             )}
+
+          </div>
+        </div>
             {isAiToy && serialMonitor && (
-              <div className="mt-3 text-xs text-gray-300" role="status">
+              <div className="mt-3 min-w-0 text-xs text-gray-300" role="status">
                 <p>{serialMonitor.error || serialMonitor.logError || '串口已连接，正在监听并实时保存原始日志'}</p>
                 {serialMonitor.logPath && <p className="mt-1 break-all">本地文件（桥接电脑）：{serialMonitor.logPath}</p>}
                 <details className="mt-2">
                   <summary className="cursor-pointer">查看最近串口日志（文件保存全部原始数据）</summary>
-                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap">{serialMonitor.sampleLines?.join('\n') || '等待串口输出…'}</pre>
+                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">{serialMonitor.sampleLines?.join('\n') || '等待串口输出…'}</pre>
                 </details>
               </div>
             )}
-          </div>
-        </div>
       </div>
 
       <div className="mb-6 rounded-lg border border-primary/30 bg-primary/10 p-4">
@@ -1269,9 +1270,9 @@ export default function PlaybackConsole({ onTestComplete }) {
                       className="mt-0.5 w-4 h-4 rounded bg-gray-800 border-gray-600 disabled:opacity-50"
                     />
                     <span>
-                      <span className="block font-medium">方案2：Langfuse response_complete 确认后进入下一轮</span>
+                      <span className="block font-medium">方案2：ADB 播报结束优先，Langfuse 辅助确认</span>
                       <span className="block mt-1 text-xs text-cyan-100/80">
-                        实时轮询 Langfuse 日志，命中 response_complete 且解析到非空 TTS/response 内容后触发下一轮唤醒；未命中会标记本轮失败，并继续进入下一轮唤醒。
+                        检测到本轮 ADB onLiveTtsEnd 标记后，直接播放下一条测试音频，无需重新唤醒；未检测到时使用 Langfuse 辅助判定。无需语音回复的用例按工具调用结果判断。
                       </span>
                     </span>
                   </label>

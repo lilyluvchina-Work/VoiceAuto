@@ -271,6 +271,30 @@ function findLangfuseProxyTarget(pathname) {
   ));
 }
 
+async function findConfiguredLangfuseProxyTarget(pool, pathname) {
+  const config = await readAppConfig(pool, 'langfuse');
+  const environments = config?.payload?.environments || [];
+  for (const environment of environments) {
+    const key = String(environment.envKey || environment.label || '').trim().toLowerCase().replace(/_/g, '-');
+    const prefix = String(environment.proxyBase || `/langfuse-api-${key}`).trim().replace(/\/+$/, '');
+    if (environment.enabled === false || !prefix.startsWith('/langfuse-api-')) continue;
+    if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) continue;
+    let target;
+    try {
+      target = new URL(environment.baseUrl);
+      if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password) {
+        throw new Error('Invalid URL');
+      }
+    } catch {
+      const error = new Error('Langfuse 环境 Base URL 无效，请在配置中心填写 HTTP(S) 地址');
+      error.status = 400;
+      throw error;
+    }
+    return [prefix, target.toString()];
+  }
+  return null;
+}
+
 function copyProxyRequestHeaders(req) {
   const headers = {};
   ['authorization', 'accept', 'content-type'].forEach((name) => {
@@ -282,7 +306,7 @@ function copyProxyRequestHeaders(req) {
 async function proxyLangfuseApi(req, res, url, proxyTarget, fetchImpl) {
   const [prefix, baseUrl] = proxyTarget;
   const rewrittenPath = url.pathname.slice(prefix.length) || '/';
-  const target = new URL(rewrittenPath, baseUrl);
+  const target = new URL(`${baseUrl.replace(/\/+$/, '')}/${rewrittenPath.replace(/^\/+/, '')}`);
   url.searchParams.forEach((value, key) => {
     target.searchParams.append(key, value);
   });
@@ -343,6 +367,41 @@ async function proxyDingTalkRobot(req, res, url, fetchImpl) {
       message: '钉钉机器人代理请求失败',
       detail: error?.message || String(error),
     });
+  }
+}
+
+async function proxyTapdApi(req, res, url, fetchImpl) {
+  if (!['GET', 'POST', 'HEAD'].includes(req.method)) {
+    sendJson(res, 405, { success: false, message: 'Method not allowed' });
+    return;
+  }
+  // Assign the path separately: a double slash must never change the upstream host.
+  const target = new URL('https://api.tapd.cn');
+  target.pathname = url.pathname.slice('/tapd-api'.length) || '/';
+  target.search = url.search;
+  try {
+    const response = await fetchImpl(target.toString(), {
+      method: req.method,
+      headers: copyProxyRequestHeaders(req),
+      body: req.method === 'POST' ? await readRequestBuffer(req) : undefined,
+      redirect: 'error',
+      signal: AbortSignal.timeout(60000),
+    });
+    if (req.method === 'HEAD') {
+      res.writeHead(response.status, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end();
+      return;
+    }
+    const text = await response.text();
+    let body;
+    try { body = JSON.parse(text); }
+    catch {
+      sendJson(res, 502, { success: false, message: 'TAPD 上游返回非 JSON 响应，请检查服务状态', upstreamStatus: response.status });
+      return;
+    }
+    sendJson(res, response.status, body);
+  } catch {
+    sendJson(res, 502, { success: false, message: 'TAPD 代理请求失败，请检查服务器到 api.tapd.cn 的网络连接' });
   }
 }
 
@@ -515,9 +574,29 @@ export function createApp(options) {
   return async function app(req, res) {
     const url = new URL(req.url, 'http://localhost');
     try {
+      if (url.pathname === '/tapd-api' || url.pathname.startsWith('/tapd-api/')) {
+        await proxyTapdApi(req, res, url, fetchImpl);
+        return;
+      }
       const langfuseProxyTarget = findLangfuseProxyTarget(url.pathname);
       if (langfuseProxyTarget) {
         await proxyLangfuseApi(req, res, url, langfuseProxyTarget, fetchImpl);
+        return;
+      }
+
+      if (url.pathname.startsWith('/langfuse-api-')) {
+        let configuredTarget;
+        try {
+          configuredTarget = await findConfiguredLangfuseProxyTarget(pool, url.pathname);
+        } catch (error) {
+          sendError(res, error);
+          return;
+        }
+        if (!configuredTarget) {
+          sendJson(res, 404, { success: false, message: 'Langfuse 环境未配置或已禁用，请在配置中心保存环境配置' });
+          return;
+        }
+        await proxyLangfuseApi(req, res, url, configuredTarget, fetchImpl);
         return;
       }
 

@@ -2,6 +2,8 @@ const { BOOT_START, BOOT_READY } = require('./aiToyReboot.cjs');
 const { randomUUID } = require('node:crypto');
 const { StringDecoder } = require('node:string_decoder');
 
+const SERVICE_CONNECTION_FAILURE = /无法连接服务|WebSocket handshake failed|Failed to connect to Cedar WebSocket|SSL receive failed|mbedtls_ssl_fetch_input/i;
+
 // One serial subscription spans wakeup, input, playback and the next listening event.
 function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs = 300000 }) {
   const sessions = new Map();
@@ -33,11 +35,14 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
     }
     // The runner may retry a timed-out wake before the first listening event.
     // An active input/response turn must still never be interrupted by re-waking.
-    if (mode === 'wake' && session.armed && !session.state.interrupted && session.state.phase !== 'waking') {
+    if (mode === 'wake' && session.armed && !session.state.interrupted && session.state.phase !== 'waking' && session.state.phase !== 'standby') {
       throw new Error('AI玩具会话未中断，不能重复唤醒');
     }
     if (mode === 'wake' && session.state.rebootPending) {
       throw new Error('AI玩具尚未完成重启');
+    }
+    if (mode === 'wake' && session.state.interrupted && !session.state.wakeable) {
+      throw new Error('AI玩具尚未回到待唤醒状态');
     }
     session.armed = true;
     session.expectsVoiceResponse = expectsVoiceResponse;
@@ -54,16 +59,31 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
     const state = session.state;
     state.lastEventTime = Date.now();
     if (state.rebootPending && BOOT_READY.test(line)) {
-      Object.assign(state, { rebootPending: false, bootCompleted: true, bootMatchedLine: line });
+      Object.assign(state, { rebootPending: false, bootCompleted: true, bootMatchedLine: line,
+        wakeable: true, phase: 'interrupted' });
       return;
     }
     // A generic hardware warning or elapsed timer is not evidence of a lost session.
     const idle = /Application:.*New State:\s*idle\b/i.test(line);
-    if (BOOT_START.test(line) || idle || /WS response timeout \(no_tts_start\)/i.test(line)) {
+    const serviceConnectionFailure = SERVICE_CONNECTION_FAILURE.test(line);
+    if (idle && session.armed && state.phase !== 'waking' && (!state.firstAudioDetected || state.playbackDone)
+      && !state.interrupted && !state.rebootPending && !state.error) {
+      Object.assign(state, { phase: 'standby', ready: false, wakeable: true, standbyDetected: true,
+        standbyLine: line, standbyTime: Date.now(), listeningDetected: false });
+      return;
+    }
+    if (/WS response timeout \(no_tts_start\)/i.test(line) && session.armed && state.phase !== 'waking'
+      && !state.firstAudioDetected && !state.interrupted && !state.rebootPending) {
+      // No reply yet: keep watching for standby until the runner's turn deadline.
+      state.noVoiceTimeout = true;
+      return;
+    }
+    if (BOOT_START.test(line) || idle || /WS response timeout \(no_tts_start\)/i.test(line) || serviceConnectionFailure) {
       Object.assign(state, { phase: 'interrupted', ready: false, interrupted: true,
         rebootPending: state.rebootPending || BOOT_START.test(line),
         wakeable: idle && !state.rebootPending,
-        interruptionReason: line, listeningDetected: false });
+        interruptionReason: idle && state.interruptionReason ? state.interruptionReason : line,
+        listeningDetected: false });
       return;
     }
     if (state.interrupted) return;
@@ -82,10 +102,22 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
     if (line.includes('Cedar: Start listening')) {
       // A listening event from before playback completion must never release a turn.
       const ready = state.phase === 'waking' || state.playbackDone
-        || (!session.expectsVoiceResponse && state.inputDetected && !state.firstAudioDetected);
-      if (ready) Object.assign(state, { phase: 'listening', ready: true,
+        || (state.inputDetected && !state.firstAudioDetected);
+      if (ready) Object.assign(state, { phase: 'listening', ready: true, standbyDetected: false, wakeable: false,
         listeningDetected: true, listeningLine: line, listeningTime: Date.now() });
     }
+  }
+
+  function confirmToolTurn(sessionId) {
+    const session = get(sessionId);
+    const state = session.state;
+    if (session.expectsVoiceResponse || !session.armed) throw new Error('只有无需语音回复的用例可以确认工具完成');
+    if (state.error || state.interrupted || state.rebootPending) throw new Error(state.error || '设备已中断，不能确认工具完成');
+    if (!state.inputDetected) throw new Error('尚未检测到本轮输入');
+    state.toolCalled = true;
+    // Tool evidence determines the result, never device readiness. Wait for an
+    // actual standby/listening event before allowing another audio.
+    return read(sessionId);
   }
 
   async function close(sessionId, force = false) {
@@ -96,7 +128,7 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
       session.rawChunks = [];
       session.testing = false;
       session.armed = false;
-      return { serialLog, logPath: session.port.serialLogPath || '' };
+      return { serialLog, logPath: session.port.serialLogPath || '', logError: session.port.serialLogError || '' };
     }
     if (session.closing) return session.closing;
     session.closed = true;
@@ -104,7 +136,8 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
     session.closing = (async () => {
       try {
         await closePort(session.port);
-        return { serialLog: Buffer.concat(session.rawChunks).toString('utf8') };
+        return { serialLog: Buffer.concat(session.rawChunks).toString('utf8'),
+          logPath: session.port.serialLogPath || '', logError: session.port.serialLogError || '' };
       }
       finally {
         sessions.delete(sessionId);
@@ -127,7 +160,7 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
         existing[1].armed = false;
         existing[1].state = { phase: 'unknown', ready: false, interrupted: false,
           rebootPending: existing[1].state.rebootPending, bootCompleted: existing[1].state.bootCompleted };
-        return { sessionId: existing[0] };
+        return { sessionId: existing[0], logPath: existing[1].port.serialLogPath || '' };
       }
     }
     if (activePorts.has(key)) throw new Error('AI玩具串口正在测试，请先停止现有测试');
@@ -159,7 +192,7 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
           });
           sessions.set(sessionId, session);
           get(sessionId);
-          resolve({ sessionId }); // Return only after the serial listener is attached.
+          resolve({ sessionId, logPath: port.serialLogPath || '' }); // Listener and disk writer are attached.
           await lifetime;
         } catch (error) {
           if (port) await closePort(port);
@@ -193,7 +226,7 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
     if (existing) return close(existing[0], true);
   }
 
-  return { open, read, arm, close, monitor, disconnect };
+  return { open, read, arm, confirmToolTurn, close, monitor, disconnect };
 }
 
 module.exports = { createAiToySessionManager };

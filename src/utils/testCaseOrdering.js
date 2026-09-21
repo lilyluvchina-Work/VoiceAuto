@@ -11,17 +11,28 @@ function isReadableDirectory(value) {
 }
 
 export function resolveTestCaseDirectory(item) {
+  const categoryPath = cleanText(item?.tapdCategoryPath);
+  const categorySegments = isReadableDirectory(categoryPath)
+    ? categoryPath.split('/').map(cleanText).filter(Boolean)
+    : [];
   const candidates = [
     item?.tapdPlanDirectory,
-    item?.tapdCategoryName,
     item?.caseDirectory,
     item?.tapdCategoryPath,
+    item?.tapdCategoryName,
     item?.module,
   ];
 
   for (const candidate of candidates) {
     if (isReadableDirectory(candidate)) {
-      return cleanText(candidate);
+      const directory = cleanText(candidate);
+      // A plan may return only the leaf name. The case's category ID has already
+      // resolved its ancestry; retain it when that leaf matches. Explicit plan
+      // paths or different directory names must not inherit library parents.
+      if (categorySegments.length > 1 && directory === categorySegments.at(-1)) {
+        return categorySegments.join(' / ');
+      }
+      return directory;
     }
   }
 
@@ -70,8 +81,13 @@ function resolveImportIndex(item, fallbackIndex) {
   return fallbackIndex;
 }
 
+export function splitDirectoryPath(directory) {
+  return cleanText(directory).split('/').map(cleanText).filter(Boolean);
+}
+
 export function sortTestCasesByDirectoryOrder(items, options = {}) {
   const directoryFilter = options.directory || 'all';
+  const filterSegments = splitDirectoryPath(directoryFilter);
   return [...(items || [])]
     .map((item, index) => ({
       item,
@@ -80,7 +96,12 @@ export function sortTestCasesByDirectoryOrder(items, options = {}) {
       sortValue: resolveTestCaseSortValue(item),
       importIndex: resolveImportIndex(item, index),
     }))
-    .filter((entry) => directoryFilter === 'all' || entry.directory === directoryFilter)
+    .filter((entry) => {
+      if (directoryFilter === 'all') return true;
+      if (!options.includeDescendants) return entry.directory === directoryFilter;
+      const segments = splitDirectoryPath(entry.directory);
+      return filterSegments.every((part, index) => segments[index] === part);
+    })
     .sort((left, right) => {
       const directoryCompare = left.directory.localeCompare(right.directory, 'zh-CN');
       if (directoryCompare !== 0) return directoryCompare;

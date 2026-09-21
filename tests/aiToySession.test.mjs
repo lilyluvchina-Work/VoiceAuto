@@ -155,16 +155,39 @@ test('failed wake can be armed again while still waiting for first listening', a
   assert.throws(() => f.arm('wake'), /未中断/);
 });
 
-test('idle after test input without a reply is an interruption, never completion', async t => {
+test('standby without ASR or reply permits the next audio', async t => {
+  const f = await fixture(t);
+  f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn');
+  f.emit('Application: New State: idle');
+  assert.equal(f.read().ready, false);
+  assert.equal(f.read().interrupted, false);
+  assert.equal(f.read().inputDetected, false);
+});
+
+test('no TTS timeout keeps listening for standby even when a reply was expected', async t => {
+  const f = await fixture(t);
+  f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn');
+  f.emit('WS response timeout (no_tts_start)');
+  assert.equal(f.read().interrupted, false);
+  assert.equal(f.read().ready, false);
+  f.emit('Application: New State: idle');
+  assert.equal(f.read().ready, false);
+});
+
+test('idle after test input without a reply requires wake before the next audio', async t => {
   const f = await fixture(t);
   f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn');
   f.emit('Cedar: Input Text: 你好');
   f.emit('Application: New State: idle');
-  assert.equal(f.read().interrupted, true);
-  assert.equal(f.read().wakeable, true);
+  assert.equal(f.read().interrupted, false);
+  assert.equal(f.read().standbyDetected, true);
   assert.equal(f.read().ready, false);
   assert.equal(f.read().playbackDone, false);
   assert.equal(f.read().actualAsrText, '你好');
+  assert.throws(() => f.arm('turn'), /尚未开始收音/);
+  f.arm('wake'); f.emit('Cedar: Start listening');
+  assert.equal(f.read().ready, true);
+  f.arm('turn');
 });
 
 test('only explicit idle makes an interrupted device wakeable', async t => {
@@ -181,6 +204,57 @@ test('only explicit idle makes an interrupted device wakeable', async t => {
   assert.throws(() => f.arm('wake'), /尚未完成重启/);
 });
 
+test('service connection failure interrupts but waits for idle before re-wake', async t => {
+  const f = await fixture(t);
+  f.arm('wake');
+  f.emit('WebSocket handshake failed, status=500');
+  assert.equal(f.read().interrupted, true);
+  assert.equal(f.read().phase, 'interrupted');
+  assert.equal(f.read().wakeable, false);
+  assert.match(f.read().interruptionReason, /WebSocket handshake failed/);
+  assert.throws(() => f.arm('wake'), /尚未回到待唤醒状态/);
+  f.emit('Application: Alert [circle_xmark] 错误: 无法连接服务，请稍后再试');
+  assert.match(f.read().interruptionReason, /无法连接服务/);
+  assert.equal(f.read().wakeable, false);
+  f.emit('Application: New State: idle');
+  assert.equal(f.read().wakeable, true);
+  assert.match(f.read().interruptionReason, /无法连接服务/);
+  f.arm('wake');
+  f.emit('Cedar: Start listening');
+  assert.equal(f.read().ready, true);
+});
+
+test('tool evidence does not invent readiness before the silent device enters standby', async t => {
+  const f = await fixture(t);
+  f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn', false);
+  f.emit('Cedar: Input Text: 创建场景');
+  f.emit('WS response timeout (no_tts_start)');
+  assert.equal(f.read().ready, false);
+  assert.equal(f.read().interrupted, false);
+  const state = f.manager.confirmToolTurn(f.sessionId);
+  assert.equal(state.ready, false);
+  assert.equal(state.playbackDone, false);
+  assert.equal(state.toolCalled, true);
+  assert.throws(() => f.arm('turn'), /尚未开始收音/);
+  f.emit('Application: New State: idle');
+  assert.equal(f.read().ready, false);
+  assert.throws(() => f.arm('turn'), /尚未开始收音/);
+  f.arm('wake'); f.emit('Cedar: Start listening');
+  assert.equal(f.read().ready, true);
+  f.arm('turn');
+  assert.throws(() => f.manager.confirmToolTurn(f.sessionId), /无需语音/);
+});
+
+test('tool confirmation cannot interrupt audio or bypass an interrupted device', async t => {
+  const f = await fixture(t);
+  f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn', false);
+  f.emit('Cedar: Input Text: 创建场景');
+  f.emit('Audio latency first_downlink_audio');
+  assert.equal(f.manager.confirmToolTurn(f.sessionId).ready, false);
+  f.emit('TTS playback done'); f.emit('Cedar: Start listening');
+  assert.equal(f.read().ready, true);
+});
+
 test('non-voice case waits for input then a new listening event', async t => {
   const f = await fixture(t);
   f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn', false);
@@ -188,6 +262,37 @@ test('non-voice case waits for input then a new listening event', async t => {
   assert.equal(f.read().ready, false);
   f.emit('Cedar: Input Text: 无需回答'); f.emit('Cedar: Start listening');
   assert.equal(f.read().ready, true);
+});
+
+test('silent tool completed in standby requires wake before the next turn', async t => {
+  const f = await fixture(t);
+  f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn', false);
+  f.emit('Cedar: Input Text: 创建场景');
+  f.emit('Application: New State: idle');
+  const state = f.manager.confirmToolTurn(f.sessionId);
+  assert.equal(state.toolCalled, true);
+  assert.equal(state.ready, false);
+  assert.equal(state.standbyDetected, true);
+  assert.equal(state.listeningDetected, false);
+  assert.throws(() => f.arm('turn'), /尚未开始收音/);
+  f.arm('wake'); f.emit('Cedar: Start listening');
+  assert.equal(f.read().ready, true);
+  f.arm('turn');
+});
+
+test('idle cannot release an unfinished reply or conceal a connection failure', async t => {
+  const f = await fixture(t);
+  f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn', false);
+  f.emit('Cedar: Input Text: 创建场景'); f.emit('Audio latency first_downlink_audio');
+  f.emit('Application: New State: idle');
+  assert.equal(f.read().interrupted, true);
+  assert.equal(f.read().ready, false);
+  f.arm('wake'); f.emit('Cedar: Start listening'); f.arm('turn', false);
+  f.emit('Cedar: Input Text: 创建场景'); f.emit('WebSocket handshake failed, status=500');
+  f.emit('Application: New State: idle');
+  assert.equal(f.read().interrupted, true);
+  assert.equal(f.read().ready, false);
+  assert.throws(() => f.manager.confirmToolTurn(f.sessionId), /已中断/);
 });
 
 test('serial disconnect cannot be mistaken for permission to replay audio', async t => {

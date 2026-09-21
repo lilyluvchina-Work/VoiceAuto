@@ -5,6 +5,7 @@ import {
 } from '../src/modules/tapd/utils/tapdParser.js';
 
 assert.equal(shouldExpectVoiceResponse('预期结果：无需语音回复，只需要页面展示'), false);
+assert.equal(shouldExpectVoiceResponse('预期结果：不需要有语音回复，调用工具即可'), false);
 assert.equal(shouldExpectVoiceResponse('期望：Speaker 不需要播报'), false);
 assert.equal(shouldExpectVoiceResponse('Expected: no voice response'), false);
 assert.equal(shouldExpectVoiceResponse('预期结果：回复可有可无，无回复不算错误'), false);

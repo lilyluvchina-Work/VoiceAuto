@@ -4,6 +4,15 @@
 # 2) Replace upstream host if needed
 # 3) Keep the same prefixes as frontend env config
 
+# Dynamic environments require the VoiceAuto Node backend, not static files alone.
+# Use 127.0.0.1:8080 for the supplied Docker Compose host port.
+# Do not append a slash to proxy_pass: the backend needs the original prefix.
+location /langfuse-api- {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_read_timeout 60s;
+}
+
 location /langfuse-api-uat/ {
     proxy_pass https://monitor-live-test-cedar.sdmc.tv/;
     proxy_set_header Host monitor-live-test-cedar.sdmc.tv;

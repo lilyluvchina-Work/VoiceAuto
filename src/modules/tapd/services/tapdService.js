@@ -323,7 +323,37 @@ function pickSortValue(source) {
 }
 
 function pickDirectoryText(value) {
+  if (typeof value === 'string') {
+    const parsed = tryParseJsonString(value);
+    if (parsed !== null) return pickDirectoryText(parsed);
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const path = extractPlanDirectoryPath(value);
+    if (path) return path;
+  }
   return normalizeDirectoryText(pickReadableText(value));
+}
+
+function extractPlanDirectoryPath(source) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return '';
+  const paths = [
+    source.directory_path, source.directoryPath,
+    source.category_path, source.categoryPath,
+    source.case_directory_path, source.caseDirectoryPath,
+    source.catalog_path, source.catalogPath,
+    source.full_path, source.fullPath, source.path,
+  ];
+  for (const candidate of paths) {
+    const path = normalizeDirectoryText(pickReadableText(candidate));
+    if (path) return path;
+  }
+  for (const nested of [source.story_name, source.attrs, source.attribute, source.fields, source.extend, source.extends,
+    source.open_to_categories, source.openToCategories, source.open_to_categorys, source.openToCategorys,
+    source['open-to-categories']]) {
+    const path = extractPlanDirectoryPath(nested);
+    if (path) return path;
+  }
+  return '';
 }
 
 function extractGrowingTitle(source) {
@@ -389,6 +419,9 @@ function extractOpenToCategoriesTitle(source) {
 
 function extractPlanDirectoryTitle(source) {
   if (!source || typeof source !== 'object') return '';
+
+  const fullPath = extractPlanDirectoryPath(source);
+  if (fullPath) return fullPath;
 
   const directOpenCandidates = [
     source.open_to_categories,
@@ -660,7 +693,8 @@ export async function fetchPlanCases(workspaceId, testPlanId, apiUser, apiPasswo
         caseMap.set(caseId, {
           caseId,
           caseSort: pickSortValue(rel) || pickSortValue(item),
-          planDirectoryTitle: '',
+          planDirectoryTitle: extractPlanDirectoryPath(rel) || extractPlanDirectoryPath(item)
+            || extractPlanDirectoryTitle(rel) || extractPlanDirectoryTitle(item),
           diagnostics: buildPlanDirectoryDiagnostics(item, rel),
         });
       }

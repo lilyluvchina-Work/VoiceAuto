@@ -41,7 +41,7 @@ const TEST_AUDIO_START_TIMEOUT_MS = 10000;
 const RESPONSE_END_MAX_WAIT_MS = 120000;
 const RESPONSE_END_WAKE_GUARD_MS = 3000;
 const LANGFUSE_RESPONSE_POLL_INTERVAL_MS = 3000;
-const SPEAKER_CONTINUOUS_PLAYBACK_DONE_KEYWORD = '/SpeechService.*onLiveTtsEnd==>(?:false\\b|\\$stopRecord)/i';
+const SPEAKER_CONTINUOUS_PLAYBACK_DONE_KEYWORD = '/onLiveTtsEnd==>\\s*(?:true|false|\\$stopRecord)\\b/i';
 
 const numberOrDefault = (value, fallback) => {
   const parsed = Number(value);
@@ -103,6 +103,20 @@ function resolveExpectsVoiceResponse(audio = {}) {
     audio.expectedTtsText,
     audio.tapdSteps
   );
+}
+
+function waitForSilentToolCall({ testOptions, item, caseId, playStartTime, signal }) {
+  const config = testOptions.autonomousResponse || {};
+  return waitForLangfuseResponseComplete({
+    envKey: testOptions.selectedLangfuseEnv || getDefaultLangfuseEnvironmentKey(),
+    fromTimestamp: new Date(playStartTime).toISOString(),
+    toTimestamp: () => new Date(Date.now() + 1000).toISOString(),
+    testCase: { ...item, caseId, audio: item.audio },
+    expectsVoiceResponse: false, fetchTraces, fetchObservations,
+    timeoutMs: Number(config.langfuseResponseTimeoutMs) || Number(config.responseMaxWaitMs) || RESPONSE_END_MAX_WAIT_MS,
+    intervalMs: Number(config.langfuseResponsePollIntervalMs) || LANGFUSE_RESPONSE_POLL_INTERVAL_MS,
+    signal,
+  });
 }
 
 function waitForAudioStart(getStarted, timeoutMs) {
@@ -734,6 +748,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
             abortControllerRef,
           },
           services: {
+            waitForSilentToolCall,
             ttsService,
             playAudioItem,
             adbWakeService,
@@ -802,6 +817,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
             const playbackDone = Boolean(
               lastSpeakerPlaybackDoneResult?.vadEnded
               || lastSpeakerPlaybackDoneResult?.status === 'playback_done'
+              || (lastSpeakerPlaybackDoneResult?.success && lastSpeakerPlaybackDoneResult?.status === 'tool_called_no_voice_expected')
             );
             logWake('continuous_speaker.wait_for_playback_done', {
               cursor,
@@ -926,13 +942,13 @@ export default function useTestRunner({ onTestComplete } = {}) {
         let testAudioStarted = false;
         let continuousSpeakerPlaybackDonePassed = true;
         const nextItem = queue[cursor + 1] || null;
+        const expectsVoiceResponse = resolveExpectsVoiceResponse(item.audio);
         const shouldGateNextSpeakerTurn = Boolean(
-          isSpeakerContinuousDialogue
+          isSpeakerRun && expectsVoiceResponse
         );
         const autonomousInputConfig = testOptions.autonomousInput || {};
         const autonomousInputEnabled = Boolean(autonomousInputConfig.enabled);
         const autonomousResponseConfig = testOptions.autonomousResponse || {};
-        const expectsVoiceResponse = resolveExpectsVoiceResponse(item.audio);
         const autonomousResponseEnabled = Boolean(autonomousResponseConfig.enabled && expectsVoiceResponse);
         const langfuseResponseGateEnabled = autonomousResponseConfig.langfuseResponseGateEnabled === true;
         const speakerSingleTurnLangfuseWakeGateEnabled = Boolean(
@@ -1057,11 +1073,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
           durationMs: playEndTime - playStartTime
         });
 
+        if (isSpeakerRun && !expectsVoiceResponse && success) {
+          setCurrentAudioText('用例无需语音回复，正在确认本轮工具调用');
+          langfuseResponsePromise = waitForSilentToolCall({
+            testOptions, item, caseId, playStartTime, signal: abortControllerRef.current?.signal,
+          });
+        }
         if (isSpeakerRun && (autonomousResponseEnabled || shouldGateNextSpeakerTurn) && success) {
           dispatch(actions.setPlaybackState({ currentType: 'response-detect' }));
-          setCurrentAudioText(speakerSingleTurnLangfuseWakeGateEnabled
-            ? `第 ${item.round}/${item.totalRounds} 轮 · 正在等待 Langfuse response_complete`
-            : `第 ${item.round}/${item.totalRounds} 轮 · 正在采集 Speaker 响应`);
+          setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 正在等待 ADB onLiveTtsEnd 播报结束标记`);
           // Normalize once per case so audio VAD, ADB VAD, and the final wake guard share one policy.
           const responseRuntimeConfig = buildResponseRuntimeConfig(autonomousResponseConfig, item);
           const { monitorOptions, responseMaxWaitMs, afterFinishCooldownMs } = responseRuntimeConfig;
@@ -1101,7 +1121,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
             }).catch((err) => ({ __error: err }));
           }
 
-          if (!speakerSingleTurnLangfuseWakeGateEnabled) {
+          if (expectsVoiceResponse) {
             responseLogDetectPromise = adbWakeService.detectSpeakerResponseLog({
               bridgeUrl: testOptions.autonomousWake?.bridgeUrl,
               deviceId: testOptions.autonomousWake?.deviceId,
@@ -1153,7 +1173,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
               pollIntervalMs: langfusePollIntervalMs
             });
 
-            langfuseResponsePromise = waitForLangfuseResponseComplete({
+            const waitForResponseFromLangfuse = () => waitForLangfuseResponseComplete({
               envKey: langfuseEnvKey,
               fromTimestamp: langfuseFromTime,
               toTimestamp: () => new Date(Date.now() + 1000).toISOString(),
@@ -1180,6 +1200,12 @@ export default function useTestRunner({ onTestComplete } = {}) {
                 error: payload.error?.message || ''
               })
             });
+            // ADB playback completion is sufficient to release the next audio;
+            // do not wait for delayed Langfuse ingestion once the device has ended TTS.
+            langfuseResponsePromise = responseLogDetectPromise.then(result => result?.success && result?.status === 'playback_done'
+                ? { success: true, status: 'playback_done', responseText: result.speakerResponseText || '',
+                  matchedObservationName: result.vadEndLine || result.matchedLine || '' }
+                : waitForResponseFromLangfuse());
           }
         }
 
@@ -1340,7 +1366,9 @@ export default function useTestRunner({ onTestComplete } = {}) {
           }
         } else if (langfuseResponsePromise) {
           dispatch(actions.setPlaybackState({ currentType: 'langfuse-response-detect' }));
-          setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 正在等待 Langfuse response_complete`);
+          setCurrentAudioText(expectsVoiceResponse
+            ? `第 ${item.round}/${item.totalRounds} 轮 · 正在等待 ADB 播报结束或 Langfuse 确认`
+            : '用例无需语音回复，正在确认本轮工具调用');
           langfuseResponseResult = await langfuseResponsePromise;
 
           if (langfuseResponseResult?.success) {
@@ -1351,7 +1379,9 @@ export default function useTestRunner({ onTestComplete } = {}) {
               ttsMatchedLine: langfuseResponseResult.matchedObservationName
                 || langfuseResponseResult.matchedObservationId
                 || '',
-              message: 'Langfuse response_complete 已确认',
+              message: langfuseResponseResult.status === 'playback_done'
+                ? 'ADB onLiveTtsEnd 已确认，可直接播放下一条'
+                : expectsVoiceResponse ? 'Langfuse response_complete 已确认' : '无需语音回复，已确认工具调用',
             };
           }
 
@@ -1372,9 +1402,11 @@ export default function useTestRunner({ onTestComplete } = {}) {
 
           if (!responseChainPassed) {
             success = false;
-            failStage = failStage || 'LANGFUSE_RESPONSE';
+            failStage = failStage || (expectsVoiceResponse ? 'LANGFUSE_RESPONSE' : 'LANGFUSE_TOOL_CALL');
             failReason = failReason || (langfuseResponseResult?.message || 'Langfuse response_complete 获取超时，标记本轮失败并进入下一轮唤醒');
-            setCurrentAudioText('Langfuse response_complete 获取超时，标记本轮失败并进入下一轮唤醒');
+            setCurrentAudioText(expectsVoiceResponse
+              ? 'Langfuse response_complete 获取超时，标记本轮失败并进入下一轮唤醒'
+              : '未确认本轮工具调用，标记本轮失败');
             logResponse('scheme2.langfuse_response_timeout_continue_next_wake', {
               cursor,
               caseId,
@@ -1439,7 +1471,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           }
         }
 
-        if (responseLogResult && shouldGateNextSpeakerTurn) {
+        if (responseLogResult && isSpeakerContinuousDialogue) {
           lastSpeakerPlaybackDoneResult = responseLogResult;
         }
         if (shouldGateNextSpeakerTurn) {
@@ -1479,14 +1511,15 @@ export default function useTestRunner({ onTestComplete } = {}) {
         const testAudioPassed = Boolean(playEndTime) && failStage !== 'TEST_AUDIO_PLAY';
         const asrPassed = !autonomousInputEnabled || inputChainPassed === true;
         const speakerAudioPassed = !Boolean((testOptions.autonomousResponse || {}).enabled)
-          || !expectsVoiceResponse
           || responseChainPassed === true;
+        const silentToolPassed = expectsVoiceResponse || langfuseResponseResult?.success === true;
         const finalSuccess = Boolean(
           wakeAudioPassed
           && wakeDetectPassed
           && testAudioPassed
           && asrPassed
           && speakerAudioPassed
+          && silentToolPassed
           && continuousSpeakerPlaybackDonePassed
         );
         if (!finalSuccess && success) {
@@ -1525,6 +1558,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           targetAgent: item.audio.targetAgent || item.audio.expectedAgent || '',
           expectedResult: item.audio.expectedResult || item.audio.expectation || '',
           expectsVoiceResponse,
+          toolCalled: langfuseResponseResult?.toolCalled === true,
           tapdCaseId: item.audio.tapdCaseId || '',
           humanIndex: item.audio.humanIndex || '',
           playStartTime,
@@ -1628,7 +1662,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           lastSpeakerPlaybackDoneResult = responseLogResult;
         }
 
-        if (isSpeakerRun && ((isSpeakerContinuousDialogue && !devicePlaybackComplete)
+        if (isSpeakerRun && expectsVoiceResponse && ((isSpeakerContinuousDialogue && !devicePlaybackComplete)
           || (responseLogDetectPromise && (!responseLogResult || responseLogResult.status === 'timeout')))) {
           const reason = responseLogResult?.message || failReason || '播报结束监听超时';
           queue[cursor] = planSpeakerRecovery(item, { message: reason });
@@ -1645,6 +1679,12 @@ export default function useTestRunner({ onTestComplete } = {}) {
         }
 
         const isLastCase = cursor === queue.length - 1;
+        if (isSpeakerRun && devicePlaybackComplete && nextItem) {
+          nextItem.needWakeup = false;
+          nextItem.nextRequiresWakeup = false;
+          logWake('speaker.playback_done.reuse_session', { cursor, nextCursor: cursor + 1,
+            matchedLine: responseLogResult?.vadEndLine || responseLogResult?.ttsMatchedLine || '' });
+        }
         if (!isLastCase && nextItem?.needWakeup !== false && isSpeakerRun && autonomousResponseEnabled && !speakerSingleTurnLangfuseWakeGateEnabled) {
           const { afterFinishCooldownMs } = buildResponseRuntimeConfig(autonomousResponseConfig, item);
           // Use the latest known end signal to prevent the next wake word from overlapping Speaker tail audio.

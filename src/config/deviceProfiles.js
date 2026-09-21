@@ -65,7 +65,7 @@ export const DEVICE_PROFILES = {
       ],
       ttsKeywords: ['TTS_STATUS', 'tts_status'],
       firstAudioKeywords: [],
-      playbackDoneKeywords: ['/SpeechService.*onLiveTtsEnd==>(?:false\\b|\\$stopRecord)/i'],
+      playbackDoneKeywords: ['/onLiveTtsEnd==>\\s*(?:true|false|\\$stopRecord)\\b/i'],
       listeningKeywords: [],
     },
     failure: {
@@ -97,6 +97,11 @@ export const DEVICE_PROFILES = {
       failureKeywords: [
         'Application: ║ New State: idle',
         'Application: New State: idle',
+        '无法连接服务',
+        'WebSocket handshake failed',
+        'Failed to connect to Cedar WebSocket',
+        'SSL receive failed',
+        'mbedtls_ssl_fetch_input',
         'WS response timeout (no_tts_start)',
         'Rebooting.',
         'Guru Meditation',
@@ -117,6 +122,11 @@ export const DEVICE_PROFILES = {
       keywords: [
         'Application: ║ New State: idle',
         'Application: New State: idle',
+        '无法连接服务',
+        'WebSocket handshake failed',
+        'Failed to connect to Cedar WebSocket',
+        'SSL receive failed',
+        'mbedtls_ssl_fetch_input',
         'WS response timeout (no_tts_start)',
         'Rebooting.',
         'Guru Meditation',

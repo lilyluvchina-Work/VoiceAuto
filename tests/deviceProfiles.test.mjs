@@ -10,7 +10,6 @@ import {
 const speaker = getDeviceProfile();
 assert.equal(speaker.type, DEVICE_TYPES.SPEAKER);
 assert.equal(speaker.label, 'Speaker');
-assert.match(speaker.response.playbackDoneKeywords.join('\n'), /SpeechService/);
 assert.match(speaker.response.playbackDoneKeywords.join('\n'), /onLiveTtsEnd/);
 assert.match(speaker.response.playbackDoneKeywords.join('\n'), /stopRecord/);
 assert.match(speaker.response.ttsKeywords.join('\n'), /TTS_STATUS/);
@@ -24,6 +23,8 @@ assert.match(toy.input.extractPatterns.join('\n'), /Cedar: Input Text/);
 assert.match(toy.response.firstAudioKeywords.join('\n'), /Audio latency first_downlink_audio/);
 assert.match(toy.response.playbackDoneKeywords.join('\n'), /TTS playback done/);
 assert.match(toy.failure.keywords.join('\n'), /WS response timeout/);
+assert.match(toy.failure.keywords.join('\n'), /无法连接服务/);
+assert.match(toy.failure.keywords.join('\n'), /WebSocket handshake failed/);
 assert.match(toy.failure.keywords.join('\n'), /Guru Meditation/);
 
 const runtime = resolveDeviceRuntimeOptions({

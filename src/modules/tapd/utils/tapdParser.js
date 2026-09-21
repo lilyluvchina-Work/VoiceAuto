@@ -3,6 +3,8 @@
  * 从用例步骤 (steps) 中提取 Human 语音指令文本
  */
 
+import { resolveTestCaseDirectory } from '../../../utils/testCaseOrdering.js';
+
 // 匹配 Human/用户/人类 等前缀的正则（忽略大小写）
 const HUMAN_PATTERNS = [
   /Human\s*[:：]\s*(.+)/i,
@@ -55,7 +57,7 @@ export function shouldExpectVoiceResponse(...sources) {
   if (/(无|没有|未|不)\s*(回复|回答|语音|声音|播报|TTS|speaker|response)\s*(也)?\s*(正常|通过|成功|ok)/i.test(text)) {
     return false;
   }
-  if (/(无需|不需要|无须|不用|不要|不会|不应|无|没有)\s*(语音|声音|播报|回复|回答|TTS|speaker|response)/i.test(text)) {
+  if (/(无需|不需要|无须|不用|不要|不会|不应|无|没有)\s*(?:有\s*)?(语音|声音|播报|回复|回答|TTS|speaker|response)/i.test(text)) {
     return false;
   }
   if (/(语音|声音|播报|回复|回答|TTS|speaker|response)\s*(无需|不需要|无须|不用|不要|不会|不应|无|没有)/i.test(text)) {
@@ -105,6 +107,16 @@ export function extractHumanTexts(steps) {
  * @param {function} generateId
  * @returns {{ audio, humanTexts, skipped, reason }[]} 每条 Human 语句对应一个测试用例
  */
+export function getTapdImportIdentity(audio) {
+  if (audio?.source !== 'tapd' || !audio.tapdCaseId) return null;
+  return JSON.stringify([
+    String(audio.workspaceId || ''),
+    String(audio.tapdTestPlanId || ''),
+    String(audio.tapdCaseId),
+    String(audio.humanIndex || 1),
+  ]);
+}
+
 export function tapdCaseToTestAudios(tapdCase, meta, defaultVoiceConfig, generateId) {
   const stepHumanTexts = extractHumanTexts(tapdCase.steps);
   const targetText = stripHtml(tapdCase.targetText);
@@ -115,15 +127,19 @@ export function tapdCaseToTestAudios(tapdCase, meta, defaultVoiceConfig, generat
   const categoryPath = String(tapdCase.categoryPath || '').trim();
   const categoryId = String(tapdCase.categoryId || '').trim();
 
-  // category_path 在 TAPD 中常见为 ID 路径，这里优先显示目录名称
+  // 保留可读的父子目录路径；纯 ID 路径不能直接作为目录名称展示。
   const pathLooksLikeId = /^[\d\s,|\-_/]+$/.test(categoryPath);
   const readablePath = categoryPath && !pathLooksLikeId ? categoryPath : '';
 
-  const caseDirectory = (
-    categoryName
-    || readablePath
-    || '未分类目录'
-  ).trim();
+  const rawPlanDirectory = String(meta?.planCase?.planDirectoryTitle || '').trim();
+  const planDirectory = rawPlanDirectory && !/^[\d\s,|\-_/]+$/.test(rawPlanDirectory)
+    ? rawPlanDirectory
+    : '';
+  const caseDirectory = resolveTestCaseDirectory({
+    tapdPlanDirectory: planDirectory,
+    tapdCategoryPath: readablePath,
+    tapdCategoryName: categoryName,
+  });
 
   const moduleName = caseDirectory;
   const parsedTargetAgent = extractTargetAgent(

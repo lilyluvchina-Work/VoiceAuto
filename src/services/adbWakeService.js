@@ -390,6 +390,7 @@ export const openAiToySession = options => aiToySessionRequest('open', options);
 export const monitorAiToySerial = options => aiToySessionRequest('monitor', options);
 export const readAiToySession = options => aiToySessionRequest('read', options);
 export const armAiToySession = options => aiToySessionRequest('arm', options);
+export const confirmAiToyToolTurn = options => aiToySessionRequest('confirm-tool', options);
 export const closeAiToySession = options => aiToySessionRequest('close', options);
 
 export function downloadAiToySerialLog({ runId, serialLog }) {
@@ -410,6 +411,7 @@ export const adbWakeService = {
   openAiToySession,
   readAiToySession,
   armAiToySession,
+  confirmAiToyToolTurn,
   closeAiToySession,
   downloadAiToySerialLog,
   DEFAULT_BRIDGE_URL,

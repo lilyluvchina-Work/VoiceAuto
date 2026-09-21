@@ -8,8 +8,8 @@ const source = readFileSync(new URL('../src/runners/aiToyRunner.js', import.meta
   .replace("import { actions } from '../stores/testStore';", 'const actions = new Proxy({}, { get: (_, type) => payload => ({ type, payload }) });');
 const { runAiToyTest } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 
-async function runScenario({ interrupt = '', delayed = false, stopWaiting = false, inputEnabled = true,
-  stalledTurn = '', stallCount = 1, pauseWaiting = false, missingInput = false, abortRead = false, interruptCount = 1,
+async function runScenario({ missingReplyStandby = false, silentIdle = false, silentFirst = false, toolSuccess = true, interrupt = '', delayed = false, stopWaiting = false, stopDuringOpen = false, inputEnabled = true,
+  stalledTurn = '', stallCount = 1, lateStandby = false, pauseWaiting = false, missingInput = false, abortRead = false, interruptCount = 1,
   rebootFails = false, bootMissing = false, stopDuringReboot = false, wakeMisses = 0, idleDuringWake = false, endDuringWake = false, advanceTime = () => {}, trace = [], downloads = [], savedLogs = [], notifications = [], dingTalkEnabled = true, notifyFails = false } = {}) {
   const events = trace;
   const reports = [];
@@ -23,7 +23,16 @@ async function runScenario({ interrupt = '', delayed = false, stopWaiting = fals
   let wakes = 0;
   const queue = [1, 2].map(id => ({ audio: { id, text: '测试' }, needWakeup: true, listIndex: id - 1, round: 1, totalRounds: 1 }));
   const bridge = {
-    openAiToySession: async ({ serialPort }) => { events.push('open'); events.push(`port:${serialPort}`); return { sessionId: 'session' }; },
+    openAiToySession: async ({ serialPort, signal }) => {
+      events.push('open'); events.push(`port:${serialPort}`);
+      if (stopDuringOpen) {
+        refs.runIdRef.current++;
+        refs.isPlayingRef.current = false;
+        refs.abortControllerRef.current.abort();
+        assert.equal(signal, undefined, 'Reset must not discard the opening session ID');
+      }
+      return { sessionId: 'session', ...(stopDuringOpen ? { logPath: 'local/serial.log' } : {}) };
+    },
     readAiToySession: async () => {
       if (abortRead && plays) { refs.isPlayingRef.current = false; throw new Error('request aborted'); }
       if (pending.length) snapshot = pending.shift();
@@ -36,6 +45,11 @@ async function runScenario({ interrupt = '', delayed = false, stopWaiting = fals
       return snapshot;
     },
     closeAiToySession: async () => { events.push('close'); return { serialLog: 'session log\n' }; },
+    confirmAiToyToolTurn: async () => {
+      events.push('tool-confirmed');
+      snapshot = { ...snapshot, toolCalled: true };
+      return snapshot;
+    },
     downloadAiToySerialLog: data => downloads.push(data),
     rebootSpeaker: async () => {
       events.push('reboot');
@@ -57,15 +71,25 @@ async function runScenario({ interrupt = '', delayed = false, stopWaiting = fals
       if (action.type === 'setReport' && action.payload.aiToySerialLog) savedLogs.push(action.payload.aiToySerialLog);
     },
     setCurrentAudioText: () => {}, refs,
-    services: { adbWakeService: bridge, notifyDingTalk: async (type, context) => { notifications.push({ type, context }); if (notifyFails) throw new Error('notification unavailable'); },
+    services: { adbWakeService: bridge,
+      waitForSilentToolCall: async () => {
+        events.push('tool-check');
+        return { success: toolSuccess, status: toolSuccess ? 'tool_called_no_voice_expected' : 'timeout' };
+      },
+      notifyDingTalk: async (type, context) => { notifications.push({ type, context }); if (notifyFails) throw new Error('notification unavailable'); },
       ttsService: { speak: async () => { events.push('wake'); wakes++; snapshot = idleDuringWake && wakes <= wakeMisses
         ? { phase: 'interrupted', ready: false, interrupted: true, wakeable: true }
         : { phase: 'listening', ready: wakes > wakeMisses }; } },
       playAudioItem: async (_, __, ___, options) => {
         events.push('play'); plays++; options.onStart();
-        if (stalledTurn && plays <= stallCount) {
+        if ((silentFirst || missingReplyStandby) && plays === 1) {
+          snapshot = { phase: 'response', ready: !toolSuccess, inputDetected: true, actualAsrText: '测试' };
+          if (silentIdle || missingReplyStandby) Object.assign(snapshot, { interrupted: false, ready: false, standbyDetected: true, phase: 'standby', standbyLine: 'Application: New State: idle' });
+          pending = silentIdle || missingReplyStandby ? [] : [{ ...snapshot, ready: true, phase: 'listening', listeningDetected: true }];
+        } else if (stalledTurn && plays <= stallCount) {
           snapshot = { phase: 'response', ready: false, inputDetected: stalledTurn !== 'input',
             firstAudioDetected: stalledTurn === 'playback', playbackDone: stalledTurn === 'listening' };
+          if (lateStandby) pending = [snapshot, snapshot, { ...snapshot, ready: false, standbyDetected: true, phase: 'standby' }];
         } else if (interrupt && plays <= interruptCount) {
           snapshot = { phase: 'interrupted', interrupted: true, interruptionReason: interrupt, ready: false };
         } else {
@@ -77,18 +101,67 @@ async function runScenario({ interrupt = '', delayed = false, stopWaiting = fals
       } },
     helpers: { wait: async () => {
       events.push('wait'); waits++;
+      if (silentFirst && toolSuccess && plays === 1 && waits > 10) throw new Error('Silent turn remained blocked waiting for TTS');
       advanceTime();
       if (endDuringWake && snapshot.phase === 'listening') queue.length = 0;
       if (stopWaiting) refs.isPlayingRef.current = false;
       if (pauseWaiting) refs.isPausedRef.current = waits < 3;
     },
       resolveAudioCaseId: audio => audio.id, textSimilarity: () => 1, buildRetryQueueItem,
-      buildContinueDecision: () => ({}), resolveExpectsVoiceResponse: () => true,
+      buildContinueDecision: () => ({}), resolveExpectsVoiceResponse: audio => !(silentFirst && audio.id === 1),
       logWake: () => {}, logInput: () => {}, logResponse: () => {},
       resolveConfiguredList: () => [], toLines: () => [] },
   });
   return { events, reports, notifications };
 }
+
+test('silent case plays the next audio without checking tools or waiting for TTS', async () => {
+  const { events, reports } = await runScenario({ silentFirst: true });
+  assert.equal(reports.length, 2);
+  assert.equal(reports[0].success, true);
+  assert.notEqual(reports[0].toolCalled, true);
+  assert.equal(events.filter(e => e === 'play').length, 2);
+  assert.equal(events.includes('tool-check'), false);
+  assert.equal(events.includes('tool-confirmed'), false);
+  assert.equal(events.includes('reboot'), false);
+});
+
+test('silent case continues from listening without tool evidence', async () => {
+  const { reports, events } = await runScenario({ silentFirst: true, toolSuccess: false });
+  assert.equal(reports[0].success, true);
+  assert.equal(events.includes('tool-check'), false);
+  assert.equal(events.includes('tool-confirmed'), false);
+});
+
+test('silent standby wakes before playing the next case without tool checks', async () => {
+  const { reports, events } = await runScenario({ silentFirst: true, silentIdle: true, toolSuccess: false });
+  assert.equal(reports.length, 2);
+  assert.equal(reports[0].success, true);
+  assert.equal(events.filter(e => e === 'wake').length, 2);
+  assert.equal(events.filter(e => e === 'play').length, 2);
+  assert.equal(events.includes('reboot'), false);
+  assert.equal(events.includes('tool-check'), false);
+  assert.equal(events.includes('tool-confirmed'), false);
+});
+
+test('required reply missing in standby fails the case but wakes before the next audio', async () => {
+  const { reports, events } = await runScenario({ missingReplyStandby: true });
+  assert.equal(reports.length, 2);
+  assert.equal(reports[0].success, false);
+  assert.equal(reports[0].failStage, 'AI_TOY_RESPONSE_MISSING');
+  assert.equal(reports[1].success, true);
+  assert.equal(events.filter(e => e === 'wake').length, 2);
+  assert.equal(events.filter(e => e === 'play').length, 2);
+  assert.equal(events.includes('reboot'), false);
+});
+
+test('reset while opening still closes the session and retains its local saved path', async () => {
+  const savedLogs = [];
+  const { events } = await runScenario({ stopDuringOpen: true, savedLogs });
+  assert.equal(events.filter(e => e === 'close').length, 1);
+  assert.equal(events.includes('play'), false);
+  assert.deepEqual(savedLogs[0].localLogPaths, ['local/serial.log']);
+});
 
 test('separate AI toy cases share listening session and only wake once', async () => {
   const { events, reports } = await runScenario();
@@ -307,6 +380,17 @@ test('serial reconnection without confirmed boot cannot resume testing', async (
   const trace = [];
   await assert.rejects(runScenario({ interrupt: 'idle', interruptCount: 4, bootMissing: true, trace }), /重启恢复失败/);
   assert.equal(trace.at(-1), 'reboot');
+});
+
+test('missing ASR waits beyond eight seconds for standby without rebooting', async t => {
+  let now = 1000;
+  t.mock.method(Date, 'now', () => now);
+  const { events, reports } = await runScenario({ stalledTurn: 'input', lateStandby: true,
+    advanceTime: () => { now += 10000; } });
+  assert.equal(events.includes('reboot'), false);
+  assert.equal(events.filter(e => e === 'wake').length, 2);
+  assert.equal(events.filter(e => e === 'play').length, 2);
+  assert.equal(reports[0].standbyDetected, true);
 });
 
 for (const [stalledTurn, expectedStage] of [

@@ -60,7 +60,6 @@ function AppContent() {
   const [pendingLangfuseJump, setPendingLangfuseJump] = useState(false);
   const [serialLogDownloadError, setSerialLogDownloadError] = useState('');
   const aiToySerialLog = state.report?.aiToySerialLog;
-  const downloadedSerialLogRunsRef = useRef(new Set());
   const autoJumpTimerRef = useRef(null);
   const recordedUsageIdsRef = useRef(new Set());
   const isTesting = state.playback.isPlaying || state.playback.isPaused;
@@ -140,13 +139,6 @@ function AppContent() {
 
   useEffect(() => {
     setSerialLogDownloadError('');
-    if (!aiToySerialLog?.runId || downloadedSerialLogRunsRef.current.has(aiToySerialLog.runId)) return;
-    try {
-      downloadAiToySerialLog(aiToySerialLog);
-      downloadedSerialLogRunsRef.current.add(aiToySerialLog.runId);
-    } catch (error) {
-      setSerialLogDownloadError(`串口日志自动下载失败，请点击下载按钮重试：${error.message}`);
-    }
   }, [aiToySerialLog]);
 
   const handleDownloadSerialLog = () => {
@@ -165,8 +157,11 @@ function AppContent() {
           <div className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-blue-100">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div role="status">
-                <p>AI玩具测试已结束，已发起本次串口日志自动下载。</p>
-                <p className="mt-1 text-xs text-gray-400">日志保存到浏览器下载目录；若下载被拦截，请点击右侧按钮手动下载。</p>
+                <p>{aiToySerialLog.localLogError || (aiToySerialLog.localLogPaths?.length
+                  ? 'AI玩具日志已自动保存到串口桥接电脑，无需浏览器下载权限。'
+                  : '当前桥接未返回本地保存路径，请更新并重启串口桥接；本次日志仍可手动下载。')}</p>
+                {aiToySerialLog.localLogPaths?.map(path => <p key={path} className="mt-1 text-xs text-gray-400 break-all">{path}</p>)}
+                <p className="mt-1 text-xs text-gray-400">正常结束、重置或中断前收到的串口日志均实时写入本地文件。</p>
               </div>
               <button type="button" onClick={handleDownloadSerialLog}
                 className="rounded-lg bg-primary px-4 py-2 font-medium text-white hover:bg-primary/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">

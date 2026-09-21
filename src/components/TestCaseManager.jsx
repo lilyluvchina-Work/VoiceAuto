@@ -14,6 +14,7 @@ import {
 } from '../constants';
 import { buildGeneratedAudioConfig } from '../utils/testCaseAudioConfig';
 import { isGeneratedTestAudio } from '../utils/testAudioStatus';
+import { getDirectoryFilterState } from '../utils/testCaseDirectories';
 import {
   fetchStoredTestAudioBlob,
   synthesizeTestAudioBlob,
@@ -170,7 +171,7 @@ function getSaveAudioDisabledTitle(item) {
 export default function TestCaseManager() {
   const { state, dispatch } = useTest();
   const [showWizard, setShowWizard] = useState(false);
-  const [selectedDirectory, setSelectedDirectory] = useState('all');
+  const [directorySelection, setDirectorySelection] = useState([]);
   const initialGenerationLang = state?.defaultVoiceConfig?.lang || 'zh-CN';
   const [generationLang, setGenerationLang] = useState(initialGenerationLang);
   const [generationVoice, setGenerationVoice] = useState(
@@ -186,15 +187,15 @@ export default function TestCaseManager() {
     return sortTestCasesByDirectoryOrder(state.testAudios);
   }, [state.testAudios]);
 
-  const directoryOptions = React.useMemo(() => {
-    const directories = Array.from(new Set(sortedCases.map((item) => resolveTestCaseDirectory(item))));
-    return ['all', ...directories];
-  }, [sortedCases]);
+  const directoryFilter = React.useMemo(() => (
+    getDirectoryFilterState(sortedCases, directorySelection)
+  ), [sortedCases, directorySelection]);
+  const selectedDirectory = directoryFilter.directory;
 
   const visibleCases = React.useMemo(() => {
     const cases = selectedDirectory === 'all'
       ? sortedCases
-      : sortTestCasesByDirectoryOrder(sortedCases, { directory: selectedDirectory });
+      : sortTestCasesByDirectoryOrder(sortedCases, { directory: selectedDirectory, includeDescendants: true });
     return sortTextImportedFirst(cases);
   }, [sortedCases, selectedDirectory]);
 
@@ -338,7 +339,7 @@ export default function TestCaseManager() {
 
   const handleGenerateByGroup = async (groupName) => {
     if (batchRunning.current || generatingIds.size > 0) return;
-    const items = sortTestCasesByDirectoryOrder(sortedCases, { directory: groupName });
+    const items = sortTestCasesByDirectoryOrder(sortedCases, { directory: groupName, includeDescendants: true });
     batchRunning.current = true;
     let completed = 0;
     let failed = 0;
@@ -491,25 +492,12 @@ export default function TestCaseManager() {
       </div>
 
       <div className="bg-dark rounded-xl p-5 border border-gray-700">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <span>📚</span>
             导入的测试用例列表
           </h3>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400">目录筛选</span>
-            <select
-              value={selectedDirectory}
-              onChange={(e) => setSelectedDirectory(e.target.value)}
-              className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary"
-            >
-              <option value="all">全部目录</option>
-              {directoryOptions
-                .filter((name) => name !== 'all')
-                .map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-            </select>
             <button
               onClick={() => handleGenerateByGroup(selectedDirectory)}
               disabled={selectedDirectory === 'all' || visibleCases.length === 0 || generatingIds.size > 0 || generationProgress?.running}
@@ -517,6 +505,38 @@ export default function TestCaseManager() {
             >按所选目录生成音频</button>
           </div>
         </div>
+        {sortedCases.length > 0 && (
+          <nav aria-label="测试用例目录" className="mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {['一级目录', '二级目录', '三级目录'].map((label, level) => (
+                <label key={label} className="min-w-0 space-y-1">
+                  <span className="block text-sm text-gray-400">{label}</span>
+                  <select
+                    value={directoryFilter.selectedPath[level] || ''}
+                    disabled={directoryFilter.levels[level].length === 0}
+                    onChange={(event) => setDirectorySelection([
+                      ...directoryFilter.selectedPath.slice(0, level),
+                      ...(event.target.value ? [event.target.value] : []),
+                    ])}
+                    className="w-full min-w-0 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
+                  >
+                    <option value="">{level > directoryFilter.selectedPath.length
+                      ? '请先选择上级目录'
+                      : directoryFilter.levels[level].length === 0
+                      ? '无下级目录'
+                      : `全部${label}`}</option>
+                    {directoryFilter.levels[level].map(({ name, count }) => (
+                      <option key={name} value={name}>{name}（{count}）</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-gray-400 break-all">
+              当前目录：{selectedDirectory === 'all' ? '全部目录' : selectedDirectory} · {visibleCases.length} 条用例
+            </p>
+          </nav>
+        )}
         {generationProgress && <p role="status" className="mb-3 text-sm text-gray-400">
           {generationProgress.running ? '生成中' : '生成完成'}：{generationProgress.completed}/{generationProgress.total}，失败 {generationProgress.failed} 条
         </p>}

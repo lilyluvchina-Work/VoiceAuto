@@ -20,7 +20,7 @@ assert.match(source, /TTS playback done/);
 assert.match(source, /let listeningDetected = false;/);
 assert.match(source, /listeningDetected = true;/);
 assert.match(source, /wakeDetected && listeningDetected/);
-assert.match(source, /SpeechService.*onLiveTtsEnd/);
+assert.match(source, /onLiveTtsEnd/);
 assert.match(source, /DEFAULT_RESPONSE_TTS_KEYWORDS[\s\S]*TTS_STATUS[\s\S]*tts_status/);
 assert.match(source, /playbackDoneMatchers[\s\S]*endMatcher/);
 assert.match(source, /response\.playback_done\.detected/);
@@ -32,6 +32,8 @@ assert.match(source, /firstAudioDetected && playbackDoneDetected && responseList
 assert.match(source, /responseListeningTime/);
 assert.match(source, /responseListeningLine/);
 assert.match(source, /WS response timeout/);
+assert.match(source, /无法连接服务/);
+assert.match(source, /WebSocket handshake failed/);
 assert.match(source, /rebootAiToyViaSerial/);
 assert.match(source, /serial\.reboot\.start/);
 assert.match(source, /resolveLogSource\(body\) === LOG_SOURCE_SERIAL[\s\S]*rebootAiToyViaSerial/);

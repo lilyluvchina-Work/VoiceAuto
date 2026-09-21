@@ -72,7 +72,7 @@ const DEFAULT_RESPONSE_VAD_END_KEYWORDS = [
   '/"vad_status"\\s*:\\s*"stop"/i'
 ];
 const DEFAULT_RESPONSE_PLAYBACK_DONE_KEYWORDS = [
-  '/SpeechService.*onLiveTtsEnd==>(?:false\\b|\\$stopRecord)/i'
+  '/onLiveTtsEnd==>\\s*(?:true|false|\\$stopRecord)\\b/i'
 ];
 const DEFAULT_RESPONSE_TTS_KEYWORDS = [
   'TTS_STATUS',
@@ -86,6 +86,11 @@ const AI_TOY_LISTENING_KEYWORDS = ['Cedar: Start listening'];
 const AI_TOY_FAILURE_KEYWORDS = [
   'Application: ║ New State: idle',
   'Application: New State: idle',
+  '无法连接服务',
+  'WebSocket handshake failed',
+  'Failed to connect to Cedar WebSocket',
+  'SSL receive failed',
+  'mbedtls_ssl_fetch_input',
   'WS response timeout (no_tts_start)',
   'Rebooting.',
   'Guru Meditation',
@@ -2119,6 +2124,7 @@ const server = http.createServer(async (req, res) => {
       else if (body.action === 'open') data = await aiToySessions.open(body);
       else if (body.action === 'read') data = aiToySessions.read(body.sessionId);
       else if (body.action === 'arm') data = aiToySessions.arm(body.sessionId, body);
+      else if (body.action === 'confirm-tool') data = aiToySessions.confirmToolTurn(body.sessionId);
       else if (body.action === 'close') { data = await aiToySessions.close(body.sessionId) || {}; }
       else throw new Error('Invalid AI toy session action');
       sendJson(res, 200, { success: true, ...data });

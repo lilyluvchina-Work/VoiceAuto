@@ -23,9 +23,22 @@ export async function runAiToyTest({
   };
   let sessionId;
   const serialLogs = [];
+  const localLogPaths = new Set();
+  let localLogError = '';
+  const collectSavedFile = result => {
+    if (result?.logPath) localLogPaths.add(result.logPath);
+    if (result?.logError) localLogError = result.logError;
+  };
+  const openSession = async () => {
+    // Receive the session ID even if reset/stop happens during opening, so finally can release it.
+    const result = await adbWakeService.openAiToySession({ ...bridgeOptions, signal: undefined });
+    sessionId = result.sessionId;
+    collectSavedFile(result);
+  };
   const closeSession = async () => {
     const result = await adbWakeService.closeAiToySession({ ...bridgeOptions, signal: undefined, sessionId });
     if (typeof result?.serialLog === 'string') serialLogs.push(result.serialLog);
+    collectSavedFile(result);
     sessionId = undefined;
   };
   let sessionState;
@@ -73,9 +86,8 @@ export async function runAiToyTest({
       }
       if (turnTimeout) {
         const elapsed = Date.now() - started;
-        const hasInputEvidence = current.inputDetected || current.firstAudioDetected || current.playbackDone;
-        if ((!hasInputEvidence && elapsed > numberOrDefault(testOptions.autonomousInput?.asrDetectionTimeoutMs, 8000))
-          || elapsed > warningMs) return null;
+        // Missing ASR must not cut short the window for a no-reply standby event.
+        if (elapsed > warningMs) return null;
       }
       if (!wakeTimeout && Date.now() - lastWarning >= warningMs) {
         lastWarning = Date.now();
@@ -112,7 +124,7 @@ export async function runAiToyTest({
       deviceRuntime.serialPort = recovery.recoveredDeviceId;
       dispatch(actions.setDeviceOptions({ serialPort: recovery.recoveredDeviceId }));
     }
-    ({ sessionId } = await adbWakeService.openAiToySession(bridgeOptions));
+    await openSession();
     if (shouldStop()) return;
     firstWake = true;
     wakeFailCountRef.current = 0;
@@ -121,7 +133,7 @@ export async function runAiToyTest({
 
   try {
     // Opening is acknowledged after the data listener is attached, before any audio.
-    ({ sessionId } = await adbWakeService.openAiToySession(bridgeOptions));
+    await openSession();
     logWake('ai_toy.run.start', { runId: reportRunId, queueLength: queue.length, sessionId });
     for (let cursor = 0; cursor < queue.length; cursor += 1) {
       if (shouldStop()) return;
@@ -135,7 +147,7 @@ export async function runAiToyTest({
       notificationCaseId = caseId;
       await readSession();
       if (shouldStop()) return;
-      const needWakeup = firstWake || Boolean(sessionState.interrupted);
+      const needWakeup = firstWake || Boolean(sessionState.interrupted) || sessionState.phase === 'standby';
       item.needWakeup = needWakeup;
       const continueDecision = buildContinueDecision(item);
       let wakeResult = {
@@ -201,11 +213,11 @@ export async function runAiToyTest({
       // Poll once more at the boundary to catch an interruption between cases.
       await readSession();
       if (shouldStop()) return;
-      if (sessionState.interrupted) { cursor -= 1; continue; }
+      if (sessionState.interrupted || sessionState.phase === 'standby') { cursor -= 1; continue; }
       if (!sessionState.ready || isPausedRef.current) {
-        await waitForSession(current => current.ready || current.interrupted);
+        await waitForSession(current => current.ready || current.phase === 'standby' || current.interrupted);
         if (shouldStop()) return;
-        if (sessionState.interrupted) { cursor -= 1; continue; }
+        if (sessionState.interrupted || sessionState.phase === 'standby') { cursor -= 1; continue; }
       }
       const expectsVoiceResponse = resolveExpectsVoiceResponse(item.audio);
       await adbWakeService.armAiToySession({ ...sessionOptions(), mode: 'turn', expectsVoiceResponse });
@@ -245,9 +257,9 @@ export async function runAiToyTest({
       if (shouldStop()) return;
       if (success) {
         dispatch(actions.setPlaybackState({ currentType: 'response-detect' }));
-        setCurrentAudioText('AI玩具正在响应，等待播完并开始收音');
+        setCurrentAudioText('AI玩具等待聆听中；若进入待命，先唤醒再播放下一条');
         // ASR and response evaluation toggles never disable the device readiness gate.
-        const response = await waitForSession(current => current.ready || current.interrupted, { turnTimeout: true });
+        const response = await waitForSession(current => current.ready || current.phase === 'standby' || current.interrupted, { turnTimeout: true });
         if (shouldStop()) return;
         if (!response) {
           success = false;
@@ -265,13 +277,20 @@ export async function runAiToyTest({
         success = false;
         failStage = 'AI_TOY_INTERRUPTED';
         failReason = sessionState.interruptionReason || 'AI玩具会话被中断';
-        if (/WS response timeout \(no_tts_start\)/i.test(failReason) && !sessionState.wakeable) {
+        if (sessionState.wakeable === false || /WS response timeout \(no_tts_start\)/i.test(failReason)) {
           requiresReboot = true;
         }
       }
       const inputEnabled = Boolean(testOptions.autonomousInput?.enabled);
       const inputChainPassed = !inputEnabled || Boolean(sessionState.inputDetected);
-      const responseChainPassed = Boolean(sessionState.ready && !interrupted);
+      const missingVoiceResponse = expectsVoiceResponse && sessionState.standbyDetected
+        && !sessionState.firstAudioDetected && !sessionState.playbackDone;
+      if (missingVoiceResponse && !interrupted) {
+        success = false;
+        failStage = failStage || 'AI_TOY_RESPONSE_MISSING';
+        failReason = failReason || '用例要求语音回复，但设备无回复后进入待命；下一条先唤醒再播放';
+      }
+      const responseChainPassed = Boolean((sessionState.ready || sessionState.phase === 'standby') && !interrupted && !missingVoiceResponse);
       const asrResult = { actualAsrText: sessionState.actualAsrText || '',
         status: sessionState.inputDetected ? 'success' : 'not_detected',
         matchedLine: sessionState.asrMatchedLine || '' };
@@ -279,7 +298,7 @@ export async function runAiToyTest({
       const asrSimilarity = asrResult.actualAsrText ? textSimilarity(asrResult.actualAsrText, item.audio.text) : null;
       const responseLogResult = { status: responseChainPassed ? 'completed' : sessionState.phase,
         vadStarted: sessionState.firstAudioDetected, vadEnded: sessionState.playbackDone,
-        matchedLine: sessionState.listeningLine || '' };
+        matchedLine: sessionState.standbyLine || sessionState.listeningLine || '' };
       if (success && !inputChainPassed) {
         success = false;
         failStage = 'AI_TOY_ASR';
@@ -308,6 +327,7 @@ export async function runAiToyTest({
       targetText: item.audio.text,
       expectedResult: item.audio.expectedResult || item.audio.expectation || '',
       expectsVoiceResponse,
+      standbyDetected: Boolean(sessionState.standbyDetected),
       playStartTime,
       playEndTime,
       success: finalSuccess,
@@ -388,9 +408,12 @@ export async function runAiToyTest({
         logWake('ai_toy.session.close.error', { sessionId, message: error.message });
       }
     }
-    if (serialLogs.length) {
+    if (serialLogs.length || localLogPaths.size) {
       dispatch(actions.setReport({
-        aiToySerialLog: { runId: reportRunId, serialLog: serialLogs.join('') },
+        aiToySerialLog: { runId: reportRunId, serialLog: serialLogs.join(''),
+          ...(localLogPaths.size ? { localLogPaths: [...localLogPaths] } : {}),
+          ...(localLogError ? { localLogError } : {}),
+        },
       }));
     }
   }
