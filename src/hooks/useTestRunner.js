@@ -41,6 +41,14 @@ const TEST_AUDIO_START_TIMEOUT_MS = 10000;
 const RESPONSE_END_MAX_WAIT_MS = 120000;
 const RESPONSE_END_WAKE_GUARD_MS = 3000;
 const LANGFUSE_RESPONSE_POLL_INTERVAL_MS = 3000;
+// Playback completion does not imply the microphone remains open.
+function canReuseSpeakerListening(result) {
+  if (!result?.success) return false;
+  if (typeof result.listeningReady === 'boolean') return result.listeningReady;
+  const line = result.vadEndLine || result.matchedLine || '';
+  return /onLiveTtsEnd==>\s*false\b/i.test(line);
+}
+
 const SPEAKER_CONTINUOUS_PLAYBACK_DONE_KEYWORD = '/onLiveTtsEnd==>\\s*(?:true|false|\\$stopRecord)\\b/i';
 
 const numberOrDefault = (value, fallback) => {
@@ -814,11 +822,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
         });
         if (!item.needWakeup) {
           if (isSpeakerContinuousDialogue) {
-            const playbackDone = Boolean(
-              lastSpeakerPlaybackDoneResult?.vadEnded
-              || lastSpeakerPlaybackDoneResult?.status === 'playback_done'
-              || (lastSpeakerPlaybackDoneResult?.success && lastSpeakerPlaybackDoneResult?.status === 'tool_called_no_voice_expected')
-            );
+            const playbackDone = canReuseSpeakerListening(lastSpeakerPlaybackDoneResult);
             logWake('continuous_speaker.wait_for_playback_done', {
               cursor,
               dialogueTurnKey: item.dialogueTurnKey,
@@ -936,6 +940,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
         let responseResult = null;
         let responseLogResult = null;
         let devicePlaybackComplete = false;
+        let deviceListeningReady = false;
         let langfuseResponseResult = null;
         let responseChainPassed = null;
         let responseTextSimilarity = null;
@@ -944,7 +949,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
         const nextItem = queue[cursor + 1] || null;
         const expectsVoiceResponse = resolveExpectsVoiceResponse(item.audio);
         const shouldGateNextSpeakerTurn = Boolean(
-          isSpeakerRun && expectsVoiceResponse
+          isSpeakerRun
         );
         const autonomousInputConfig = testOptions.autonomousInput || {};
         const autonomousInputEnabled = Boolean(autonomousInputConfig.enabled);
@@ -1073,15 +1078,9 @@ export default function useTestRunner({ onTestComplete } = {}) {
           durationMs: playEndTime - playStartTime
         });
 
-        if (isSpeakerRun && !expectsVoiceResponse && success) {
-          setCurrentAudioText('用例无需语音回复，正在确认本轮工具调用');
-          langfuseResponsePromise = waitForSilentToolCall({
-            testOptions, item, caseId, playStartTime, signal: abortControllerRef.current?.signal,
-          });
-        }
         if (isSpeakerRun && (autonomousResponseEnabled || shouldGateNextSpeakerTurn) && success) {
           dispatch(actions.setPlaybackState({ currentType: 'response-detect' }));
-          setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 正在等待 ADB onLiveTtsEnd 播报结束标记`);
+          setCurrentAudioText(`第 ${item.round}/${item.totalRounds} 轮 · 正在等待 ADB onLiveTtsEnd 收音就绪标记`);
           // Normalize once per case so audio VAD, ADB VAD, and the final wake guard share one policy.
           const responseRuntimeConfig = buildResponseRuntimeConfig(autonomousResponseConfig, item);
           const { monitorOptions, responseMaxWaitMs, afterFinishCooldownMs } = responseRuntimeConfig;
@@ -1121,7 +1120,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
             }).catch((err) => ({ __error: err }));
           }
 
-          if (expectsVoiceResponse) {
+          if (shouldGateNextSpeakerTurn) {
             responseLogDetectPromise = adbWakeService.detectSpeakerResponseLog({
               bridgeUrl: testOptions.autonomousWake?.bridgeUrl,
               deviceId: testOptions.autonomousWake?.deviceId,
@@ -1142,6 +1141,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
               failureKeywords: deviceRuntime.profile.failure?.keywords,
               signal: abortControllerRef.current?.signal
             }).then(result => {
+              deviceListeningReady = canReuseSpeakerListening(result);
               devicePlaybackComplete = result?.success === true
                 && result?.status === 'playback_done';
               return result;
@@ -1471,6 +1471,9 @@ export default function useTestRunner({ onTestComplete } = {}) {
           }
         }
 
+        if (responseLogResult && devicePlaybackComplete) {
+          responseLogResult.listeningReady = deviceListeningReady;
+        }
         if (responseLogResult && isSpeakerContinuousDialogue) {
           lastSpeakerPlaybackDoneResult = responseLogResult;
         }
@@ -1484,11 +1487,12 @@ export default function useTestRunner({ onTestComplete } = {}) {
             responseLogResult?.message,
             failReason
           ].filter(Boolean).join(' | '));
-          if (!playbackDone && speakerRebooted && nextItem) {
+          if (!playbackDone && nextItem) {
             nextItem.needWakeup = true;
             nextItem.nextRequiresWakeup = false;
             lastSpeakerPlaybackDoneResult = null;
-            logWake('continuous_speaker.reboot_requires_rewake', {
+            logWake('continuous_speaker.listening_missing_requires_rewake', {
+              speakerRebooted,
               cursor,
               nextCursor: cursor + 1,
               dialogueTurnKey: nextItem.dialogueTurnKey,
@@ -1510,16 +1514,14 @@ export default function useTestRunner({ onTestComplete } = {}) {
         const wakeDetectPassed = !item.needWakeup || !autonomousWakeEnabled || wakeResult?.speaker_wake_status === 'success';
         const testAudioPassed = Boolean(playEndTime) && failStage !== 'TEST_AUDIO_PLAY';
         const asrPassed = !autonomousInputEnabled || inputChainPassed === true;
-        const speakerAudioPassed = !Boolean((testOptions.autonomousResponse || {}).enabled)
+        const speakerAudioPassed = !expectsVoiceResponse || !Boolean((testOptions.autonomousResponse || {}).enabled)
           || responseChainPassed === true;
-        const silentToolPassed = expectsVoiceResponse || langfuseResponseResult?.success === true;
         const finalSuccess = Boolean(
           wakeAudioPassed
           && wakeDetectPassed
           && testAudioPassed
           && asrPassed
           && speakerAudioPassed
-          && silentToolPassed
           && continuousSpeakerPlaybackDonePassed
         );
         if (!finalSuccess && success) {
@@ -1662,7 +1664,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           lastSpeakerPlaybackDoneResult = responseLogResult;
         }
 
-        if (isSpeakerRun && expectsVoiceResponse && ((isSpeakerContinuousDialogue && !devicePlaybackComplete)
+        if (isSpeakerRun && expectsVoiceResponse && !(isSpeakerContinuousDialogue && responseLogResult?.status === 'timeout') && ((isSpeakerContinuousDialogue && !devicePlaybackComplete)
           || (responseLogDetectPromise && (!responseLogResult || responseLogResult.status === 'timeout')))) {
           const reason = responseLogResult?.message || failReason || '播报结束监听超时';
           queue[cursor] = planSpeakerRecovery(item, { message: reason });
@@ -1680,10 +1682,19 @@ export default function useTestRunner({ onTestComplete } = {}) {
 
         const isLastCase = cursor === queue.length - 1;
         if (isSpeakerRun && devicePlaybackComplete && nextItem) {
+          const canListen = canReuseSpeakerListening(responseLogResult);
+          if (!canListen) {
+            nextItem.needWakeup = true;
+            nextItem.nextRequiresWakeup = false;
+            nextItem.forceWakeDetection = true;
+            logWake('speaker.listening_stopped.rewake_next', { cursor, nextCursor: cursor + 1,
+              matchedLine: responseLogResult?.vadEndLine || responseLogResult?.matchedLine || '' });
+          } else {
           nextItem.needWakeup = false;
           nextItem.nextRequiresWakeup = false;
           logWake('speaker.playback_done.reuse_session', { cursor, nextCursor: cursor + 1,
             matchedLine: responseLogResult?.vadEndLine || responseLogResult?.ttsMatchedLine || '' });
+        }
         }
         if (!isLastCase && nextItem?.needWakeup !== false && isSpeakerRun && autonomousResponseEnabled && !speakerSingleTurnLangfuseWakeGateEnabled) {
           const { afterFinishCooldownMs } = buildResponseRuntimeConfig(autonomousResponseConfig, item);

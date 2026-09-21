@@ -46,4 +46,4 @@ assert.match(source, /if \(isSpeakerRun && \(autonomousResponseEnabled \|\| shou
 assert.match(source, /if \(!speakerSingleTurnLangfuseWakeGateEnabled && autonomousResponseEnabled\)/);
 assert.match(source, /if \(!isLastCase && nextItem\?\.needWakeup !== false && isSpeakerRun && autonomousResponseEnabled && !speakerSingleTurnLangfuseWakeGateEnabled\)/);
 assert.match(source, /if \(!isLastCase && speakerSingleTurnLangfuseWakeGateEnabled\)/);
-assert.match(source, /continuous_speaker\.reboot_requires_rewake/);
+assert.match(source, /continuous_speaker\.listening_missing_requires_rewake/);

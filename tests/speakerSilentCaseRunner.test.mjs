@@ -12,7 +12,7 @@ import { DEVICE_TYPES, LOG_SOURCES } from '../src/config/deviceProfiles.js';
 const source = readFileSync(new URL('../src/hooks/useTestRunner.js', import.meta.url), 'utf8')
   .replace(/^import[\s\S]*?from ['"][^'"]+['"];?\r?\n/gm, '')
   .replace('export default function useTestRunner', 'function useTestRunner');
-async function runScenario({ silent = true, continuous = true, langfuse = false } = {}) {
+async function runScenario({ silent = true, continuous = true, langfuse = false, marker = true, stopRecord = false } = {}) {
 const reports = [];
 const plays = [];
 let wakeCount = 0;
@@ -42,8 +42,8 @@ const dependencies = {
   adbWakeService: { detectWakeup: async () => ({ success: true }),
     detectAsr: async () => ({ success: true, actualAsrText: state.testAudios[plays.length]?.text || plays.at(-1) }),
     detectSpeakerResponseLog: async () => {
-      assert.equal(silent, false, 'Silent case must not wait for playback done');
-      return { success: true, status: 'playback_done', vadEnded: true, vadEndLine: 'D SpeechService: onLiveTtsEnd==>true' };
+      if (!marker) return { success: false, status: 'timeout' };
+      return { success: true, status: 'playback_done', vadEnded: true, vadEndLine: `D SpeechService: onLiveTtsEnd==>${stopRecord}` };
     } },
   responseMonitorService: { detectSpeakerResponse: async () => {
     assert.equal(silent, false, 'Silent case must not wait for TTS');
@@ -63,13 +63,21 @@ hook().start();
 await Promise.race([done, new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('Speaker runner did not finish')), 2000); timer.unref(); })]);
 assert.deepEqual(plays, ['创建场景1', '创建场景2']);
 assert.equal(reports.length, 2);
-assert.ok(reports.every(row => row.success));
-if (silent) assert.ok(reports.every(row => row.toolCalled && row.expectsVoiceResponse === false));
-assert.equal(wakeCount, 1, 'A completed turn must reuse the session for the next audio');
-if (!silent) assert.equal(langfuseFetches, 0, 'ADB completion must not wait for Langfuse');
+if (marker) assert.ok(reports.every(row => row.success));
+if (silent) assert.ok(reports.every(row => !row.toolCalled && row.expectsVoiceResponse === false));
+assert.equal(wakeCount, marker && !stopRecord ? 1 : 2, 'Only a detected listening marker may reuse the session');
+assert.equal(langfuseFetches, 0, 'Speaker execution must not wait for silent tool confirmation');
 }
 
 await runScenario();
 await runScenario({ silent: false, continuous: false });
 await runScenario({ silent: false, continuous: false, langfuse: true });
 await runScenario({ silent: false, continuous: true });
+
+await runScenario({ silent: false, continuous: true, marker: false });
+await runScenario({ silent: true, continuous: true, marker: false });
+
+await runScenario({ silent: true, continuous: false });
+
+await runScenario({ silent: false, stopRecord: true });
+await runScenario({ silent: true, stopRecord: true });
