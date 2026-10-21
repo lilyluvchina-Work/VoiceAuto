@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "adb:bridge": "node scripts/adbBridge.cjs",
     "adb:recover": "powershell -ExecutionPolicy Bypass -File scripts/adbRecover.ps1",
-    "logs:errors": "node scripts/collectErrorLogs.cjs"
+    "logs:errors": "node scripts/collectErrorLogs.cjs",
+    "test:bridge": "node --test tests/bridgeControl.test.cjs tests/bridgeService.test.mjs",
+    "test:blackbox": "node --test tests/speakerBlackboxManager.test.cjs tests/speakerBlackboxReport.test.mjs tests/speakerBlackboxService.test.mjs tests/speakerBlackboxAudioSource.test.mjs tests/speakerBlackboxNotify.test.cjs"
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",

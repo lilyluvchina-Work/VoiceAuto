@@ -59,6 +59,25 @@ function createSpeechRecognition(language) {
   return recognition;
 }
 
+function assertMicrophoneAvailable() {
+  if (globalThis.isSecureContext === false) {
+    throw new Error('当前页面不是安全上下文，浏览器已禁用麦克风采集。服务器部署请使用有效证书的 HTTPS 地址访问；本机调试可使用 localhost。');
+  }
+  if (!globalThis.navigator?.mediaDevices?.getUserMedia) {
+    throw new Error('当前浏览器不支持麦克风采集，请使用支持录音的浏览器并通过 HTTPS 访问。');
+  }
+}
+
+function microphoneError(error) {
+  const messages = {
+    NotAllowedError: '麦克风访问被拒绝，请允许当前站点使用麦克风，并检查系统麦克风权限及嵌入页面的权限设置。',
+    NotFoundError: '未找到麦克风，请在打开网页的电脑上连接录音设备并刷新麦克风列表。',
+    NotReadableError: '无法读取麦克风，请检查设备连接、系统权限及其他程序是否独占设备。',
+    OverconstrainedError: '所选麦克风或录音参数不可用，请刷新麦克风列表并重新选择输入设备。'
+  };
+  return messages[error?.name] ? new Error(messages[error.name], { cause: error }) : error;
+}
+
 async function getAudioStream(config) {
   const tunedAudioConstraints = {
     echoCancellation: false,
@@ -72,10 +91,14 @@ async function getAudioStream(config) {
   try {
     return await navigator.mediaDevices.getUserMedia({ audio: tunedAudioConstraints });
   } catch (err) {
-    if (config.deviceId) {
-      return navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: config.deviceId } } });
+    if (config.deviceId && err?.name === 'OverconstrainedError') {
+      try {
+        return await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: config.deviceId } } });
+      } catch (fallbackError) {
+        throw microphoneError(fallbackError);
+      }
     }
-    throw err;
+    throw microphoneError(err);
   }
 }
 
@@ -171,7 +194,7 @@ function estimateTtsDurationMs(text, config) {
   return Math.ceil((estimatedSeconds + bufferSeconds) * 1000);
 }
 
-function buildRecordTimingPlan(config) {
+export function buildRecordTimingPlan(config) {
   const referenceText = config.expectedTtsText || config.ttsText || config.promptText || config.targetText || '';
   const textLength = getTextLengthForEstimate(referenceText);
   const estimatedMs = estimateTtsDurationMs(referenceText, config);
@@ -272,7 +295,14 @@ function startRecognition({ language, onText }) {
   };
 }
 
+export async function requestMicrophonePermission(deviceId = '') {
+  assertMicrophoneAvailable();
+  const stream = await getAudioStream({ deviceId });
+  stream.getTracks().forEach((track) => track.stop());
+}
+
 export async function listMicrophones() {
+  assertMicrophoneAvailable();
   if (!navigator.mediaDevices?.enumerateDevices) return [];
   const devices = await navigator.mediaDevices.enumerateDevices();
   return devices
@@ -308,15 +338,16 @@ export async function detectSpeakerResponse(options = {}) {
   );
   const maxBufferMs = responseWindowMs + preRollMs + postRollMs + 3000;
 
-  if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error('当前浏览器不支持麦克风采集');
-  }
+  assertMicrophoneAvailable();
   if (!window.AudioContext && !window.webkitAudioContext) {
     throw new Error('当前浏览器不支持响应音频采样');
   }
 
   const detectStartTime = now();
   const stream = await getAudioStream(config);
+  const inputTrack = stream.getAudioTracks()[0];
+  const inputDeviceId = inputTrack?.getSettings?.().deviceId || config.deviceId || '';
+  const inputDeviceLabel = inputTrack?.label || '';
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   const audioContext = new AudioContextCtor();
   if (audioContext.state === 'suspended') {
@@ -415,6 +446,8 @@ export async function detectSpeakerResponse(options = {}) {
     });
 
     onLog?.('response.audio.recording.start', {
+      inputDeviceId,
+      inputDeviceLabel,
       responseAudioRecordingStartTime: detectStartTime,
       recordingMode: 'continuous_pcm_vad_slice',
       sampleRate,
@@ -563,7 +596,8 @@ export async function detectSpeakerResponse(options = {}) {
         dynamicThreshold: latestDynamicThreshold,
         recorderStarted: true,
         sampleRate,
-        micDeviceId: config.deviceId || '',
+        micDeviceId: inputDeviceId,
+        inputDeviceLabel,
         speakerState,
         finishReason,
         ttsTextLength: timingPlan.textLength,
@@ -633,7 +667,8 @@ export async function detectSpeakerResponse(options = {}) {
       speechRecognitionSupported: recognition.supported,
       recorderStarted: true,
       sampleRate,
-      micDeviceId: config.deviceId || '',
+      micDeviceId: inputDeviceId,
+      inputDeviceLabel,
       speakerState,
       finishReason,
       ttsTextLength: timingPlan.textLength,
@@ -650,6 +685,7 @@ export async function detectSpeakerResponse(options = {}) {
 }
 
 export default {
+  requestMicrophonePermission,
   listMicrophones,
   listSpeakers,
   detectSpeakerResponse

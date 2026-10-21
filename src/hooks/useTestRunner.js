@@ -5,7 +5,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useTest, actions } from '../stores/testStore';
 import ttsService from '../services/ttsService.jsx';
 import adbWakeService from '../services/adbWakeService';
-import responseMonitorService from '../services/responseMonitorService';
+import responseMonitorService from '../services/nativeAudioService';
 import { notifyDingTalk } from '../services/dingTalkService';
 import { playAudioItem } from '../utils/audioHelpers';
 import { isGeneratedTestAudio } from '../utils/testAudioStatus';
@@ -961,6 +961,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           && !isSpeakerContinuousDialogue
           && autonomousResponseEnabled
           && langfuseResponseGateEnabled
+          && !String(autonomousResponseConfig.microphoneDeviceId || '').startsWith('native:')
         );
         const asrKeywords = resolveConfiguredList(autonomousInputConfig.asrKeywords, deviceRuntime.profile.input?.endKeywords);
         const asrStartKeywords = resolveConfiguredList(autonomousInputConfig.asrStartKeywords, deviceRuntime.profile.input?.startKeywords);
@@ -1109,6 +1110,7 @@ export default function useTestRunner({ onTestComplete } = {}) {
           if (!speakerSingleTurnLangfuseWakeGateEnabled && autonomousResponseEnabled) {
             responseDetectPromise = responseMonitorService.detectSpeakerResponse({
               ...monitorOptions,
+              bridgeUrl: testOptions.autonomousWake?.bridgeUrl,
               isPlaybackComplete: shouldGateNextSpeakerTurn ? () => devicePlaybackComplete : undefined,
               signal: abortControllerRef.current?.signal,
               onLog: (stage, payload = {}) => logResponse(stage, {

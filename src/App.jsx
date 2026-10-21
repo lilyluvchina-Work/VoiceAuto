@@ -7,6 +7,8 @@ import { TestProvider, useTest, actions } from './stores/testStore';
 import AudioImporter from './components/AudioImporter';
 import AudioList from './components/AudioList';
 import PlaybackConsole from './components/PlaybackConsole';
+import AudioPermissionReminder from './components/AudioPermissionReminder';
+import SpeakerBlackbox from './modules/speakerBlackbox/SpeakerBlackbox';
 import TestProcessRecord from './components/TestProcessRecord';
 import LangfuseFetcher from './components/LangfuseFetcher';
 import TestCaseManager from './components/TestCaseManager';
@@ -41,12 +43,14 @@ const MODES = {
   summary: 'summary',
   langfuse: 'langfuse',
   config: 'config',
+  blackbox: 'blackbox',
 };
 
 const TAB_ITEMS = [
   { key: MODES.cases, icon: '🗃️', label: '测试用例管理' },
   { key: MODES.audio, icon: '🎧', label: '测试音频' },
   { key: MODES.voice, icon: '🎙️', label: '语音控制' },
+  { key: MODES.blackbox, icon: '🔊', label: '音箱黑盒测试' },
   { key: MODES.report, icon: '📊', label: '测试过程记录' },
   { key: MODES.langfuse, icon: '🗂️', label: 'Langfuse 日志' },
   { key: MODES.summary, icon: '🧾', label: '总结报告' },
@@ -59,6 +63,8 @@ function AppContent() {
   const [activeMode, setActiveMode] = useState(MODES.cases);
   const [pendingLangfuseJump, setPendingLangfuseJump] = useState(false);
   const [serialLogDownloadError, setSerialLogDownloadError] = useState('');
+  const [blackboxActive, setBlackboxActive] = useState(false);
+  const [bridgeRestarting, setBridgeRestarting] = useState(false);
   const aiToySerialLog = state.report?.aiToySerialLog;
   const autoJumpTimerRef = useRef(null);
   const recordedUsageIdsRef = useRef(new Set());
@@ -153,7 +159,8 @@ function AppContent() {
   const renderMainContent = () => {
     return (
       <div className="space-y-6">
-        {aiToySerialLog && (
+        {activeMode !== MODES.blackbox && <AudioPermissionReminder />}
+        {activeMode !== MODES.blackbox && aiToySerialLog && (
           <div className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-blue-100">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div role="status">
@@ -204,6 +211,10 @@ function AppContent() {
           <ConfigCenter />
         </div>
 
+        <div className={activeMode === MODES.blackbox ? 'block' : 'hidden'}>
+          <SpeakerBlackbox visible={activeMode === MODES.blackbox} otherTesting={isTesting} bridgeRestarting={bridgeRestarting} onBridgeRestartingChange={setBridgeRestarting} onActivityChange={setBlackboxActive} onOpenAudios={() => setActiveMode(MODES.audio)} />
+        </div>
+
         <div className={activeMode === MODES.voice ? 'block' : 'hidden'}>
           <div className="space-y-6">
             {pendingLangfuseJump && (
@@ -212,7 +223,10 @@ function AppContent() {
               </div>
             )}
 
-            <PlaybackConsole onTestComplete={handleTestComplete} />
+            <fieldset disabled={blackboxActive || bridgeRestarting} className="min-w-0">
+              {blackboxActive && <p role="status" className="mb-3 text-amber-200">音箱黑盒测试正在占用音频设备，请先在该模块停止测试。</p>}
+              <PlaybackConsole onTestComplete={handleTestComplete} bridgeRestarting={bridgeRestarting} onBridgeRestartingChange={setBridgeRestarting} />
+            </fieldset>
           </div>
         </div>
       </div>
@@ -220,6 +234,7 @@ function AppContent() {
   };
 
   const renderFooterModeText = () => {
+    if (activeMode === MODES.blackbox) return null;
     if (activeMode === MODES.voice) {
       return (
         <>

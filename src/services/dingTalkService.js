@@ -220,7 +220,7 @@ function buildMarkdownMessage(type, context = {}) {
   };
 }
 
-function getRobotConfig() {
+export function getRobotConfig() {
   const secureConfig = readSecureConfig(CONFIG_TYPES.DINGTALK, { includeSecrets: true });
   if (secureConfig.configured || secureConfig.webhook || secureConfig.accessToken || secureConfig.secret) {
     return {

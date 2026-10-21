@@ -1,4 +1,9 @@
 node_modules
+.audio-python/
+.audio-models/
+logs/speaker-audio/
+logs/speaker-blackbox/
+__pycache__/
 dist
 .DS_Store
 *.log

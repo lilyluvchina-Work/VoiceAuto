@@ -2,6 +2,7 @@
  * 播放控制台组件
  */
 import React, { useEffect, useState } from 'react';
+import BridgeRestartButton from './BridgeRestartButton';
 import { MAX_LOOP_COUNT, normalizeLoopCount } from '../utils/loopCount.js';
 import useTestRunner from '../hooks/useTestRunner';
 import { formatTime } from '../utils/formatters';
@@ -12,7 +13,7 @@ import {
   getDefaultLangfuseEnvironmentKey,
   getLangfuseEnvironmentEntries,
 } from '../modules/langfuse/services/langfuseService';
-import responseMonitorService from '../services/responseMonitorService';
+import nativeAudioService from '../services/nativeAudioService';
 import adbWakeService from '../services/adbWakeService';
 import ttsService from '../services/ttsService.jsx';
 import { notifyDingTalk } from '../services/dingTalkService';
@@ -42,7 +43,7 @@ function formatUsbDiagnostics(usbDiagnostics = []) {
   return `系统已识别到 USB 异常设备：${name}${status}；请重新插拔 AI玩具、确认数据线/供电，并检查串口驱动或设备 USB 模式`;
 }
 
-export default function PlaybackConsole({ onTestComplete }) {
+export default function PlaybackConsole({ onTestComplete, bridgeRestarting = false, onBridgeRestartingChange }) {
   const { state, dispatch } = useTest();
   const { wakeWord, defaultVoiceConfig } = state;
   const loopCount = state.testOptions?.loopCount || 1;
@@ -74,8 +75,11 @@ export default function PlaybackConsole({ onTestComplete }) {
   );
   const [microphones, setMicrophones] = useState([]);
   const [microphoneStatus, setMicrophoneStatus] = useState('');
-  const [speakers, setSpeakers] = useState([]);
-  const [speakerStatus, setSpeakerStatus] = useState('');
+  const [detectingAudioInputs, setDetectingAudioInputs] = useState(false);
+  const [previewRecording, setPreviewRecording] = useState(false);
+  const [previewAudio, setPreviewAudio] = useState('');
+  const [inputLevel, setInputLevel] = useState(0);
+  useEffect(() => () => { if (previewAudio) URL.revokeObjectURL(previewAudio); }, [previewAudio]);
   const [adbDevices, setAdbDevices] = useState([]);
   const [adbDeviceStatus, setAdbDeviceStatus] = useState('');
   const [listenerHealth, setListenerHealth] = useState(null);
@@ -238,28 +242,53 @@ export default function PlaybackConsole({ onTestComplete }) {
   const refreshMicrophones = async () => {
     setMicrophoneStatus('正在读取麦克风列表...');
     try {
-      const list = await responseMonitorService.listMicrophones();
+      const list = await nativeAudioService.listNativeInputs(autonomousWake.bridgeUrl);
       setMicrophones(list);
+      if (list.length && !String(autonomousResponse.microphoneDeviceId || '').startsWith('native:')) {
+        handleAutonomousResponseChange({ microphoneDeviceId: (list.find(device => device.default) || list[0]).deviceId, langfuseResponseGateEnabled: false });
+      }
       setMicrophoneStatus(list.length ? `已发现 ${list.length} 个输入设备` : '未发现麦克风输入设备');
     } catch (err) {
+      setMicrophones([]);
       setMicrophoneStatus(err?.message || '读取麦克风列表失败');
     }
   };
 
-  const refreshSpeakers = async () => {
-    setSpeakerStatus('正在检测 音频输出设备...');
+  const authorizeAudioInputs = async () => {
+    setDetectingAudioInputs(true);
+    setMicrophoneStatus('正在通过本地桥接检测外接音频设备…');
     try {
-      const list = await responseMonitorService.listSpeakers();
-      setSpeakers(list);
-      setSpeakerStatus(list.length ? `已发现 ${list.length} 个 音频输出设备` : '未检测到 音频输出设备，请检查系统输出设备或浏览器权限');
+      await refreshMicrophones();
     } catch (err) {
-      setSpeakers([]);
-      setSpeakerStatus(err?.message || '读取 音频输出设备失败');
+      setMicrophoneStatus(err?.message || '音频输入授权失败');
+    } finally {
+      setDetectingAudioInputs(false);
+    }
+  };
+
+  const previewNativeAudio = async () => {
+    setPreviewRecording(true);
+    setPreviewAudio('');
+    setInputLevel(0);
+    setMicrophoneStatus('正在本地试录 5 秒，请让 Speaker 播放声音…');
+    try {
+      const result = await nativeAudioService.detectSpeakerResponse({
+        bridgeUrl: autonomousWake.bridgeUrl, deviceId: autonomousResponse.microphoneDeviceId,
+        preview: true, maxRecordMs: 5000, minDurationMs: 100,
+        noiseThreshold: autonomousResponse.noiseThreshold ?? 0.02,
+        onLog: (stage, data) => { if (stage === 'response.audio.level') setInputLevel(data.rms || 0); }
+      });
+      setPreviewAudio(result.responseAudioUrl);
+      setMicrophoneStatus(`试录完成 · ${result.inputDeviceLabel} · 峰值 ${(result.peakRms * 100).toFixed(1)}% · ${result.success ? '已检测到声音' : '声音不足，请检查输入与接线'} · 本地文件：${result.localAudioPath}`);
+    } catch (error) {
+      setMicrophoneStatus(error.message);
+    } finally {
+      setPreviewRecording(false);
     }
   };
 
   const refreshAudioDevices = async () => {
-    await Promise.all([refreshMicrophones(), refreshSpeakers()]);
+    await refreshMicrophones();
   };
 
   const refreshAdbDevices = async () => {
@@ -429,7 +458,7 @@ export default function PlaybackConsole({ onTestComplete }) {
     }
   };
 
-  const isLocked = isPlayingRef.current || isPausedRef.current || aiToyRebooting;
+  const isLocked = isPlayingRef.current || isPausedRef.current || aiToyRebooting || previewRecording || bridgeRestarting;
   const selectedAdbDeviceId = autonomousWake.deviceId || (adbDevices.length === 1 ? adbDevices[0].id : '');
   const listenerChecks = listenerHealth?.checks || {};
   const listenerOk = Boolean(listenerHealth?.success);
@@ -466,12 +495,6 @@ export default function PlaybackConsole({ onTestComplete }) {
     refreshAudioDevices();
     refreshListenerHealth();
 
-    const handleDeviceChange = () => {
-      refreshAudioDevices();
-    };
-
-    navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange);
-    return () => navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange);
   }, []);
 
   useEffect(() => {
@@ -516,7 +539,7 @@ export default function PlaybackConsole({ onTestComplete }) {
       if (aiToyRebootingRef.current) return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-      if (e.key === 'Enter' && !isPlayingRef.current && !isPausedRef.current) {
+      if (e.key === 'Enter' && !previewRecording && !bridgeRestarting && !isPlayingRef.current && !isPausedRef.current) {
         handleStart();
       } else if (e.key === ' ' && isPlayingRef.current && !isPausedRef.current) {
         e.preventDefault();
@@ -531,7 +554,7 @@ export default function PlaybackConsole({ onTestComplete }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [previewRecording, bridgeRestarting]);
 
   return (
     <div className="bg-dark rounded-xl p-6 border border-gray-700">
@@ -546,6 +569,8 @@ export default function PlaybackConsole({ onTestComplete }) {
       <p className="mb-5 text-sm text-gray-400">
         {isAiToy ? '自动唤醒、收音和测试；中断后自动恢复，启动完成再继续。' : '自动完成唤醒、输入检测、响应采集和结果记录。'}
       </p>
+      <div className="mb-5"><BridgeRestartButton bridgeUrl={autonomousWake.bridgeUrl} disabled={isLocked || listenerRecovering || detectingAudioInputs}
+        onRestartingChange={onBridgeRestartingChange} onRestarted={async () => { await refreshAdbDevices(); await refreshMicrophones(); }} /></div>
 
       <section className={`mb-6 rounded-xl border p-5 ${processToneClass}`}>
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -612,7 +637,7 @@ export default function PlaybackConsole({ onTestComplete }) {
               {!isPlayingRef.current && !isPausedRef.current ? (
                 <button
                   onClick={handleStart}
-                  disabled={testAudios.length === 0 || aiToyRebooting}
+                  disabled={testAudios.length === 0 || aiToyRebooting || previewRecording || bridgeRestarting}
                   className="flex items-center gap-2 rounded-lg bg-accent px-6 py-3 font-medium text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-600"
                 >
                   <span>▶</span>
@@ -1034,39 +1059,8 @@ export default function PlaybackConsole({ onTestComplete }) {
           </div>
         </div>
         </details>
-        <div className={`mt-3 p-3 rounded-lg border ${
-          speakers.length
-            ? 'border-gray-600 bg-gray-800/40'
-            : 'border-red-500/40 bg-red-500/10'
-        }`}>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className={`text-sm font-medium ${speakers.length ? 'text-gray-200' : 'text-red-200'}`}>
-                音频输出设备
-              </p>
-              <p className={`mt-1 text-xs ${speakers.length ? 'text-gray-400' : 'text-red-100'}`}>
-                {speakerStatus || '尚未检测 音频输出设备'}
-              </p>
-              {speakers.length > 0 && (
-                <p className="mt-1 text-[11px] text-gray-500 truncate">
-                  {speakers.map((device) => device.label).join('、')}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={refreshSpeakers}
-              disabled={isLocked}
-              className="px-3 py-2 text-sm bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg"
-            >
-              刷新输出设备
-            </button>
-          </div>
-          {!speakers.length && (
-            <p className="mt-2 text-xs text-red-100">
-              未监测到可用的 Speaker 设备时，播放测试可能无法正确输出声音；请连接扬声器或耳机后刷新。
-            </p>
-          )}
+        <div className="mt-3 rounded-lg border border-gray-600 bg-gray-800/40 p-3 text-xs text-gray-300">
+          测试音频通过电脑默认输出设备播放。Speaker 回复由本地桥接读取外接输入设备采集，不依赖浏览器麦克风权限。
         </div>
         {isAiToy ? (
           <label className="mt-4 flex items-center gap-2 text-sm text-gray-300">
@@ -1282,15 +1276,21 @@ export default function PlaybackConsole({ onTestComplete }) {
                 </div>
               </div>
               <label className="text-xs text-gray-400 md:col-span-2">
-                外部麦克风
+                Speaker 录音输入设备
                 <div className="mt-1 flex gap-2">
                   <select
                     value={autonomousResponse.microphoneDeviceId || ''}
-                    onChange={(e) => handleAutonomousResponseChange({ microphoneDeviceId: e.target.value })}
+                    onChange={(e) => handleAutonomousResponseChange({
+                      microphoneDeviceId: e.target.value,
+                      langfuseResponseGateEnabled: false
+                    })}
                     disabled={isLocked}
                     className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary disabled:opacity-50"
                   >
-                    <option value="">默认麦克风</option>
+                    <option value="">请选择本地音频输入设备</option>
+                    {autonomousResponse.microphoneDeviceId && !microphones.some((device) => device.deviceId === autonomousResponse.microphoneDeviceId) && (
+                      <option value={autonomousResponse.microphoneDeviceId}>已选设备未检测到，请检测或重新连接</option>
+                    )}
                     {microphones.map((device) => (
                       <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
                     ))}
@@ -1304,6 +1304,18 @@ export default function PlaybackConsole({ onTestComplete }) {
                     刷新
                   </button>
                 </div>
+                <button type="button" onClick={authorizeAudioInputs} disabled={isLocked || detectingAudioInputs}
+                  className="mt-2 px-3 py-2 text-sm bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg">
+                  {detectingAudioInputs ? '正在检测…' : '检测本地采集设备'}
+                </button>
+                <button type="button" onClick={previewNativeAudio} disabled={isLocked || previewRecording || !autonomousResponse.microphoneDeviceId?.startsWith('native:')}
+                  className="ml-2 mt-2 px-3 py-2 text-sm bg-primary disabled:opacity-50 rounded-lg text-white">
+                  {previewRecording ? '正在试录…' : '试录 5 秒'}
+                </button>
+                {previewRecording && <p role="status" className="mt-2">输入音量：{(inputLevel * 100).toFixed(1)}%</p>}
+                {previewAudio && <audio className="mt-2 w-full" aria-label="外接设备试录回放" controls src={previewAudio} />}
+                <p className="mt-2 text-xs text-gray-400">本地桥接程序直接读取外接麦克风、声卡或采集卡，不使用浏览器录音。设备应连接在桥接服务所在电脑，录音同时保存在本地 logs/speaker-audio。</p>
+                <p className="mt-1 text-xs text-gray-400">选择本地输入后将录制 Speaker 回复；录音文字识别不调用浏览器语音识别。</p>
                 {microphoneStatus && <p className="mt-1 text-[11px] text-gray-500">{microphoneStatus}</p>}
               </label>
               <label className="text-xs text-gray-400">

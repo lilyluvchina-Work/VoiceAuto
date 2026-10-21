@@ -5,6 +5,9 @@ const path = require('node:path');
 const { createAiToySessionManager } = require('./aiToySession.cjs');
 const { rebootAndObserve } = require('./aiToyReboot.cjs');
 const { attachSerialLog } = require('./serialLog.cjs');
+const nativeAudio = require('./nativeAudio.cjs').createNativeAudioManager();
+const blackboxAudio = require('./speakerBlackbox.cjs').createBlackboxManager();
+const { createBridgeControl, exitAfterResponse } = require('./bridgeControl.cjs');
 const serialLogDirectory = path.resolve(process.env.AI_TOY_LOG_DIR || path.join(__dirname, '..', 'logs', 'ai-toy'));
 const rebootingSerialPorts = new Set();
 
@@ -2103,6 +2106,30 @@ const aiToySessions = createAiToySessionManager({
   },
 });
 
+const bridgeControl = createBridgeControl({
+  busyReason: () => (nativeAudio.isBusy() || blackboxAudio.isBusy() || aiToySessions.isBusy()
+    || rebootingSerialPorts.size) ? '桥接正在测试、录音或处理请求，请先停止任务后再重启' : '',
+  closeResources: () => aiToySessions.closeAll(),
+  spawnRestart: () => new Promise((resolve, reject) => {
+    const root = path.resolve(__dirname, '..');
+    const logDir = path.join(root, 'logs'); fs.mkdirSync(logDir, { recursive: true });
+    const errorLog = path.join(logDir, 'adb-bridge-restart.err.log');
+    const errors = fs.openSync(errorLog, 'a');
+    const child = spawn(process.execPath, [path.join(__dirname, 'bridgeRestart.cjs'), JSON.stringify({
+      parentPid: process.pid, nodePath: process.execPath, scriptPath: __filename, args: process.argv.slice(2),
+      cwd: process.cwd(), outputLog: path.join(logDir, 'adb-bridge-restart.out.log'), errorLog,
+    })], { detached: true, windowsHide: true, env: process.env, stdio: ['ignore', 'ignore', errors, 'ipc'] });
+    fs.closeSync(errors);
+    let ready = false;
+    const timer = setTimeout(() => { child.kill(); reject(new Error('重启进程未能就绪，当前桥接继续运行')); }, 5000);
+    child.once('message', message => {
+      if (message?.ready) { ready = true; clearTimeout(timer); child.unref(); resolve(); }
+    });
+    child.once('error', error => { clearTimeout(timer); if (!ready) reject(error); });
+    child.once('exit', code => { clearTimeout(timer); if (!ready) reject(new Error(`重启进程提前退出 (${code})`)); });
+  }),
+});
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     sendJson(res, 204, {});
@@ -2114,8 +2141,48 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const managementRequest = req.url === '/api/bridge/status' || req.url === '/api/bridge/restart';
+  if (bridgeControl.status().restarting && !managementRequest) {
+    sendJson(res, 503, { success: false, message: '桥接正在重启，请稍候重试' }); return;
+  }
+  const completeRequest = managementRequest ? () => {} : bridgeControl.beginRequest();
+
   try {
     const body = await readBody(req);
+
+    if (managementRequest || req.url === '/api/audio/native' || req.url === '/api/audio/blackbox') {
+      const allowedOrigins = (process.env.VOICEAUTO_AUDIO_ORIGINS || 'http://10.10.64.202:8888').split(',');
+      const origin = req.headers.origin;
+      const localOrigin = origin && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      if (origin && !localOrigin && !allowedOrigins.includes(origin)) {
+        sendJson(res, 403, { success: false, message: '当前站点未获本地音频采集授权' });
+        return;
+      }
+      if (!String(req.headers['content-type'] || '').startsWith('application/json')) {
+        sendJson(res, 415, { success: false, message: 'JSON request required' });
+        return;
+      }
+      if (managementRequest) {
+        if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) {
+          sendJson(res, 403, { success: false, message: '只能在桥接所在电脑重启本机服务' }); return;
+        }
+        if (req.url === '/api/bridge/status') { sendJson(res, 200, bridgeControl.status()); return; }
+        const result = await bridgeControl.restart();
+        exitAfterResponse(res, () => {
+          server.close(); server.closeIdleConnections?.();
+          setTimeout(() => process.exit(0), 100);
+        });
+        if (res.destroyed) return;
+        sendJson(res, 200, result); return;
+      }
+      if (['start', 'calibrate'].includes(body.action)
+        && (req.url === '/api/audio/blackbox' ? nativeAudio.isBusy() : blackboxAudio.isBusy())) {
+        sendJson(res, 409, { success: false, message: '另一个音频测试正在占用设备，请先停止该任务' });
+        return;
+      }
+      sendJson(res, 200, await (req.url === '/api/audio/blackbox' ? blackboxAudio : nativeAudio).handle(body));
+      return;
+    }
 
     if (req.url === '/api/adb/ai-toy/session') {
       let data;
@@ -2172,10 +2239,12 @@ const server = http.createServer(async (req, res) => {
 
     sendJson(res, 404, { success: false, message: 'not found' });
   } catch (err) {
-    sendJson(res, 500, {
+    sendJson(res, err.statusCode || 500, {
       success: false,
       message: err?.message || String(err)
     });
+  } finally {
+    completeRequest();
   }
 });
 

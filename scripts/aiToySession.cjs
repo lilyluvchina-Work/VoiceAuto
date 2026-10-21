@@ -226,7 +226,10 @@ function createAiToySessionManager({ openPort, closePort, withPortLock, leaseMs 
     if (existing) return close(existing[0], true);
   }
 
-  return { open, read, arm, confirmToolTurn, close, monitor, disconnect };
+  return { open, read, arm, confirmToolTurn, close, monitor, disconnect,
+    isBusy: () => openings.size > 0 || [...sessions.values()].some(session => session.testing),
+    closeAll: () => Promise.all([...sessions.keys()].map(id => close(id, true))),
+  };
 }
 
 module.exports = { createAiToySessionManager };

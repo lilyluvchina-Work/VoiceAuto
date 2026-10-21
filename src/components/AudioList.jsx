@@ -10,19 +10,16 @@ import usePagination from '../hooks/usePagination';
 import useSelection from '../hooks/useSelection';
 import {
   resolveTestCaseDirectory,
-  sortTestCasesByDirectoryOrder,
 } from '../utils/testCaseOrdering';
-import { isGeneratedTestAudio } from '../utils/testAudioStatus';
+import { selectGeneratedTestAudios } from '../utils/testAudioStatus';
 
 export default function AudioList() {
   const { state, dispatch } = useTest();
   const { testAudios, playback } = state;
-  const [selectedModule, setSelectedModule] = React.useState('all');
+  const selectedModule = state.testOptions?.selectedTestModule || 'all';
 
   const generatedAudios = React.useMemo(() => {
-    return sortTestCasesByDirectoryOrder(
-      testAudios.filter(isGeneratedTestAudio)
-    );
+    return selectGeneratedTestAudios(testAudios);
   }, [testAudios]);
 
   const moduleOptions = React.useMemo(() => {
@@ -30,8 +27,7 @@ export default function AudioList() {
   }, [generatedAudios]);
 
   const filteredAudios = React.useMemo(() => {
-    if (selectedModule === 'all') return generatedAudios;
-    return sortTestCasesByDirectoryOrder(generatedAudios, { directory: selectedModule });
+    return selectGeneratedTestAudios(generatedAudios, selectedModule);
   }, [generatedAudios, selectedModule]);
 
   const currentPlayingTestId = playback.currentType === 'test' ? playback.currentAudioId : null;
@@ -114,9 +110,10 @@ export default function AudioList() {
       <div className="mb-4 flex items-center justify-end gap-2">
         <span className="text-sm text-gray-400">功能模块筛选</span>
         <select
+          aria-label="测试音频模块"
           value={selectedModule}
           onChange={(e) => {
-            setSelectedModule(e.target.value);
+            dispatch(actions.setSelectedTestModule(e.target.value));
             goPage(1);
           }}
           className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:border-primary"

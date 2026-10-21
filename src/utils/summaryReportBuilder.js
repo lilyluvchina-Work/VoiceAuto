@@ -835,29 +835,18 @@ export function buildSummaryReportText(report) {
     item.agentHitRate,
     item.avgResponseText || formatMs(item.avgResponseMs),
   ]);
-  const errorRows = cases
-    .filter((item) => valueOrSlash(item.logError) !== MISSING || valueOrSlash(item.logSummary) !== MISSING || item.testPassed === false)
-    .map((item, index) => [
-      item.index || index + 1,
-      item.caseId,
-      item.caseTitle || item.testAudioText,
-      item.testResult,
-      item.logStatus,
-      item.logError,
-      item.logSummary,
-    ]);
   const detailRows = cases.map((item, index) => [
     item.index || index + 1,
     item.caseId,
     item.module,
-    item.testAudioText,
+    item.caseTitle || item.testAudioText,
+    item.testResult,
     breakSentencesForExport(item.logInputText),
     breakSentencesForExport(item.logOutput),
     item.targetAgent,
     item.actualAgent,
     item.actualSubAgent,
     item.agentMatched,
-    item.testResult,
     item.responseText || formatMs(item.responseMs),
     item.logError,
     item.inputSimilarity,
@@ -879,32 +868,28 @@ export function buildSummaryReportText(report) {
     '',
     buildMarkdownTable(['项目', '内容'], overviewRows),
     '',
+    '### 功能模块统计',
+    '',
+    buildMarkdownTable(['功能模块', '用例数', 'Agent命中率', '平均耗时'], moduleRows),
+    '',
     '## 二、环境信息',
     '',
     paramSections,
     '',
-    '## 三、功能模块统计',
-    '',
-    buildMarkdownTable(['功能模块', '用例数', 'Agent命中率', '平均耗时'], moduleRows),
-    '',
-    '## 四、错误信息',
-    '',
-    buildMarkdownTable(['序号', '用例ID', '用例名称', '结论', '日志状态', '错误信息', '异常信息'], errorRows),
-    '',
-    '## 五、测试明细',
+    '## 三、测试明细',
     '',
     buildMarkdownTable([
       '序号',
       '用例ID',
       '功能模块',
-      '目标文本',
+      '用例名称 / 目标文本',
+      '结论',
       '实际输入',
       '输出',
       '目标Agent',
       '命中Agent',
       '命中子Agent',
       'Agent是否命中',
-      '结论',
       '响应耗时',
       '错误信息',
       '文本相似度',
@@ -917,7 +902,7 @@ export function buildSummaryReportText(report) {
       'TTSDuration',
       'LLMDuration',
       'FirstToken',
-    ], detailRows, { importantIndexes: [4, 5, 6, 7, 9, 10, 11, 12] }),
+    ], detailRows, { importantIndexes: [4, 5, 6, 7, 8, 10, 11, 12] }),
   ].join('\n');
 }
 
@@ -946,7 +931,7 @@ function buildHtmlTable(headers, rows, options = {}) {
     `<tr>${headers.map((header, index) => `<th class="${classNameForIndex(index)}">${escapeHtml(header)}</th>`).join('')}</tr>`,
     '</thead>',
     '<tbody>',
-    ...bodyRows.map((row) => `<tr>${row.map((cell, index) => `<td class="${classNameForIndex(index)}">${escapeHtml(cell)}</td>`).join('')}</tr>`),
+    ...bodyRows.map((row, rowIndex) => `<tr class="${options.failedRows?.[rowIndex] ? 'failed-row' : ''}">${row.map((cell, index) => `<td class="${classNameForIndex(index)}">${escapeHtml(cell)}</td>`).join('')}</tr>`),
     '</tbody>',
     '</table>',
   ].join('');
@@ -1003,29 +988,18 @@ export function buildSummaryReportHtml(report) {
     item.agentHitRate,
     item.avgResponseText || formatMs(item.avgResponseMs),
   ]);
-  const errorRows = cases
-    .filter((item) => valueOrSlash(item.logError) !== MISSING || valueOrSlash(item.logSummary) !== MISSING || item.testPassed === false)
-    .map((item, index) => [
-      item.index || index + 1,
-      item.caseId,
-      item.caseTitle || item.testAudioText,
-      item.testResult,
-      item.logStatus,
-      item.logError,
-      item.logSummary,
-    ]);
   const detailRows = cases.map((item, index) => [
     item.index || index + 1,
     item.caseId,
     item.module,
-    item.testAudioText,
+    item.caseTitle || item.testAudioText,
+    item.testResult,
     breakSentencesForExport(item.logInputText),
     breakSentencesForExport(item.logOutput),
     item.targetAgent,
     item.actualAgent,
     item.actualSubAgent,
     item.agentMatched,
-    item.testResult,
     item.responseText || formatMs(item.responseMs),
     item.logError,
     item.inputSimilarity,
@@ -1061,6 +1035,8 @@ export function buildSummaryReportHtml(report) {
     td { color: #374151; word-break: break-word; }
     .highlight-col { background: #eff6ff; color: #1e3a8a; font-weight: 600; }
     .wide-text-col { min-width: 320px; max-width: 520px; white-space: normal; }
+    .failed-row td { background: #fff1f2; color: #b91c1c; }
+    .failed-row td:nth-child(5) { font-weight: 700; white-space: nowrap; }
     @media print {
       body { background: #fff; padding: 0; }
       main { box-shadow: none; border: 0; border-radius: 0; max-width: none; }
@@ -1074,25 +1050,23 @@ export function buildSummaryReportHtml(report) {
     <p class="meta">生成时间：${escapeHtml(safeReport.generatedAtText)}</p>
     <h2>一、报告概览</h2>
     <div class="table-wrap">${buildHtmlTable(['项目', '内容'], overviewRows)}</div>
+    <h3 class="subsection-title">功能模块统计</h3>
+    <div class="table-wrap">${buildHtmlTable(['功能模块', '用例数', 'Agent命中率', '平均耗时'], moduleRows)}</div>
     <h2>二、环境信息</h2>
     ${paramHtml}
-    <h2>三、功能模块统计</h2>
-    <div class="table-wrap">${buildHtmlTable(['功能模块', '用例数', 'Agent命中率', '平均耗时'], moduleRows)}</div>
-    <h2>四、错误信息</h2>
-    <div class="table-wrap">${buildHtmlTable(['序号', '用例ID', '用例名称', '结论', '日志状态', '错误信息', '异常信息'], errorRows)}</div>
-    <h2>五、测试明细</h2>
+    <h2>三、测试明细</h2>
     <div class="table-wrap">${buildHtmlTable([
       '序号',
       '用例ID',
       '功能模块',
-      '目标文本',
+      '用例名称 / 目标文本',
+      '结论',
       '实际输入',
       '输出',
       '目标Agent',
       '命中Agent',
       '命中子Agent',
       'Agent是否命中',
-      '结论',
       '响应耗时',
       '错误信息',
       '文本相似度',
@@ -1105,7 +1079,7 @@ export function buildSummaryReportHtml(report) {
       'TTSDuration',
       'LLMDuration',
       'FirstToken',
-    ], detailRows, { importantIndexes: [4, 5, 6, 7, 9, 10, 11, 12], wideIndexes: [4, 5] })}</div>
+    ], detailRows, { importantIndexes: [4, 5, 6, 7, 8, 10, 11, 12], wideIndexes: [5, 6], failedRows: cases.map((item) => item.testPassed === false || /不通过|失败|未通过/.test(item.testResult || '')) })}</div>
   </main>
 </body>
 </html>`;
