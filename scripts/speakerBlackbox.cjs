@@ -106,7 +106,7 @@ function createBlackboxManager({ root = path.resolve(__dirname, '..'), spawnProc
     if (busy) throw new Error('已有音箱黑盒任务占用音频设备，请先停止');
     if (!['draft', 'calibrated'].includes(run.status)) throw new Error('此任务已执行，请创建新任务；历史录音不可覆盖');
     if (!run.wakeAsset || !run.assets[run.wakeAsset]) throw new Error('缺少唤醒音频');
-    if (!calibration && (!run.cases?.length || !run.templates?.length)) throw new Error('请导入测试音频并校准/导入唤醒回应样本');
+    if (!calibration && (!run.cases?.length || (run.config.deviceType !== 'google' && !run.templates?.length))) throw new Error('请导入测试音频并校准/导入唤醒回应样本');
     const assetPath = id => {
       if (!ASSET.test(id || '') || !run.assets[id]) throw new Error('音频尚未完整上传');
       const asset = path.join(folder(run.id), 'assets', id + '.wav');

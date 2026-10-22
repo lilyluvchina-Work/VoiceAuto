@@ -1,7 +1,7 @@
 import { selectGeneratedTestAudios } from '../../utils/testAudioStatus.js';
 import { fetchStoredTestAudioBlob } from '../../services/testAudioApi.js';
 
-export const DEVICE_TYPES = { xiaomi: ['小米音箱', '小爱同学', 'zh'], baidu: ['百度音箱', '小度小度', 'zh'], google: ['Google 音箱', 'Hey Google', 'en'] };
+export const DEVICE_TYPES = { xiaomi: ['小米音箱', '小爱同学', 'zh'], baidu: ['百度音箱', '小度小度', 'zh'], google: ['Google 音箱', 'OKGoogle', 'en'] };
 const RESPONSES = {
   xiaomi: { text: '我在 / 你说 / 诶 / 哎 / 在呢 / 哎，在呢 / 在 / 怎么了，我在', responses: ['我在', '你说', '诶', '哎', '在呢', '哎，在呢', '在', '怎么了，我在'], kind: 'speech', userProvidedResponses: ['在', '怎么了，我在'],
     source: { title: '小米 AI 音箱应答测评', url: 'https://read01.com/gg7Bed5.html', level: '公开测评、使用记录及用户补充，非所有型号保证' },
@@ -12,6 +12,7 @@ const RESPONSES = {
 };
 export const wakeResponsePreset = type => RESPONSES[type] || RESPONSES.xiaomi;
 export function migrateWakeResponse(config = {}) {
+  if (config.deviceType === 'google' && (!config.wakeWord || config.wakeWord === 'Hey Google')) return { ...config, wakeWord: 'OKGoogle' };
   const oldDefault = (config.wakeResponse === '我在' && !config.wakeResponsePresetVersion)
     || (config.wakeResponse === '我在 / 你说 / 诶 / 哎 / 在呢 / 哎，在呢' && (config.wakeResponsePresetVersion || 0) < 3);
   if ((config.deviceType || 'xiaomi') === 'xiaomi' && oldDefault) {

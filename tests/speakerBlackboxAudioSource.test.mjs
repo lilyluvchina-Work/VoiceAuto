@@ -25,7 +25,7 @@ test('blackbox keeps the audio-menu exact directory filter and includes children
 test('device changes reset the wake text and language while manual values can be retained in a profile', () => {
   assert.equal(deviceWakeConfig('xiaomi', { wakeWord: 'old' }).wakeWord, '小爱同学');
   assert.equal(deviceWakeConfig('baidu').wakeWord, '小度小度');
-  assert.equal(deviceWakeConfig('google').wakeWord, 'Hey Google');
+  assert.equal(deviceWakeConfig('google').wakeWord, 'OKGoogle');
   assert.equal(deviceWakeConfig('google').language, 'en');
   assert.equal(deviceWakeConfig('xiaomi', { wakeResponse: 'old', templateKind: 'tone' }).wakeResponse, '我在 / 你说 / 诶 / 哎 / 在呢 / 哎，在呢 / 在 / 怎么了，我在');
   assert.equal(deviceWakeConfig('xiaomi').templateKind, 'speech');
@@ -66,4 +66,9 @@ test('audio source reuses generated blob or existing authenticated audio downloa
   assert.deepEqual(requests, ['/api/test-audios/b/audio']);
   assert.equal(await remote.text(), 'generated');
   await assert.rejects(resolveAudioFile({ id: 'missing' }), /重新生成/);
+});
+
+test('old Google default upgrades while an edited wake word remains intact', () => {
+  assert.equal(migrateWakeResponse({ deviceType: 'google', wakeWord: 'Hey Google' }).wakeWord, 'OKGoogle');
+  assert.equal(migrateWakeResponse({ deviceType: 'google', wakeWord: 'custom' }).wakeWord, 'custom');
 });

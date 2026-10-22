@@ -293,6 +293,34 @@ class FullRecordingTests(unittest.TestCase):
         self.assertEqual(classify_scores(.8, .8)['kind'], 'mixed')
         self.assertEqual(classify_scores(.15, .15)['kind'], 'unknown')
 
+    def test_google_waits_one_second_after_wake_without_matching_a_response(self):
+        backend = Backend.__new__(Backend)
+        backend.config = validate_config({'deviceType': 'google'})
+        backend.current_recording = 'recordings/case_001_001_full.wav'
+        backend.current_case_id = '001_001'
+        backend.command = {'wakePath': 'wake'}
+        backend.stopped = False
+        backend.collect = lambda duration: None
+        backend.play_info = {}
+        now = [10.0]
+        played = []
+        def play(path):
+            played.append((path, now[0]))
+            return now[0]
+        backend.play = play
+        def frame():
+            now[0] += .02
+            return now[0], bytes(640), [0] * 320, 0
+        backend.next_frame = frame
+        backend.wake = lambda end: self.fail('Google must not wait for wake response')
+        backend.reply = lambda end: dict(status='success', responseMs=1240)
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = backend.attempt({'path': 'test'}, 1)
+        self.assertEqual(result['status'], 'success')
+        self.assertAlmostEqual(played[1][1] - played[0][1], 1, places=6)
+        self.assertEqual(result['stages']['wakeResponse'], 'skipped')
+        self.assertFalse(result['wakeDetected'])
+
     def test_stage_failure_is_saved_without_marking_following_stages_failed(self):
         for failure in ['wake', 'test', None]:
             backend = Backend.__new__(Backend)

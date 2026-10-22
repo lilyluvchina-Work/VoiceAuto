@@ -193,9 +193,8 @@ export default function SpeakerBlackbox({ otherTesting = false, onActivityChange
     if (otherTesting) throw new Error('请先停止其他语音测试，避免共享音频设备');
     if (!config.inputDeviceId || !config.outputDeviceId) throw new Error('请检测并选择输入和输出设备');
     if (!config.wakeWord?.trim()) throw new Error('请输入唤醒词');
-    if (config.deviceType === 'google' && !googleChime) throw new Error('请先在 Google 音箱设置中开启唤醒提示音并勾选确认');
     for (const [key, label, min, max] of FIELDS) if (!Number.isFinite(config[key]) || config[key] < min || config[key] > max) throw new Error(`${label}超出有效范围`);
-    if (!calibrating && (!cases.length || !currentTemplates.length)) throw new Error('请在测试用例管理生成测试音频，并校准或导入唤醒回应样本');
+    if (!calibrating && (!cases.length || (config.deviceType !== 'google' && !currentTemplates.length))) throw new Error('请在测试用例管理生成测试音频，并校准或导入唤醒回应样本');
     const current = await draft();
     const wakeAsset = await putAsset(current.id, await generateWake());
     const testCases = [];
@@ -223,8 +222,9 @@ export default function SpeakerBlackbox({ otherTesting = false, onActivityChange
   }
   async function startTesting() {
     if (!cases.length) throw new Error('请先在测试用例管理生成测试音频');
-    autoStart.current = !templates.length;
-    await prepare(!templates.length);
+    const needsCalibration = config.deviceType !== 'google' && !templates.length;
+    autoStart.current = needsCalibration;
+    await prepare(needsCalibration);
   }
   async function generateWake() {
     const text = config.wakeWord?.trim();
@@ -262,7 +262,7 @@ export default function SpeakerBlackbox({ otherTesting = false, onActivityChange
       </div>
       <div className="grid items-end gap-4 md:grid-cols-3">{[['input', 'inputDeviceId', '输入麦克风'], ['output', 'outputDeviceId', '输出扬声器']].map(([kind, key, label]) => <label key={key}>{label}<select className={inputClass} value={config[key]} onChange={event => change(key, event.target.value)}><option value="">请选择</option>{config[key] && !devices.some(d => d.deviceId === config[key]) && <option value={config[key]}>已保存设备（请检测确认）</option>}{devices.filter(d => d.kind === kind).map(d => <option key={d.deviceId} value={d.deviceId}>{d.label}</option>)}</select></label>)}
         <button type="button" className={buttonClass} onClick={() => operate(async () => { const result = await request(bridge, { action: 'devices' }); setDevices(result.devices); setConfig(previous => ({ ...previous, ...selectAudioDevices(result.devices, previous) })); setMessage('音频设备已更新。'); })}>重新检测设备</button></div>
-      {config.deviceType === 'google' && <label className="block text-sm text-amber-200"><input type="checkbox" checked={googleChime} onChange={event => setGoogleChime(event.target.checked)} className="mr-2" />已在 Google 音箱设置中开启唤醒提示音（Hey Google）</label>}
+      {config.deviceType === 'google' && <p className="text-sm text-gray-300">播放唤醒词 → 等待 1 秒 → 播放测试音频 → 监听回复；无需唤醒提示音或应答样本。</p>}
       <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-gray-300">测试音频：{cases.length} 条 · {state.testOptions?.selectedTestModule === 'all' || !state.testOptions?.selectedTestModule ? '全部模块' : state.testOptions.selectedTestModule}</p><button className={buttonClass} onClick={onOpenAudios}>前往测试音频</button></div>
       <p className="text-sm text-gray-400">{!cases.length && '请在“测试音频”菜单准备音频。'}{templates.length ? `${templates.length} 个应答样本` : '首次自动采集应答'}</p>
     </fieldset>

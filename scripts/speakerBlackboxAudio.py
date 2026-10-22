@@ -429,14 +429,26 @@ class Backend:
             if self.stopped:
                 return {**result, 'status': 'aborted'}
             result['stages']['wakePlayback'] = 'success'
-            emit(dict(event='phase', phase='匹配唤醒回应'))
-            enter('wakeResponse')
-            detected, score = self.wake(wake_end)
-            result.update(wakeDetected=detected, wakeScore=score, wakePlaybackEnd=wake_end,
-                          wakeDetectionMethod=self.last_wake_method)
-            result['stages']['wakeResponse'] = 'success' if detected else 'interrupted' if self.stopped else 'failed'
-            if not detected or self.stopped:
-                return {**result, 'status': 'aborted' if self.stopped else 'wake_timeout'}
+            if getattr(self, 'config', {}).get('deviceType') == 'google':
+                emit(dict(event='phase', phase='Google 唤醒后等待 1 秒'))
+                while not self.stopped:
+                    if self.next_frame()[0] >= wake_end + 1 - 1e-8:
+                        break
+                self.last_wake_method = 'fixed_delay'
+                result.update(wakeDetected=False, wakePlaybackEnd=wake_end, wakeDetectionMethod='fixed_delay')
+                result['stages']['wakeResponse'] = 'skipped'
+                result['flags'].append('Google：唤醒词播放后固定等待 1 秒，跳过唤醒应答检测')
+                if self.stopped:
+                    return {**result, 'status': 'aborted'}
+            else:
+                emit(dict(event='phase', phase='匹配唤醒回应'))
+                enter('wakeResponse')
+                detected, score = self.wake(wake_end)
+                result.update(wakeDetected=detected, wakeScore=score, wakePlaybackEnd=wake_end,
+                              wakeDetectionMethod=self.last_wake_method)
+                result['stages']['wakeResponse'] = 'success' if detected else 'interrupted' if self.stopped else 'failed'
+                if not detected or self.stopped:
+                    return {**result, 'status': 'aborted' if self.stopped else 'wake_timeout'}
             emit(dict(event='phase', phase='播放测试音频'))
             enter('testPlayback')
             end = self.play(case['path'])
@@ -446,7 +458,9 @@ class Backend:
             result['stages']['testPlayback'] = 'success'
             emit(dict(event='phase', phase='监听语音回复'))
             enter('reply')
-            result.update(self.reply(end))
+            reply_result = self.reply(end)
+            reply_result['flags'] = result.get('flags', []) + reply_result.get('flags', [])
+            result.update(reply_result)
             if getattr(self, 'pause_requested', False):
                 raise PauseRequested()
             result['stages']['reply'] = 'success' if result['status'] == 'success' else 'interrupted' if self.stopped else 'needs_review' if result['status'] == 'needs_review' else 'failed'
@@ -555,7 +569,7 @@ def main():
         if command['action'] == 'calibrate':
             backend.calibrate()
         else:
-            if not backend.templates:
+            if not backend.templates and backend.config.get('deviceType') != 'google':
                 raise ValueError('请先校准或导入实际唤醒回应样本')
             backend.baseline()
             emit(dict(event='calibration', calibration=backend.calibration, templates=backend.templates))

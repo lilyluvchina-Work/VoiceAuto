@@ -44,7 +44,7 @@ export function stageLabel(attempt, key) {
     if (key === 'testPlayback' && attempt.playbackEnd != null) value = 'success';
     if (key === 'reply') value = attempt.status === 'success' ? 'success' : attempt.status === 'reply_timeout' ? 'failed' : 'not_run';
   }
-  return { success: '成功', failed: '失败', not_run: '未执行', interrupted: '未完成', needs_review: '需复核' }[value] || '未执行';
+  return { skipped: '跳过', success: '成功', failed: '失败', not_run: '未执行', interrupted: '未完成', needs_review: '需复核' }[value] || '未执行';
 }
 export function caseResults(run) {
   const grouped = new Map();
